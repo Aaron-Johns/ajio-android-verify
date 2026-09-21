@@ -7,6 +7,7 @@ __pycache__/
 # Reverse-engineering inputs: large, and not ours to redistribute
 inputs/apk-source/
 inputs/modified-apk/
+inputs/additional-apks/
 
 # Run output, logs, traffic captures
 runs/
@@ -21,3 +22,6 @@ data/
 
 # Personal Claude Code settings
 .claude/settings.local.json
+
+# Unrelated third-party skill plugin, not part of this project
+.claude/skills/jev-skill-suggestion/
