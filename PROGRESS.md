@@ -133,3 +133,66 @@ banner records. Tests use captured signatures and a saved redacted sample.
 
 ---
 
+# Phase 4: Destination resolution and matching — done (2026-09-21)
+
+## Decisions the user made this phase (recorded in CLAUDE.md 7.1 and 9)
+- All 22 alias groups in `brand_aliases.draft.json` approved as drafted.
+- Dedupe of the 3 colliding pairs approved, in a copy of the data file.
+- Reference data: proceed with a stub plus placeholder rows derived from the live feed. **Real rows are still outstanding.**
+
+## What was built
+- `qa/brand_resolver.py` — verbatim port of `inputs/brand_verify_combined.py` (six matching functions, thresholds 85/5). Only file loading changed (no prints/SystemExit); Gemini-file plumbing dropped. Adds a small `BrandResolver` wrapper that builds the index once.
+- `qa/dedupe_brands.py` -> `config/ajio_brand_names_deduped.json` (7000 -> 6997; removed `GINI AND JONY`, `OOMPH!`, `Zri`). `inputs/` untouched. The resolver loads this copy by default.
+- `qa/deeplink_resolve.py` — `destination_raw` -> `Target{type, brand, category, identifier, slug_text, host, reason}` using the FINDINGS 3.1 path grammar. Types: PLP (`/s/`, `/s1/`, `/search`, `/find/`), CATEGORY (`/c/`, `/<x>/c/`), BRAND (`/b/`, `/brand/`), CAMPAIGN (`/cp/`, `/shop/`, `/sections/`, `/static-cms/`, `/capsule/`, promo pages), PRODUCT, HOME, OTHER (account/cart/support), EXTERNAL (non-ajio.com host), UNKNOWN. Handles `ajioapps://`, scheme-less and relative URLs, and `deep_link_value` OneLink/Firebase wrappers.
+- `qa/status.py` — `Status` enum (MATCH, MISMATCH, AMBIGUOUS_DEEPLINK, NO_REFERENCE, ERROR), `Comparison`, and `brand_needs_review()` which applies CLAUDE.md 7.1 at the status layer (empty brand, `needs_verification`, and multi-candidate `word_boundary` all become ambiguous).
+- `qa/reference.py` — CSV loader for `banner_id, expected_brand, expected_category, expected_deeplink_type, notes`.
+- `qa/compare.py` — `AliasMap` (built from the approved groups, keyed like the draft: normalized with spaces removed) and `compare_banner()`.
+- `config/reference.sample.csv` — 3 PLACEHOLDER rows restating what the live feed declared (a PLP, a PLP, a CATEGORY).
+
+## What was tested (124 tests pass; nothing here touches the network)
+- **Resolver regression:** all 42 `resolver_fixtures.json` cases reproduce exactly (dict equality) against the original 7,000-brand list; each ported function's source is asserted identical to the original's via `inspect.getsource`; thresholds unchanged.
+- **Dedupe:** on the default (deduped) list, "Gini & Jony", "Oomph", "ZRI" now resolve `normalized_exact`; on the original list "Oomph" is still `ambiguous_exact`.
+- **Deep-link grammar:** 18 parametrized URL cases, the OneLink unwrap, 6 unresolvable cases with reasons, look-alike hosts (`notajio.com`, `ajio.com.evil.io`) treated as EXTERNAL, and all 327 destination URLs from the saved live sample parse without error.
+- **Every status has fixtures** (`tests/test_compare.py`): MATCH (brand, brand via alias where plain comparison fails, category, type-only, PLP-family, external, multi-brand dominant); MISMATCH (brand, type, category, type beats ambiguity, non-dominant brand); AMBIGUOUS_DEEPLINK (word_boundary with 3 candidates — the "Polo -> Polo Plus" trap, asserted to be confidently accepted by the frozen resolver and rejected by the status layer — plus ambiguous_exact, unrecognized path, wrapper without target, brand/category not in link, empty brand slug, low-confidence brand); NO_REFERENCE (no row, row with no expectations, priority over empty destination); ERROR (empty destination x3, resolver exception).
+- The 22 approved alias groups load and compare (LEVI'S/LEVIS, RED TAPE/REDTAPE, U.S. Polo Assn./US POLO ASSN.).
+
+## Key findings
+1. **The live home feed contains no brand links at all.** Classifying the 373 live records: PLP 238, CAMPAIGN 46, CATEGORY 10, EXTERNAL 4, OTHER 1, UNKNOWN 74. Zero `/b/` or `/brand/` URLs. So `expected_brand` can only be checked when a link is `/b/`-type; for `/s/` campaign links the brand isn't in the URL, and the status is `AMBIGUOUS_DEEPLINK` (`brand_not_in_link`), which is what falls through to Phase 5's vision fallback.
+2. **Most destinations are `/s/<slug>-<id>` (238 of 373)**, e.g. `min70percentoffcurated-402882`. The slug says what the campaign is called, not which brands it contains, so type checks are meaningful but brand/category checks are limited by what the URL reveals. The real category/brand behind an `/s/` id is resolved server-side (FINDINGS 3.2, `NavigationTypeApi`), which Phase 4 does not call.
+3. **UNKNOWN splits into 65 empty destinations and 9 `unrecognized_path`.** The 9 are single-segment CMS/T&C pages the manifest table doesn't list (`/supercash`, `/hdfc-emi-credit`, `/*-tnc`, `/reliance-sbi-tnc`). They go to `AMBIGUOUS_DEEPLINK`, which is what that status is for.
+4. **Trap confirmed and contained:** the frozen resolver accepts "polo" as `Polo Plus` (0.95, `needs_verification` false) with 2 other candidates; `brand_needs_review()` catches it. The resolver was not modified.
+
+## [A] Assumptions / defaults used this phase
+- **Canonical spellings for the deduped pairs** weren't specified; kept the first name of each pair (GINI & JONY, Oomph, ZRI).
+- **Empty destination -> `ERROR`** (`empty_destination`) when a reference row exists, and `NO_REFERENCE` when it doesn't. I asked you about this and the answer wasn't given, so this is a default; zone/ad slots with no link (47 of the 65 sit under two labels) may be legitimately empty.
+- **Expected type PLP accepts PLP, CATEGORY and BRAND links** (the app renders all three in one PLP fragment, FINDINGS 3.2); every other expected type must match exactly.
+- **Multi-brand expected values** use `Nike|ADIDAS` syntax with the first as the dominant brand (`multi_brand = dominant`); only the dominant one is compared.
+- **Category comparison** is normalized-key equality (case, punctuation, spaces ignored) between the link's slug text and `expected_category`. "T-Shirts" vs slug "tshirts" match; "Tees" vs "T-Shirts" would not.
+- **Type mismatch beats ambiguity**: a definitive wrong type is reported as MISMATCH even if a brand couldn't be resolved.
+- Brand lookup runs on the slug text (dashes -> spaces) of `/b/` links only; nothing calls AJIO's server-side resolver.
+- **`banner_id` join key = section `_id` / `<_id>:<block index>`** (unchanged from Phase 3, unverified for stability). The 3 sample rows use ids from the 2026-09-21 feed and will go stale if the CMS rotates them.
+- `static-cms` links are typed CAMPAIGN (a webview page); the app's real handling wasn't confirmed.
+
+## Known gaps / open items
+- **No real reference data yet.** The sample rows restate the feed, so a MATCH on them proves the plumbing, not correctness.
+- Hotspot URLs (18 across 5 banners) aren't compared; only `destination_raw`.
+- Feed variation by pincode/persona still unaddressed (asked in Phase 3, not answered).
+- The `/p/` PRODUCT parser assumes `/p/<id>`; real PDP slugs weren't observed in the feed.
+- Alias comparison only applies to `/b/` links today, since that's the only place a brand appears in a URL.
+- `qa/feed_client.py` is not yet wired to `compare_banner()`; there is no runner that fetches, compares, and stores results. That's Phase 6 (worker/scheduler/history).
+
+## What Phase 5/6 needs from the user
+- **Real reference rows** and which banners they cover. Given finding 1, say whether brand expectations are expected to come mostly from banner images (Phase 5 vision) rather than URLs.
+- Empty-destination policy (`ERROR` vs ignore) and which pincode/persona to check.
+- Feed-check cadence (default 2 hours), spot-check cadence and sample size (defaults weekly / 5), and scope-boundary confirmation.
+
+**Suggested commit message** (nothing committed; `inputs/apk-source/`, `inputs/modified-apk/`, `.env`, `runs/`, `.venv/` are gitignored):
+```
+Add deep-link parsing, brand resolver port and banner matching (Phase 4)
+
+Parse feed destinations into structured targets, port the brand resolver
+verbatim (pinned by the 42 fixtures), and add alias-aware comparison with
+MATCH/MISMATCH/AMBIGUOUS_DEEPLINK/NO_REFERENCE/ERROR statuses. Ambiguous
+word_boundary matches are caught at the status layer, not the resolver.
+```
+

@@ -1,0 +1,7 @@
+# PLACEHOLDER reference rows derived from the live home feed on 2026-09-21 (see PROGRESS.md Phase 4).
+# They restate what the feed itself declared, so they prove the pipeline works but verify nothing real.
+# Replace with real rows from the user. banner_id = section _id, or "<section _id>:<block index>" for carousel blocks.
+banner_id,expected_brand,expected_category,expected_deeplink_type,notes
+6a980a6f203fa05428096a91,,,PLP,PLACEHOLDER floating widget NEW30 -> /s/new30-166553
+6a9579bb72d046fc1cba9031,,,PLP,PLACEHOLDER hero banner "rush" -> /s/4hoursdelivery-160865
+6a7c9d27d63402ac4bb86c11:14,,Clearance Store,CATEGORY,PLACEHOLDER dynamic-banner block -> /c/clearance-store-1789044034

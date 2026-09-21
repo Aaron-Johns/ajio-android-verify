@@ -1,0 +1,722 @@
+{
+  "_about": "Outputs of the ORIGINAL brand_verify_combined.resolve_brand (FUZZY_THRESHOLD=85, FUZZY_MARGIN=5) against ajio_brand_names_fixed.json (7,000 brands). The adapted resolver must reproduce these exactly.",
+  "cases": [
+    {
+      "input": "Puma",
+      "expected": {
+        "gemini_brand": "Puma",
+        "ajio_brand": "Puma",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Nike",
+      "expected": {
+        "gemini_brand": "Nike",
+        "ajio_brand": "NIKE",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Adidas",
+      "expected": {
+        "gemini_brand": "Adidas",
+        "ajio_brand": "ADIDAS",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Addidas",
+      "expected": {
+        "gemini_brand": "Addidas",
+        "ajio_brand": "ADIDAS",
+        "match_type": "fuzzy",
+        "confidence": 0.9231,
+        "score": 92.31,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Sketchers",
+      "expected": {
+        "gemini_brand": "Sketchers",
+        "ajio_brand": "Skechers",
+        "match_type": "fuzzy",
+        "confidence": 0.9412,
+        "score": 94.12,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Levis",
+      "expected": {
+        "gemini_brand": "Levis",
+        "ajio_brand": "LEVIS",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Levi's",
+      "expected": {
+        "gemini_brand": "Levi's",
+        "ajio_brand": "LEVI'S",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "H&M",
+      "expected": {
+        "gemini_brand": "H&M",
+        "ajio_brand": null,
+        "possible_ajio_brand": "K & M",
+        "match_type": "ambiguous_or_low_confidence",
+        "confidence": 0.8571,
+        "score": 85.71,
+        "needs_verification": true
+      }
+    },
+    {
+      "input": "US Polo",
+      "expected": {
+        "gemini_brand": "US Polo",
+        "ajio_brand": "US POLO ASSN.",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "U.S. Polo Assn.",
+      "expected": {
+        "gemini_brand": "U.S. Polo Assn.",
+        "ajio_brand": "U.S. Polo Assn.",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Polo",
+      "expected": {
+        "gemini_brand": "Polo",
+        "ajio_brand": "Polo Plus",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "Beverly Hills Polo Club",
+          "CLASSIC POLO",
+          "Polo Plus",
+          "Polo Tribe",
+          "Santa Barbara Polo",
+          "U.S. Polo Assn.",
+          "US POLO ASSN."
+        ]
+      }
+    },
+    {
+      "input": "Allen Solly",
+      "expected": {
+        "gemini_brand": "Allen Solly",
+        "ajio_brand": "ALLEN SOLLY",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Allen",
+      "expected": {
+        "gemini_brand": "Allen",
+        "ajio_brand": "Allen",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Red",
+      "expected": {
+        "gemini_brand": "Red",
+        "ajio_brand": "RED ROSE",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "Bond Street by Red Tape",
+          "Furo Sports By Red Chief",
+          "Mode By Red Tape",
+          "RED CHIEF",
+          "RED ROSE",
+          "RED TAPE"
+        ]
+      }
+    },
+    {
+      "input": "Jack & Jones",
+      "expected": {
+        "gemini_brand": "Jack & Jones",
+        "ajio_brand": "Jack & Jones",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Jack and Jones",
+      "expected": {
+        "gemini_brand": "Jack and Jones",
+        "ajio_brand": "Jack & Jones",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Jack",
+      "expected": {
+        "gemini_brand": "Jack",
+        "ajio_brand": "Bag Jack",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "Bag Jack",
+          "Jack & Jones",
+          "JACK & JONES Premium",
+          "Jack in the box",
+          "JACK PARIS",
+          "Produkt By Jack & Jones",
+          "Sam And Jack"
+        ]
+      }
+    },
+    {
+      "input": "Tommy",
+      "expected": {
+        "gemini_brand": "Tommy",
+        "ajio_brand": "TOMMY HILFIGER",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Gini & Jony",
+      "expected": {
+        "gemini_brand": "Gini & Jony",
+        "ajio_brand": null,
+        "possible_ajio_brands": [
+          "GINI & JONY",
+          "GINI AND JONY"
+        ],
+        "match_type": "ambiguous_exact",
+        "confidence": 1.0,
+        "needs_verification": true
+      }
+    },
+    {
+      "input": "Oomph",
+      "expected": {
+        "gemini_brand": "Oomph",
+        "ajio_brand": null,
+        "possible_ajio_brands": [
+          "Oomph",
+          "OOMPH!"
+        ],
+        "match_type": "ambiguous_exact",
+        "confidence": 1.0,
+        "needs_verification": true
+      }
+    },
+    {
+      "input": "Urbano",
+      "expected": {
+        "gemini_brand": "Urbano",
+        "ajio_brand": "URBANO PLUS",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "URBANO FASHION",
+          "URBANO JUNIORS",
+          "URBANO PLUS"
+        ]
+      }
+    },
+    {
+      "input": "Only",
+      "expected": {
+        "gemini_brand": "Only",
+        "ajio_brand": "ONLY",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Men",
+      "expected": {
+        "gemini_brand": "Men",
+        "ajio_brand": "Qraa Men",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "MILLENNIAL MEN",
+          "Qraa Men",
+          "RL ROCKLIN MEN",
+          "The Men Thing"
+        ]
+      }
+    },
+    {
+      "input": "Women",
+      "expected": {
+        "gemini_brand": "Women",
+        "ajio_brand": "BANI WOMEN",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "BANI WOMEN",
+          "DUKE WOMEN'S",
+          "Hail Women",
+          "LEELA FASHION WOMEN'S CLOTHING",
+          "MK WOMEN'S",
+          "Niyaksha Women",
+          "Park Avenue Women",
+          "THE WOMEN DECOR",
+          "Women Basket",
+          "Women Elegence",
+          "Women Marks",
+          "WOMEN PLUS",
+          "WOMEN TOUCH"
+        ]
+      }
+    },
+    {
+      "input": "Kids",
+      "expected": {
+        "gemini_brand": "Kids",
+        "ajio_brand": "Aks Kids",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "Adidas Kids",
+          "Aks Kids",
+          "DUKE-KIDS",
+          "Gap Kids",
+          "Julio Cesar Kids",
+          "Kids Cave",
+          "KIDS CRAFT",
+          "Kids Wonders",
+          "Kinder Kids",
+          "Libas KIDS",
+          "MOON KIDS",
+          "NOH.VOH - SASSAFRAS KIDS",
+          "OLIO KIDS",
+          "PURPLE UNITED KIDS",
+          "Shirali Kids",
+          "TOY BALLOON KIDS",
+          "the tribe kids"
+        ]
+      }
+    },
+    {
+      "input": "Sale",
+      "expected": {
+        "gemini_brand": "Sale",
+        "ajio_brand": null,
+        "possible_ajio_brand": "SANLEE",
+        "match_type": "ambiguous_or_low_confidence",
+        "confidence": 0.8,
+        "score": 80.0,
+        "needs_verification": true
+      }
+    },
+    {
+      "input": "Fashion",
+      "expected": {
+        "gemini_brand": "Fashion",
+        "ajio_brand": "4U FASHION",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "3buddy Fashion",
+          "4U FASHION",
+          "AAGHNYA FASHION",
+          "AEBA FASHION",
+          "AENJAL FASHION",
+          "Ak Fashion",
+          "AK FASHION MALL",
+          "Aksh fashion",
+          "Akshatani Fashion",
+          "ALMAARI FASHION",
+          "Anshara Fashion",
+          "APOLRAVISHWASH FASHION",
+          "ARF ANGOORI FASHION",
+          "ATTITUDE START OF FASHION",
+          "BEEGET FASHION",
+          "BIRMATI FASHION",
+          "Classy fashion",
+          "Crunchy Fashion",
+          "CULT FASHION",
+          "D'Sa Fashion & Home Decor",
+          "DEVYANI FASHION",
+          "DHAKRE FASHION",
+          "DISHWA FASHION",
+          "DKGF FASHION",
+          "DMP FASHION",
+          "DMUNESH FASHION",
+          "DREAM BEAUTY FASHION",
+          "Dwija Fashion",
+          "EZIS FASHION",
+          "Fashion 2 Wear",
+          "Fashion And Youth",
+          "Fashion Basket",
+          "Fashion Booms",
+          "Fashion Comfortz",
+          "FASHION DEPTH",
+          "FASHION DREAM",
+          "Fashion Empire",
+          "Fashion Field",
+          "Fashion Gaiia",
+          "FASHION GRAB",
+          "FASHION PETALS",
+          "FASHION VICTIM",
+          "FASHION WORLD",
+          "Fitoda Fashion",
+          "Fly Fashion",
+          "FREE SPIRIT FASHION",
+          "Gopi Fashion Hub",
+          "HARI KRUSHNA FASHION",
+          "Hariguru Fashion",
+          "HASINI FASHION",
+          "HEMANG FASHION",
+          "HITARTH FASHION",
+          "HK FASHION",
+          "HMP FASHION",
+          "JAIPUR FASHION MODE",
+          "JAIS Fashion",
+          "Janashree Fashion",
+          "Jay Fashion",
+          "Jds Fashion",
+          "JUST FASHION",
+          "KALEESHA FASHION",
+          "KAPANI FASHION",
+          "KATARA FASHION",
+          "KETAKI FASHION",
+          "Ki2 FASHION",
+          "Kiana House Of Fashion",
+          "Kili Fashion",
+          "L.o.f Lords Of Fashion",
+          "Lative colours of fashion",
+          "LEELA FASHION WOMEN'S CLOTHING",
+          "LERIYA FASHION",
+          "LIKADO FASHION",
+          "Lovit Fashion",
+          "Mady Fashion",
+          "MF MUDASSIR FASHION",
+          "MIALO FASHION X AG",
+          "MIRAPARI FASHION",
+          "MIRCHI FASHION",
+          "MOGAL FASHION",
+          "Moovio Fashion",
+          "MRINALIKA FASHION",
+          "MSBJ FASHION",
+          "Mystery of Fashion X AG",
+          "N1F FASHION",
+          "Navisha Fashion",
+          "Niza FASHION",
+          "NKSA FASHION",
+          "OPIVE FASHION HUB",
+          "Piyari Fashion",
+          "Plush Push The Fashion",
+          "PMD FASHION",
+          "PU FASHION",
+          "Raiyani Fashion",
+          "RENVAANI FASHION",
+          "RIMELINE FASHION",
+          "Roopwati Fashion",
+          "Roves Fashion",
+          "SALONI FASHION JEWELLERY",
+          "SAUMYANI FASHION",
+          "SHRITHI FASHION FAB",
+          "SHUBHANGINI FASHION",
+          "SIYA FASHION",
+          "Smileai Fashion",
+          "Srutva Fashion",
+          "SUBAGI FASHION",
+          "TEEJORI FASHION",
+          "THE FASHION ATTIRE",
+          "TRIPURSUNDARI FASHION",
+          "URBANO FASHION",
+          "VAIDEHI FASHION",
+          "VEEVA BEAUTY FASHION",
+          "VIGHNAHARTA FASHION JEWELLERY",
+          "Ville Fashion"
+        ]
+      }
+    },
+    {
+      "input": "Sports",
+      "expected": {
+        "gemini_brand": "Sports",
+        "ajio_brand": "Cl Sports",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "Aio Sports",
+          "Arrow Sports",
+          "Carlton London Sports",
+          "Cl Sports",
+          "Furo Sports By Red Chief",
+          "King Sports",
+          "KS KRISHNA SPORTS",
+          "Masch Sports",
+          "Mpl Sports",
+          "SPORTS 52 WEAR"
+        ]
+      }
+    },
+    {
+      "input": "Jeans",
+      "expected": {
+        "gemini_brand": "Jeans",
+        "ajio_brand": "LP JEANS",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "Buda Jeans Co",
+          "AERO JEANS",
+          "AERO JEANS WOMENS",
+          "Astro Jeans",
+          "BOYD JEANS",
+          "Calvin Klein Jeans",
+          "Deal Jeans",
+          "Guess Jeans",
+          "Innerwear By Pepe Jeans London",
+          "JOHN PLAYERS JEANS",
+          "KNOBB JEANS",
+          "LLAK JEANS",
+          "LP JEANS",
+          "MASTEC JEANS",
+          "Pepe Jeans",
+          "RJ JEANS",
+          "SF Jeans by Pantaloons",
+          "SOLLY JEANS",
+          "STORMY JEANS",
+          "Tarama Jeans",
+          "The Purani Jeans",
+          "VOI JEANS"
+        ]
+      }
+    },
+    {
+      "input": "Home",
+      "expected": {
+        "gemini_brand": "Home",
+        "ajio_brand": "Ever Home",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "COUNTRY HOME",
+          "D'Sa Fashion & Home Decor",
+          "Ever Home",
+          "Home Centre",
+          "Home Expressions USA",
+          "Home Heart",
+          "Home Sparkle",
+          "Indie Eye Home",
+          "Linen Home",
+          "Mezzo Home",
+          "Neela Home",
+          "Petal Home",
+          "Saral Home",
+          "Savya Home",
+          "Shree Kala Home Decor",
+          "STELLAR HOME",
+          "STELLAR HOME BY PORTICO",
+          "The Better Home",
+          "The Home Co",
+          "THE QUIRKY HOME",
+          "Trance Home Linen",
+          "TRANQUEBAR HOME",
+          "WESTA HOME"
+        ]
+      }
+    },
+    {
+      "input": "Beauty",
+      "expected": {
+        "gemini_brand": "Beauty",
+        "ajio_brand": "FAE BEAUTY",
+        "match_type": "word_boundary",
+        "confidence": 0.95,
+        "needs_verification": false,
+        "possible_ajio_brands": [
+          "Baby Beauty",
+          "Beauty Berry",
+          "BEAUTY GANG EXPERTS",
+          "Beauty Garage PROFESSIONAL",
+          "Beauty of Joseon",
+          "Beauty Tree",
+          "BiE - Beauty In Everything",
+          "Blue Beauty",
+          "Diam Beauty",
+          "DREAM BEAUTY",
+          "DREAM BEAUTY FASHION",
+          "Eve's Beauty",
+          "FAE BEAUTY",
+          "FARMACY BEAUTY",
+          "Gush Beauty",
+          "House Of Beauty",
+          "Huda Beauty",
+          "HYUE BEAUTY",
+          "Kolorup Beauty",
+          "Krayons Beauty",
+          "LOVE beauty AND planet",
+          "MAIDEN BEAUTY",
+          "MOXIE BEAUTY",
+          "PARUL GARG Beauty",
+          "Skin Beauty",
+          "Swiss Beauty",
+          "TYPSY BEAUTY",
+          "VEEVA BEAUTY FASHION"
+        ]
+      }
+    },
+    {
+      "input": "Puma.",
+      "expected": {
+        "gemini_brand": "Puma.",
+        "ajio_brand": "Puma",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Nike Air",
+      "expected": {
+        "gemini_brand": "Nike Air",
+        "ajio_brand": null,
+        "possible_ajio_brand": "Genie Art",
+        "match_type": "ambiguous_or_low_confidence",
+        "confidence": 0.7059,
+        "score": 70.59,
+        "needs_verification": true
+      }
+    },
+    {
+      "input": "AJIO",
+      "expected": {
+        "gemini_brand": "AJIO",
+        "ajio_brand": "AJIO",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "DNMX",
+      "expected": {
+        "gemini_brand": "DNMX",
+        "ajio_brand": "DNMX",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Performax",
+      "expected": {
+        "gemini_brand": "Performax",
+        "ajio_brand": "PERFORMAX",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Netplay",
+      "expected": {
+        "gemini_brand": "Netplay",
+        "ajio_brand": "NETPLAY",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Teamspirit",
+      "expected": {
+        "gemini_brand": "Teamspirit",
+        "ajio_brand": "Teamspirit",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "Buy 2 Get 1",
+      "expected": {
+        "gemini_brand": "Buy 2 Get 1",
+        "ajio_brand": null,
+        "possible_ajio_brand": "High Buy X AG",
+        "match_type": "ambiguous_or_low_confidence",
+        "confidence": 0.5,
+        "score": 50.0,
+        "needs_verification": true
+      }
+    },
+    {
+      "input": "Flat 50% Off",
+      "expected": {
+        "gemini_brand": "Flat 50% Off",
+        "ajio_brand": null,
+        "possible_ajio_brand": "Flynoff",
+        "match_type": "ambiguous_or_low_confidence",
+        "confidence": 0.5556,
+        "score": 55.56,
+        "needs_verification": true
+      }
+    },
+    {
+      "input": "and",
+      "expected": {
+        "gemini_brand": "and",
+        "ajio_brand": "AND",
+        "match_type": "normalized_exact",
+        "confidence": 1.0,
+        "needs_verification": false
+      }
+    },
+    {
+      "input": "",
+      "expected": {
+        "gemini_brand": "",
+        "ajio_brand": null,
+        "match_type": "unmatched",
+        "confidence": 0.0,
+        "needs_verification": true
+      }
+    }
+  ]
+}

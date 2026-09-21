@@ -1,0 +1,109 @@
+{
+  "_status": "DRAFT - generated during planning, pending user review. Do not treat as approved.",
+  "_how_generated": "Brands from ajio_brand_names_fixed.json grouped by normalize_brand(name) with all spaces removed. Each group is treated as ONE brand when comparing expected vs resolved.",
+  "_normalized_exact_collisions": [
+    [
+      "GINI & JONY",
+      "GINI AND JONY"
+    ],
+    [
+      "Oomph",
+      "OOMPH!"
+    ],
+    [
+      "ZRI",
+      "Zri"
+    ]
+  ],
+  "_normalized_exact_collisions_note": "These also collide under the resolver's own normalization, so resolve_brand always returns ambiguous_exact (needs_verification) for them. Proposed fix: dedupe in the data file, pending user OK.",
+  "groups": [
+    [
+      "Am Swan",
+      "Amswan"
+    ],
+    [
+      "B.Box",
+      "Bbox"
+    ],
+    [
+      "Body Active",
+      "Bodyactive"
+    ],
+    [
+      "Bow n Bee",
+      "BownBee"
+    ],
+    [
+      "BUL BUL",
+      "BULBUL"
+    ],
+    [
+      "Color Plus",
+      "Colorplus"
+    ],
+    [
+      "D'Chica",
+      "Dchica"
+    ],
+    [
+      "DE MOZA",
+      "DeMoza"
+    ],
+    [
+      "Diva Walk",
+      "DIVAWALK"
+    ],
+    [
+      "Feet Well Shoes",
+      "Feetwell Shoes"
+    ],
+    [
+      "FREE HAND",
+      "FREEHAND"
+    ],
+    [
+      "GINI & JONY",
+      "GINI AND JONY"
+    ],
+    [
+      "LEVI'S",
+      "LEVIS"
+    ],
+    [
+      "MINI KLUB",
+      "Miniklub"
+    ],
+    [
+      "MOTHER CARE",
+      "Mothercare"
+    ],
+    [
+      "Oomph",
+      "OOMPH!"
+    ],
+    [
+      "PURE 9",
+      "Pure9"
+    ],
+    [
+      "RED TAPE",
+      "REDTAPE"
+    ],
+    [
+      "TOY KRAFT",
+      "TOYKRAFT"
+    ],
+    [
+      "U.S. Polo Assn.",
+      "US POLO ASSN."
+    ],
+    [
+      "Vannya B",
+      "Vannyab"
+    ],
+    [
+      "ZRI",
+      "Zri"
+    ]
+  ]
+}
