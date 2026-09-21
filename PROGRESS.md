@@ -196,3 +196,158 @@ MATCH/MISMATCH/AMBIGUOUS_DEEPLINK/NO_REFERENCE/ERROR statuses. Ambiguous
 word_boundary matches are caught at the status layer, not the resolver.
 ```
 
+## Phase 5: spot-check (emulator tap-through + PLP extraction)
+
+**Built** (`qa/spotcheck/`): `device.py` (Appium/UiAutomator2 wrapper, `waitForIdleTimeout=0`), `landing.py`
+(landing classification PLP/WEBVIEW/EXTERNAL/HOME/OTHER + `judge` -> CONFIRMED / APP_DEVIATES_FROM_FEED /
+INCONCLUSIVE; deviates only on clear contradictions), `vision.py` (Gemma fallback ported from
+`inputs/image_segmentation_2.py` with the four fixes; degrades to INCONCLUSIVE if unavailable), `runner.py`
+(label-matched banner sampling; `--hero` mode), `hero.py` (hero carousel: pause, image-match each slide to a
+feed banner, tap, capture), `plp.py` (header, filters, every product card, consistency checks).
+Per user direction the hero carousel is the focus; bank-offer strip banners and the vision path were skipped.
+
+**Tested:** 222 unit tests (fixtures are real UI dumps). Live hero run on emulator-5554
+(`runs/20260921T064911Z_hero/`: `hero_results.json`, `products.csv`, screenshots): 6 slides,
+5 CONFIRMED (listings "Min 70 Percent Off", "Min 40 Percent Off", "Upto 60 Percent Off", "Under Rs 599";
+10-12 products each, all consistency checks OK), 0 APP_DEVIATES_FROM_FEED.
+Slide 0 was INCONCLUSIVE: screenshot showed the listing still loading (skeleton placeholders). Fixed by
+re-reading the screen up to 3x (3 s apart) before classifying; tests pass, not re-run live yet.
+
+**[A] defaults:** 5 banners per run and weekly cadence (scheduler applies it in Phase 6); 6 hero slides;
+6 listing screens scrolled (stops after 2 with no new products); image match threshold 0.15, margin 0.02
+(uncalibrated); a HOME landing gets one retry, then counts as a deviation.
+
+**Limits / open:** slug-id `/s/` links can't be verified beyond "a listing opened" (title is the app's own
+name, not derivable from the slug); matching by image is the only way to pair hero slides with feed banners;
+hero slide 1 matched no alt text (feed has none); vision fallback untested live (no verified `GEMINI_API_KEY`);
+Akamai under sustained polling untested; real reference rows still missing. Phase 6 needs the schedule and history.
+
+**Commit message:**
+```
+Add Phase 5 emulator spot-check: hero carousel tap-through and PLP extraction
+
+Tap hero banners on the emulator, classify the landing, extract listing header
+and product data with consistency checks, and judge against the feed's declared
+destination (CONFIRMED / APP_DEVIATES_FROM_FEED / INCONCLUSIVE). Optional Gemma
+vision fallback for ambiguous links.
+```
+
+### Phase 5 addendum: banner-vs-listing verification (brand filter + deal title)
+
+**Why:** the user defined the real check: every brand on the banner must be an option in the listing's
+Brands filter, and the listing title must match the banner's deal. Also removes the dependence on the
+uncalibrated image-to-feed-banner match (slide 3 of the first run was matched to a look-alike banner).
+
+**Built:** `qa/spotcheck/filters.py` (opens Filters > Brands, types each banner brand into the filter's search
+box, reads `general_facet_value_row_tv` rows "NAME (count)"; brand comparison is case/punctuation/alias tolerant;
+`deal_matches_title` compares key words: min/upto/under + amounts, "%"~"percent", "Rs"~"rupee sign").
+`Device.type_into`. `hero.py` now reads the banner image with Gemma (brands_mentioned, deal_offered), then runs
+the check after capturing the listing; result stored as `banner_check` (PASS / FAIL / INCONCLUSIVE) in
+`hero_results.json` and shown in the summary. Tests: `tests/test_spotcheck_filters.py` (real filter dump fixture
+`tests/fixtures/ui_brand_filter.xml`); hero tests inject a fake analyzer so they never call the API.
+
+**Live run** (`runs/20260921T071155Z_hero/`): 6 slides, all 6 links CONFIRMED; banner check 4 PASS
+(Under Rs 599, Min 40, Under Rs 899, Min 70 slides), 2 FAIL needing a human look:
+slide 1 ("The Clearance Loot, Flat 70% off" opens "Clearance Store": no brands on banner, title has no %),
+slide 2 (banner brand "Nyrika Acai" not found in the Brands filter; "Acai" may be a collection name).
+Gemma (`gemma-4-31b-it`) works live with the key from the environment; Google returned transient 500s that
+the client retried.
+
+**[A] / limits:** filter search is by the model's reading of the banner (may misread logos); a brand-less banner
+can only be checked on the deal/title; titles that are store names (Clearance Store) fail the title rule;
+runtime is ~1.5 min per slide.
+
+**Commit message:**
+```
+Verify hero banners against the listing's Brands filter and deal title
+
+Read each hero banner with Gemma, then require its brands to appear in the
+listing's Brands filter (searched in-app) and its deal to match the listing
+title. Adds banner_check to the hero results.
+```
+
+### Phase 5 addendum 2: listing pages straight from the server (no emulator)
+
+**Finding:** opening `/s/<slug>` in the app makes one call to
+`GET https://search-edge.services.ajio.com/rilfnlwebservices/v6/rilfnl/products/category/83?curatedid=<slug>&curated=true&advfilter=true&store=rilfnl&fields=FULL&pageSize=25&currentPage=0&platform=android&displayRatings=true&pincode=560029&latitude=..&longitude=..`.
+It sends app-identity headers only (client_type, client_version, os, x-tenant-id, ai, vr, device-id, requestid,
+user-agent) and **no Authorization**. Response keys: `metaElementData` (pageTitle), `pagination.totalResults`,
+`facets` (Gender, Category, Delivery, Price, Brands, Occasion, Discount Ranges, Colors, Size & Fit, ...; each
+value has name + count), `products`, `sorts`, `quickFilters`.
+
+**Built:** `qa/listing_client.py` (`fetch_listing`, `parse_listing`; retries on 429/5xx; run log with redaction;
+CLI `python -m qa.listing_client <slug>`), `tests/test_listing_client.py` (3 tests, no network).
+
+**Validated:** one plain-`requests` GET works with no emulator and no token. Cross-check on the 6 hero slides:
+server title and brand verdicts equal the in-app results on all 5 curated slugs (incl. "Nyrika Acai" absent from
+Brands). Slide 1's slug (`clearance-store-<id>`, not a `curated` link) returns 404 on this endpoint, so that link
+type uses a different request (not yet captured).
+
+**Caveats:** Brand facet size varies (3 to 143 values per listing) so the facet may be truncated for huge result
+sets; the in-app search box agreed on every case tested, but re-check before trusting a FAIL. Totals move with
+live stock. Raw capture kept only in the local scratchpad (never committed). Akamai under sustained polling untested.
+
+**Emulator state:** the capture setup (tmpfs CA overlay, proxy 10.0.2.2:18080) was redone; the emulator process
+then exited. Clear the proxy after restarting it (`adb shell settings put global http_proxy :0`) or the app
+won't load.
+
+**Commit message:**
+```
+Add standalone listing client: read PLP title and brand facet from search-edge
+
+One unauthenticated GET per listing returns title, totals, facets and products,
+matching the in-app results on all curated hero slugs. Enables the brand-filter
+and deal-title checks without the emulator.
+```
+
+### Phase 5 addendum 3: category-link listings, and hero checks run from the server by default
+
+**Category (`/c/<slug>`) links added to the listing client.** These use a different search-edge path
+(`.../products/category/<slug>` with the slug in the path, not `curatedid=`) and carry their title in
+`freeTextSearch` instead of `metaElementData.pageTitle`. `qa/listing_client.py` now has `listing_target()`
+(classifies a feed's `destination_raw` as `curated` "/s/" or `category` "/c/", or `None` for anything else)
+and builds the right request for each. Verified live against the "Clearance Store" banner that 404'd earlier
+(28,136 products, 1,215 brands in its filter).
+
+**Hero checks now read the listing from the server by default (`server_mode=True`), not by scrolling and
+searching in the app.** The emulator's job is reduced to: find the hero slide, screenshot it, tap it, confirm
+a listing opened. Everything else — title, Brands filter, and product data (2 server pages, 50 products) —
+comes from `qa/listing_client.py`. Falls back to the old in-app scroll+search path automatically if the server
+call fails, or if run with `--app-filters`. New output file `server_products.csv`. Cross-checks the app's own
+displayed title against the server's title (`app_title_matches_server`) so a divergence between the two would
+itself be caught.
+
+**Bugs found and fixed from the first live server-mode run, all covered by new unit tests:**
+1. Vision model over-read background/prop brands (book spines reading "Chanel"/"Dior" in a bag-banner photo) as
+   promoted brands. Added `vision.HERO_EXTRA`, an additional instruction (appended after the ported prompt,
+   which stays verbatim) telling it to report only brands the banner is promoting, not incidental objects.
+2. Banners abbreviate brand names the filter lists in full ("kiana" vs "Kiana House Of Fashion", "MYRIE INDIA"
+   vs "MYRIE"). `filters.match_brand()` now accepts a whole-word subset match ("partial") in addition to exact,
+   and reports which kind matched so a human can still sanity-check partials.
+3. "UP TO 60% OFF" vs "Upto 60 Percent Off" was wrongly read as a mismatched deal — `deal_tokens()` now folds
+   "up to" and "upto" to the same token.
+4. A transient Gemini 500/timeout failed the whole slide. `hero._analyze()` retries the vision call up to 3
+   times before giving up.
+
+**Re-verified live after the fixes:** a fresh set of 6 hero slides, all 6 PASS — every banner-promoted brand
+matched a real Brands-filter option (all exact this time), every title matched, every listing's own price/
+discount checks passed, app title equalled server title on all 6.
+
+**[A] additions:** `SERVER_PAGES = 2` listing pages (50 products) read per slide.
+
+**Caveats:** server_mode was only exercised on `/s/` curated links so far, not yet on a `/c/` category link
+end-to-end through `run_hero` (only tested standalone via `listing_client`). Brand-filter completeness on very
+large listings (1000+ brands) still unverified against the app's own search. Akamai under sustained polling
+still untested.
+
+**Commit message:**
+```
+Run hero brand/title checks from the server; support /c/ category links
+
+Reading the listing (title, Brands filter, products) from search-edge instead
+of scrolling and searching in the app cuts each slide from ~1.5min to seconds
+and returns the full product set. Falls back to the in-app method on failure.
+Also fixes three checker bugs found in the first live run: vision over-reading
+prop brands, abbreviated brand names not matching the filter's full name, and
+"up to" vs "upto" being read as different deals.
+```
