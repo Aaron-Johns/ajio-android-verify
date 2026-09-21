@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Reverse-engineering inputs: large, and not ours to redistribute
+inputs/apk-source/
+inputs/modified-apk/
+
+# Run output, logs, traffic captures
+runs/
+*.log
+analysis/traffic_capture/*.raw
+
+# Exported banner data (generated from a run; regenerate with qa/export_banners.py)
+data/
+
+# Secrets
+.env
+
+# Personal Claude Code settings
+.claude/settings.local.json
