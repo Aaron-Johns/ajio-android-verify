@@ -3,6 +3,16 @@
 Source: `inputs/apk-source/` (apktool/jadx decompile of `com.ril.ajio`), cross-checked against `inputs/modified-apk/ajio_media3_fix.apk`.
 All paths below are relative to `inputs/apk-source/` unless stated otherwise.
 
+---
+
+## ⚠️ Phase 2 correction (2026-09-21) — read this first
+
+A live traffic capture on the `ajio_nps` emulator (see §6 below and `analysis/traffic_capture/`) **contradicts Phase 1's conclusion about which endpoint and data model actually drive the home screen.** Static analysis found a legacy/parallel AJIO-native CMS path (`home_cms` = `storefront/cms/page`, Kotlin `Banner`/`CtaSettings` models) — that code exists in the APK, but **it is not what's on the wire for the current production home screen.** The live app instead calls a **Fynd Platform "theme" API** with a completely different URL shape, auth scheme, and response structure. §6 below is authoritative for Phase 3/4; §1–§2's static findings are kept for reference (the legacy code may still be reachable via some other flow, e.g. an A/B test or fallback) but should not be used as-is for the API client.
+
+Also corrected: Phase 1 said "no HMAC/signing scheme found" — **that was wrong.** There is a signing scheme (`x-fp-signature`/`x-fp-date`), it's just not implemented in the Kotlin/smali code Phase 1 searched — it's in the bundled React Native JavaScript (`assets/index.android.bundle`), which Phase 1 didn't search. See §6.4.
+
+---
+
 ## 1. Home-feed / CMS-widget API endpoint
 
 ### 1.1 Endpoint URL and config source
@@ -358,15 +368,6 @@ No `apktool`, `baksmali`, or `aapt2` was available in this environment to fully 
 
 ---
 
----
-
-## ⚠️ Phase 2 correction (2026-09-21) — read this first
-
-A live traffic capture on the `ajio_nps` emulator (see §6 below and `analysis/traffic_capture/`) **contradicts Phase 1's conclusion about which endpoint and data model actually drive the home screen.** Static analysis found a legacy/parallel AJIO-native CMS path (`home_cms` = `storefront/cms/page`, Kotlin `Banner`/`CtaSettings` models) — that code exists in the APK, but **it is not what's on the wire for the current production home screen.** The live app instead calls a **Fynd Platform "theme" API** with a completely different URL shape, auth scheme, and response structure. §6 below is authoritative for Phase 3/4; §1–§2's static findings are kept for reference (the legacy code may still be reachable via some other flow, e.g. an A/B test or fallback) but should not be used as-is for the API client.
-
-Also corrected: Phase 1 said "no HMAC/signing scheme found" — **that was wrong.** There is a signing scheme (`x-fp-signature`/`x-fp-date`), it's just not implemented in the Kotlin/smali code Phase 1 searched — it's in the bundled React Native JavaScript (`assets/index.android.bundle`), which Phase 1 didn't search. See §6.4.
-
----
 ## 6. Phase 2 live capture — actual findings (supersedes §1–§2 for API-client purposes)
 
 ### 6.0 Setup notes (environment-specific, may matter for reproducing this)
@@ -533,3 +534,24 @@ raw-html                     1
 - `analysis/traffic_capture/guest_token_and_home_theme_requests.txt` — full redacted request/response headers+bodies for the guest-token call and the home/menswear/kidswear/womenswear theme calls (secrets replaced with `<REDACTED>`: `access_token`, `authorization`, `cookie`, `set-cookie`).
 - `analysis/traffic_capture/home_theme_response_sample.json` — structural sample of the home theme response: one example section per type (13 types) plus every destination URL found in the full 93-section response, with section type/label context. The full unredacted capture (`home_feed.flow`, 12MB, includes third-party SDK tokens for Facebook/Amplitude/Sentry/AppsFlyer/Akamai in the clear) was **not** committed to the repo — kept only in the local scratchpad for this session, per CLAUDE.md's "headers redacted of anything secret" requirement.
 
+### 6.8 Correction (Phase 3, 2026-09-21): the theme endpoint does NOT use the guest JWT
+
+§6.3 was half right. The guest OAuth call (`POST /uaas/jwt/token/client`) happens and returns a valid 550-char RS256 JWT, but **the theme endpoint's `authorization` header is a different, much shorter token**. Sending the guest JWT to the theme endpoint returns `401 {"error":"Invalid authorization token"}` (tested live).
+
+Structure of the real theme bearer (values deliberately not recorded here): `base64("<24 hex chars>:<9 chars>")`, 48 chars encoded, single segment, not a JWT. It is identical across all four theme calls in the capture and also appears as the `authorization` header on `/api/service/application/content/v2.0/navigations`. Its 24-hex part appears in the plaintext body of `GET /ext/headless/api/external/v1/config/list` (called at startup), but the 9-char part appears in no AJIO response, so it is baked into the app. This matches Fynd Platform's storefront convention (`applicationId:applicationToken`, a static public-read credential), not a per-session token.
+
+**Live result:** with this bearer plus a fresh `x-fp-date`/`x-fp-signature` from `qa/fp_signer.py`, a plain Python `requests` call returned 200 with the full 93-section home feed. No emulator, no Frida, no guest JWT, and no `x-acf-sensor-data` were needed, so Akamai Bot Manager did not block a standalone script for this endpoint (one call; sustained polling is untested).
+
+**Consequences:**
+- No `session_bootstrap` is needed for the feed. CLAUDE.md section 6's conditional bootstrap is skipped: the endpoint works with a static credential.
+- The bearer is a secret and lives in `.env` as `AJIO_THEME_BEARER`. Nothing in the repo records its value.
+- **Where it lives in the app (found after the first write-up of this section):** `inputs/apk-source/smali_classes5/Hs0.smali` (`.source "ConfigValues.kt"`, method `T()`) holds a `fynd_sdk_initialization_keys` JSON string with `dev`, `uat`, `prod` and `replica` entries, each `{"application_Token": ..., "application_ID": ...}`. The `prod` entry is exactly the two halves of the captured bearer, so **`AJIO_THEME_BEARER = base64("<prod application_ID>:<prod application_Token>")`** and it can be re-derived from the decompiled source without a live capture (it is not in `assets/index.android.bundle`). The same class also has the Rush landing page slug (`rn-rush-landingpage`) and navigation slugs, useful leads for other feed surfaces. Values are deliberately not recorded here.
+- The credential has no visible expiry. If it starts returning 401 after an app update, re-derive it from the new `ConfigValues` smali (or re-capture per section 6.0) instead of assuming a rotation schedule.
+
+**Feed content is personalized.** The response's `x-sc-cache-key` includes city, platform, `user-groups` and the experiment list (`CMSABExp2/4/10`). `feed_client.py` pins these to the captured values (Bengaluru 560029, `l1:nontransacted|l2:p_null,false,unisex,noasp`, guest) via env-overridable defaults. Different values return different banners, so the reference data must say which context it was authored for.
+
+### 6.9 Banner record model used by `qa/feed_client.py`
+
+One record per flat banner section (`hybrid-banner`, `floating-widget`) and one per block for carousel sections (`hybrid-dynamic-banner`, `hybrid-swipe-gallery`). `banner_id` is the section `_id` (flat) or `<section _id>:<block index>` (blocks). The block `__renderKey` is **not** unique within a section (observed repeats), so it cannot be used. Block index is unique but shifts if the CMS reorders blocks. Destination is the first non-empty of `redirectURL`, `redirectImageURL`, `cta_redirect_url` (a block can carry both `redirectURL` and `redirectImageURL`, with one empty). Also captured per record: `hotspot_urls`, `schedule` (cron windows from `predicate`) and `user_type`.
+
+Live home feed on 2026-09-21: 93 sections parsed into 373 records (1 floating-widget, 31 hybrid-banner, 118 hybrid-dynamic-banner, 222 hybrid-swipe-gallery, 1 osmos). 65 have an empty destination (47 of them under the labels "DP mz new" and "top mz new UHP", which look like zone/ad-driven slots), 51 have no image, 79 carry a schedule window, 1 destination is `http://` and 1 is relative.
