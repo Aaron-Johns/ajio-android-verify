@@ -1,0 +1,929 @@
+====================================================================================================
+POST https://api.services.ajio.com/uaas/jwt/token/client
+--- request headers ---
+client_type: Android
+accept: application/json
+client_version: 9.38.1
+user-agent: Ajio/9.38000.0 (Android 16)
+ad_id: 9f1e598e-2b59-41c2-b30e-15f90b485d3c
+device-id: c9401012-46ee-4997-9b15-6a6bebeb0da0R
+x-tenant: B2C
+x-acf-sensor-data: 6,a,UjNNotFVCWAKfNmb+NdOpehQ6T9lNFmntbEKyn+m9JR5BoYlfBAN8yUExREnZK1VIds52KU2ibmoAgAWhK9La10cGnAiQtFqSi3sfAIUJIMshoaHVk4DdMWZNVjF9jtQcpntaObgrqpt87woBuY6mBEIwcB4RmSJguoXnOY6LKI=,CUYD2I0TnSsVF57fbU9OvAtoqNxW1dISjWNDQs5v8LrHiX54M0j1nnL4xd6pYOq7Q7h/sanPiVjCsutL4Al+QORaBygDIhb2q5Hx3XFVTach7+zLI5eGKVzKhLhu0Csoem7/ekIhwveJ48if3K8g5fRwiN9wdzDeZelZzw2dPdA=$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$854,148,94$$$$1789718422860|13113032|&&&7766b4e838f4c113&&&03A04A48DB3960792F35E9F5FD034019AAA5B0569E93A10B08B6F40ED5E5A2AC~AAQAAAAG%2f%2f%2f%2f%2f0oXQrynAN7HRCl9M9dZ3mTFOW%2f2+Oau5GE1YZfIuDizkGCu79VDLjv7DRbtJdfhdLJwfi120PwdojIG9JEbmU9eFOpnDfAP8wrsUX7Tg5naEVpj4AZX5zmyM%2fc+re%2fx97CPWRpbcnJqfJEXdu3IrXon1UHLX+VpsiBmXBFYgIRWpKuP4pPMf6M%2fDGktKbPZ1BpYpY9CtykTNVAbwWg1a8B6A2ayWL4BStQ12haPQhdukCnATiaBNX4M7nu9Tp00mTlYGEias4MDuI3IxE1JygYscYT+lDjl+6qqXQ%2fQU0PJEAicnfOpOshJHOzY+VPQV4fOZnec%2fWykQXuCC2V9eGS6%2fE3t7%2flztY30ZkZY9%2fxI4SM4yWAf3xHsv155O0lCIlpJhToDajt0HngphikB8bPLVgCNqWES87I%3d&&&4.2.0
+content-type: application/x-www-form-urlencoded
+content-length: 74
+accept-encoding: gzip
+--- request body ---
+grantType=client_credentials&clientName=trusted_client&clientSecret=secret
+--- response 200 headers ---
+content-type: application/json
+x-correlation-id: e5d38cf6-4349-4f9e-848d-c7257dc9b7ba
+x-span-id: 639db25c-b39d-4db3-bbc6-8fff0e15e872
+x-content-type-options: nosniff
+x-xss-protection: 0
+x-frame-options: DENY
+content-encoding: gzip
+content-length: 547
+expires: Mon, 21 Sep 2026 04:14:13 GMT
+cache-control: max-age=0, no-cache, no-store
+pragma: no-cache
+date: Mon, 21 Sep 2026 04:14:13 GMT
+vary: Accept-Encoding
+set-cookie: <REDACTED>
+alt-svc: h3=":443"; ma=93600
+akamai-request-bc: [a=23.193.56.102,b=149193255,c=g,n=IN_KA_BANGALORE,o=55836]
+akamai-grn: 0.6638c117.1789964053.8e48227
+--- response body (redacted, truncated) ---
+{
+  "access_token": "<REDACTED>",
+  "token_type": "bearer",
+  "expires_in": 1545719,
+  "scope": "extended",
+  "redirectToOTP": false
+}
+
+====================================================================================================
+GET https://api.services.ajio.com/api/service/application/theme/v1.0/6924384620d2931b59eb94ec/home?company=1
+--- request headers ---
+accept: application/json, text/plain, */*
+authorization: <REDACTED>
+x-currency-code: INR
+user-agent: Platform/Android
+x-location-detail: {"country":"INDIA","city":"BENGALURU","pincode":"560029","state":"KARNATAKA"}
+user-groups: l1:nontransacted|l2:p_null,false,unisex,noasp
+user_groups: l1:nontransacted|l2:p_null,false,unisex,noasp
+x-experimental-features: CMSABExp2,CMSABExp10,CMSABExp4
+x-fp-sdk-version: 1.10.6-9
+x-fp-date: 20260921T041433Z
+x-fp-signature: v1.1:038129638b22db0f6b87c0e9d99e3065177f21efad262cd90450efd579954ceb
+device-id: c9401012-46ee-4997-9b15-6a6bebeb0da0R
+accept-encoding: gzip
+cookie: <REDACTED>
+--- response 200 headers ---
+content-type: application/json; charset=utf-8
+strict-transport-security: max-age=63072000; includeSubdomains
+x-content-type-options: nosniff
+referrer-policy: origin
+x-seller-details: {"country_code":"IN","currency":{"code":"INR","name":"Indian Rupee","symbol":"\u20b9"},"timezone":"Asia\/Kolkata"}
+strict-transport-security: max-age=63072000; includeSubdomains
+x-content-type-options: nosniff
+referrer-policy: origin
+x-seller-details: {"country_code":"IN","currency":{"code":"INR","name":"Indian Rupee","symbol":"\u20b9"},"timezone":"Asia\/Kolkata"}
+cross-origin-embedder-policy: credentialless
+referrer-policy: no-referrer
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-xss-protection: 1; mode=block
+x-fynd-trace-id: 0cb74f3e2963def423bc1a2e1e886acc
+x-sc-cache-status: EXPIRED
+x-sc-cache-key: store1.ajiojcp.com|/service/application/theme/v1.0/6924384620d2931b59eb94ec/home?company=1|india-karnataka-bengaluru|0|android|l1:nontransacted_l2:false,noasp,p_null,unisex||CMSABExp10,CMSABExp2,CMSABExp4|
+content-encoding: gzip
+x-fynd-trace-id: 00e97cfd5066c5867bf99d3c082d23ce
+expires: Mon, 21 Sep 2026 04:14:39 GMT
+cache-control: max-age=0, no-cache, no-store
+pragma: no-cache
+date: Mon, 21 Sep 2026 04:14:39 GMT
+content-length: 46120
+vary: Accept-Encoding
+alt-svc: h3=":443"; ma=93600
+akamai-request-bc: [a=23.193.56.94,b=182916313,c=g,n=IN_KA_BANGALORE,o=55836]
+akamai-grn: 0.5e38c117.1789964079.ae714d9
+--- response body (redacted, truncated) ---
+{
+  "_id": "6a6b307c7da16446fbd01c66",
+  "_matched_mapping": {
+    "_id": "6a6b3d1cd2e75493f26addbf",
+    "created_at": "2026-07-30T12:01:32.186Z",
+    "fallback": null,
+    "feature_store": null,
+    "predicate": {
+      "platform": {
+        "android": true,
+        "ios": true,
+        "web": false
+      },
+      "schedule": {
+        "end": "2027-07-30T12:10:00.000Z",
+        "start": "2026-07-30T12:10:00.000Z"
+      },
+      "user": {
+        "user_groups": {
+          "l1": {
+            "excludes": [],
+            "includes": [
+              "SUPERVALUESEC",
+              "nontransacted",
+              "supervaluesec",
+              "classic",
+              "supervalue",
+              "economy",
+              "nonpremium",
+              "midpremium_control"
+            ]
+          },
+          "l2": {
+            "excludes": [],
+            "includes": []
+          }
+        },
+        "user_type": "user_group"
+      }
+    },
+    "slug": "home",
+    "updated_at": "2026-08-17T07:20:00.220Z",
+    "updated_by": "2ed498c0723dd33fa8deb39d"
+  },
+  "comment": "",
+  "content_changes": {
+    "updated_at": "2026-09-21T03:27:11.618Z",
+    "updated_by": "b66a8a2aaea9f620a8b3c022"
+  },
+  "created_at": "2026-07-30T11:07:40.231Z",
+  "errors": [],
+  "fallback": null,
+  "feature_store": {
+    "created_from": "",
+    "mapped_to": ""
+  },
+  "mapper_changes": {
+    "updated_at": "2026-07-30T11:06:14.889Z",
+    "updated_by": null
+  },
+  "page_mapper": true,
+  "page_mappings": [
+    {
+      "_id": "6a6b3c4bb8aef1c3f82345ea",
+      "created_at": "2026-07-30T11:58:03.058Z",
+      "fallback": null,
+      "feature_store": null,
+      "predicate": {
+        "platform": {
+          "android": true,
+          "ios": true,
+          "web": false
+        },
+        "schedule": {
+          "end": "2027-07-30T12:10:00.000Z",
+          "start": "2026-07-30T12:10:00.000Z"
+        },
+        "user": {
+          "user_groups": {
+            "l1": {
+              "excludes": [],
+              "includes": []
+            },
+            "l2": {
+              "excludes": [],
+              "includes": []
+            }
+          },
+          "user_type": "all_user"
+        }
+      },
+      "slug": "sections/sale",
+      "updated_at": "2026-07-30T11:58:03.054Z",
+      "updated_by": "03df464dfac5de24595ab7b4"
+    },
+    {
+      "_id": "6a6b3c8cd2e75493f26ad735",
+      "created_at": "2026-07-30T11:59:08.446Z",
+      "fallback": null,
+      "feature_store": null,
+      "predicate": {
+        "platform": {
+          "android": true,
+          "ios": true,
+          "web": false
+        },
+        "schedule": {
+          "end": "2027-07-30T12:10:00.000Z",
+          "start": "2026-07-30T12:10:00.000Z"
+        },
+        "user": {
+          "user_groups": {
+            "l1": {
+              "excludes": [],
+              "includes": [
+                "SUPERVALUESEC",
+                "nontransacted",
+                "supervaluesec",
+                "classic",
+                "supervalue",
+   
+
+====================================================================================================
+GET https://api.services.ajio.com/api/service/application/theme/v1.0/6924384620d2931b59eb94ec/home?company=1
+--- request headers ---
+accept: application/json, text/plain, */*
+authorization: <REDACTED>
+x-currency-code: INR
+user-agent: Platform/Android
+x-location-detail: {"country":"INDIA","city":"BENGALURU","pincode":"560029","state":"KARNATAKA"}
+user-groups: l1:nontransacted|l2:p_null,false,unisex,noasp
+user_groups: l1:nontransacted|l2:p_null,false,unisex,noasp
+x-experimental-features: CMSABExp2,CMSABExp10,CMSABExp4
+cache-control: no-cache
+x-skip-cache: true
+x-fp-sdk-version: 1.10.6-9
+x-fp-date: 20260921T041433Z
+x-fp-signature: v1.1:038129638b22db0f6b87c0e9d99e3065177f21efad262cd90450efd579954ceb
+device-id: c9401012-46ee-4997-9b15-6a6bebeb0da0R
+accept-encoding: gzip
+cookie: <REDACTED>
+--- response 200 headers ---
+content-type: application/json; charset=utf-8
+strict-transport-security: max-age=63072000; includeSubdomains
+x-content-type-options: nosniff
+referrer-policy: origin
+x-seller-details: {"country_code":"IN","currency":{"code":"INR","name":"Indian Rupee","symbol":"\u20b9"},"timezone":"Asia\/Kolkata"}
+strict-transport-security: max-age=63072000; includeSubdomains
+x-content-type-options: nosniff
+referrer-policy: origin
+x-seller-details: {"country_code":"IN","currency":{"code":"INR","name":"Indian Rupee","symbol":"\u20b9"},"timezone":"Asia\/Kolkata"}
+cross-origin-embedder-policy: credentialless
+referrer-policy: no-referrer
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-xss-protection: 1; mode=block
+x-fynd-trace-id: 849ba38bc02971b61c7bf5bfa9255a2a
+x-sc-cache-status: MISS
+x-sc-cache-key: store1.ajiojcp.com|/service/application/theme/v1.0/6924384620d2931b59eb94ec/home?company=1|india-karnataka-bengaluru|0|android|l1:nontransacted_l2:false,noasp,p_null,unisex||CMSABExp10,CMSABExp2,CMSABExp4|
+content-encoding: gzip
+x-fynd-trace-id: 4e0167e8b597adae07403a9d48c20d60
+expires: Mon, 21 Sep 2026 04:14:40 GMT
+cache-control: max-age=0, no-cache, no-store
+pragma: no-cache
+date: Mon, 21 Sep 2026 04:14:40 GMT
+vary: Accept-Encoding
+alt-svc: h3=":443"; ma=93600
+akamai-request-bc: [a=23.193.56.94,b=182916333,c=g,n=IN_KA_BANGALORE,o=55836]
+akamai-grn: 0.5e38c117.1789964079.ae714ed
+--- response body (redacted, truncated) ---
+{
+  "_id": "6a6b307c7da16446fbd01c66",
+  "_matched_mapping": {
+    "_id": "6a6b3d1cd2e75493f26addbf",
+    "created_at": "2026-07-30T12:01:32.186Z",
+    "fallback": null,
+    "feature_store": null,
+    "predicate": {
+      "platform": {
+        "android": true,
+        "ios": true,
+        "web": false
+      },
+      "schedule": {
+        "end": "2027-07-30T12:10:00.000Z",
+        "start": "2026-07-30T12:10:00.000Z"
+      },
+      "user": {
+        "user_groups": {
+          "l1": {
+            "excludes": [],
+            "includes": [
+              "SUPERVALUESEC",
+              "nontransacted",
+              "supervaluesec",
+              "classic",
+              "supervalue",
+              "economy",
+              "nonpremium",
+              "midpremium_control"
+            ]
+          },
+          "l2": {
+            "excludes": [],
+            "includes": []
+          }
+        },
+        "user_type": "user_group"
+      }
+    },
+    "slug": "home",
+    "updated_at": "2026-08-17T07:20:00.220Z",
+    "updated_by": "2ed498c0723dd33fa8deb39d"
+  },
+  "comment": "",
+  "content_changes": {
+    "updated_at": "2026-09-21T03:27:11.618Z",
+    "updated_by": "b66a8a2aaea9f620a8b3c022"
+  },
+  "created_at": "2026-07-30T11:07:40.231Z",
+  "errors": [],
+  "fallback": null,
+  "feature_store": {
+    "created_from": "",
+    "mapped_to": ""
+  },
+  "mapper_changes": {
+    "updated_at": "2026-07-30T11:06:14.889Z",
+    "updated_by": null
+  },
+  "page_mapper": true,
+  "page_mappings": [
+    {
+      "_id": "6a6b3c4bb8aef1c3f82345ea",
+      "created_at": "2026-07-30T11:58:03.058Z",
+      "fallback": null,
+      "feature_store": null,
+      "predicate": {
+        "platform": {
+          "android": true,
+          "ios": true,
+          "web": false
+        },
+        "schedule": {
+          "end": "2027-07-30T12:10:00.000Z",
+          "start": "2026-07-30T12:10:00.000Z"
+        },
+        "user": {
+          "user_groups": {
+            "l1": {
+              "excludes": [],
+              "includes": []
+            },
+            "l2": {
+              "excludes": [],
+              "includes": []
+            }
+          },
+          "user_type": "all_user"
+        }
+      },
+      "slug": "sections/sale",
+      "updated_at": "2026-07-30T11:58:03.054Z",
+      "updated_by": "03df464dfac5de24595ab7b4"
+    },
+    {
+      "_id": "6a6b3c8cd2e75493f26ad735",
+      "created_at": "2026-07-30T11:59:08.446Z",
+      "fallback": null,
+      "feature_store": null,
+      "predicate": {
+        "platform": {
+          "android": true,
+          "ios": true,
+          "web": false
+        },
+        "schedule": {
+          "end": "2027-07-30T12:10:00.000Z",
+          "start": "2026-07-30T12:10:00.000Z"
+        },
+        "user": {
+          "user_groups": {
+            "l1": {
+              "excludes": [],
+              "includes": [
+                "SUPERVALUESEC",
+                "nontransacted",
+                "supervaluesec",
+                "classic",
+                "supervalue",
+   
+
+====================================================================================================
+GET https://api.services.ajio.com/api/service/application/theme/v1.0/6924384620d2931b59eb94ec/menswear?company=1
+--- request headers ---
+accept: application/json, text/plain, */*
+authorization: <REDACTED>
+x-currency-code: INR
+user-agent: Platform/Android
+x-location-detail: {"country":"INDIA","city":"BENGALURU","pincode":"560029","state":"KARNATAKA"}
+user-groups: l1:nontransacted|l2:p_null,false,unisex,noasp
+user_groups: l1:nontransacted|l2:p_null,false,unisex,noasp
+x-experimental-features: CMSABExp2,CMSABExp10,CMSABExp4
+x-fp-sdk-version: 1.10.6-9
+x-fp-date: 20260921T041448Z
+x-fp-signature: v1.1:a8d5826c8fa48eafdb3d6082f2f1a96daf3d6269500ab9c1bedfe58d61569daf
+device-id: c9401012-46ee-4997-9b15-6a6bebeb0da0R
+accept-encoding: gzip
+cookie: <REDACTED>
+--- response 200 headers ---
+content-type: application/json; charset=utf-8
+strict-transport-security: max-age=63072000; includeSubdomains
+x-content-type-options: nosniff
+referrer-policy: origin
+x-seller-details: {"country_code":"IN","currency":{"code":"INR","name":"Indian Rupee","symbol":"\u20b9"},"timezone":"Asia\/Kolkata"}
+strict-transport-security: max-age=63072000; includeSubdomains
+x-content-type-options: nosniff
+referrer-policy: origin
+x-seller-details: {"country_code":"IN","currency":{"code":"INR","name":"Indian Rupee","symbol":"\u20b9"},"timezone":"Asia\/Kolkata"}
+cross-origin-embedder-policy: credentialless
+referrer-policy: no-referrer
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-xss-protection: 1; mode=block
+x-fynd-trace-id: aaec018ef469872c4349750deddd4934
+x-sc-cache-status: MISS
+x-sc-cache-key: store1.ajiojcp.com|/service/application/theme/v1.0/6924384620d2931b59eb94ec/menswear?company=1|india-karnataka-bengaluru|0|android|l1:nontransacted_l2:false,noasp,p_null,unisex||CMSABExp10,CMSABExp2,CMSABExp4|
+content-encoding: gzip
+x-fynd-trace-id: 252971600ecc4cb5cf7ccb67abb5683c
+content-length: 22093
+expires: Mon, 21 Sep 2026 04:14:54 GMT
+cache-control: max-age=0, no-cache, no-store
+pragma: no-cache
+date: Mon, 21 Sep 2026 04:14:54 GMT
+vary: Accept-Encoding
+alt-svc: h3=":443"; ma=93600
+akamai-request-bc: [a=23.193.56.94,b=182919640,c=g,n=IN_KA_BANGALORE,o=55836]
+akamai-grn: 0.5e38c117.1789964094.ae721d8
+--- response body (redacted, truncated) ---
+{
+  "_id": "6a6b1ab07da16446fbd00b6d",
+  "_matched_mapping": {
+    "_id": "6a6b8be3bffe499a993232bd",
+    "created_at": "2026-07-30T17:37:39.353Z",
+    "fallback": null,
+    "feature_store": null,
+    "predicate": {
+      "platform": {
+        "android": true,
+        "ios": true,
+        "web": false
+      },
+      "schedule": {
+        "end": "2027-07-30T17:40:00.000Z",
+        "start": "2026-07-30T17:40:00.000Z"
+      },
+      "user": {
+        "user_groups": {
+          "l1": {
+            "excludes": [],
+            "includes": []
+          },
+          "l2": {
+            "excludes": [],
+            "includes": []
+          }
+        },
+        "user_type": "all_user"
+      }
+    },
+    "slug": "sections/menswear",
+    "updated_at": "2026-07-30T17:37:39.306Z",
+    "updated_by": "b66a8a2aaea9f620a8b3c022"
+  },
+  "comment": "",
+  "content_changes": {
+    "updated_at": "2026-09-20T15:22:03.316Z",
+    "updated_by": "58af7330c388c353f8234688"
+  },
+  "created_at": "2026-07-30T09:34:41.073Z",
+  "errors": [],
+  "fallback": null,
+  "feature_store": {
+    "created_from": "",
+    "mapped_to": ""
+  },
+  "mapper_changes": {
+    "updated_at": "2026-07-30T07:39:30.269Z",
+    "updated_by": null
+  },
+  "page_mapper": true,
+  "page_mappings": [
+    {
+      "_id": "6a6b8be3bffe499a993232bd",
+      "created_at": "2026-07-30T17:37:39.353Z",
+      "fallback": null,
+      "feature_store": null,
+      "predicate": {
+        "platform": {
+          "android": true,
+          "ios": true,
+          "web": false
+        },
+        "schedule": {
+          "end": "2027-07-30T17:40:00.000Z",
+          "start": "2026-07-30T17:40:00.000Z"
+        },
+        "user": {
+          "user_groups": {
+            "l1": {
+              "excludes": [],
+              "includes": []
+            },
+            "l2": {
+              "excludes": [],
+              "includes": []
+            }
+          },
+          "user_type": "all_user"
+        }
+      },
+      "slug": "sections/menswear",
+      "updated_at": "2026-07-30T17:37:39.306Z",
+      "updated_by": "b66a8a2aaea9f620a8b3c022"
+    }
+  ],
+  "path": "sections/menswear-fashionation",
+  "predicate": {
+    "platform": {
+      "android": true,
+      "ios": true,
+      "web": false
+    },
+    "schedule": {
+      "end": "2027-07-30T17:40:00.000Z",
+      "start": "2026-07-30T17:40:00.000Z"
+    },
+    "user": {
+      "user_groups": {
+        "l1": {
+          "excludes": [],
+          "includes": []
+        },
+        "l2": {
+          "excludes": [],
+          "includes": []
+        }
+      },
+      "user_type": "all_user"
+    }
+  },
+  "predicate_hash": "164a6baee7f0f38fcd102bc65926310066e511891319743ea735eb97fa79231c",
+  "props": [
+    {
+      "default": true,
+      "id": "header",
+      "label": "Header",
+      "type": "checkbox"
+    },
+    {
+      "default": true,
+      "id": "footer",
+      "label": "Footer",
+      "type": "checkbox"
+    }
+  ],
+  "sections": [
+    {
+      "__source": {
+        "bundle_name": "",
+        "id": "",
+    
+
+====================================================================================================
+GET https://api.services.ajio.com/api/service/application/theme/v1.0/6924384620d2931b59eb94ec/kidswear?company=1
+--- request headers ---
+accept: application/json, text/plain, */*
+authorization: <REDACTED>
+x-currency-code: INR
+user-agent: Platform/Android
+x-location-detail: {"country":"INDIA","city":"BENGALURU","pincode":"560029","state":"KARNATAKA"}
+user-groups: l1:nontransacted|l2:p_null,false,unisex,noasp
+user_groups: l1:nontransacted|l2:p_null,false,unisex,noasp
+x-experimental-features: CMSABExp2,CMSABExp10,CMSABExp4
+x-fp-sdk-version: 1.10.6-9
+x-fp-date: 20260921T041448Z
+x-fp-signature: v1.1:a0a8ef446a596a6b2ce2689609989a7ea685f31df071f8d8a3dff92260bcc916
+device-id: c9401012-46ee-4997-9b15-6a6bebeb0da0R
+accept-encoding: gzip
+cookie: <REDACTED>
+--- response 200 headers ---
+content-type: application/json; charset=utf-8
+strict-transport-security: max-age=63072000; includeSubdomains
+x-content-type-options: nosniff
+referrer-policy: origin
+x-seller-details: {"country_code":"IN","currency":{"code":"INR","name":"Indian Rupee","symbol":"\u20b9"},"timezone":"Asia\/Kolkata"}
+strict-transport-security: max-age=63072000; includeSubdomains
+x-content-type-options: nosniff
+referrer-policy: origin
+x-seller-details: {"country_code":"IN","currency":{"code":"INR","name":"Indian Rupee","symbol":"\u20b9"},"timezone":"Asia\/Kolkata"}
+cross-origin-embedder-policy: credentialless
+referrer-policy: no-referrer
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-xss-protection: 1; mode=block
+x-fynd-trace-id: 12e9d0fa41814994597223b1570b8351
+x-sc-cache-status: MISS
+x-sc-cache-key: store1.ajiojcp.com|/service/application/theme/v1.0/6924384620d2931b59eb94ec/kidswear?company=1|india-karnataka-bengaluru|0|android|l1:nontransacted_l2:false,noasp,p_null,unisex||CMSABExp10,CMSABExp2,CMSABExp4|
+content-encoding: gzip
+x-fynd-trace-id: 858ce4d4044b3db612433db22c783437
+content-length: 16969
+expires: Mon, 21 Sep 2026 04:14:54 GMT
+cache-control: max-age=0, no-cache, no-store
+pragma: no-cache
+date: Mon, 21 Sep 2026 04:14:54 GMT
+vary: Accept-Encoding
+alt-svc: h3=":443"; ma=93600
+akamai-request-bc: [a=23.193.56.94,b=182919658,c=g,n=IN_KA_BANGALORE,o=55836]
+akamai-grn: 0.5e38c117.1789964094.ae721ea
+--- response body (redacted, truncated) ---
+{
+  "_id": "6a32958fcfe8b4cb95d616a4",
+  "_matched_mapping": {
+    "_id": "6a329ff22fe443af020c86c8",
+    "created_at": "2026-06-17T13:24:02.105Z",
+    "fallback": null,
+    "feature_store": null,
+    "predicate": {
+      "platform": {
+        "android": true,
+        "ios": true,
+        "web": false
+      },
+      "schedule": {
+        "end": "2027-08-20T11:45:00.000Z",
+        "start": "2026-06-17T18:29:00.000Z"
+      },
+      "user": {
+        "user_groups": {
+          "l1": {
+            "excludes": [],
+            "includes": []
+          },
+          "l2": {
+            "excludes": [],
+            "includes": []
+          }
+        },
+        "user_type": "all_user"
+      }
+    },
+    "slug": "sections/kidswear",
+    "updated_at": "2026-08-20T12:02:00.871Z",
+    "updated_by": "2ed498c0723dd33fa8deb39d"
+  },
+  "comment": "",
+  "content_changes": {
+    "updated_at": "2026-09-20T15:28:58.890Z",
+    "updated_by": "58af7330c388c353f8234688"
+  },
+  "created_at": "2026-06-17T12:39:43.555Z",
+  "errors": [],
+  "fallback": null,
+  "feature_store": {
+    "created_from": "",
+    "mapped_to": ""
+  },
+  "mapper_changes": {
+    "updated_at": "2026-06-17T05:48:33.468Z",
+    "updated_by": null
+  },
+  "page_mapper": true,
+  "page_mappings": [
+    {
+      "_id": "6a329ff22fe443af020c86c8",
+      "created_at": "2026-06-17T13:24:02.105Z",
+      "fallback": null,
+      "feature_store": null,
+      "predicate": {
+        "platform": {
+          "android": true,
+          "ios": true,
+          "web": false
+        },
+        "schedule": {
+          "end": "2027-08-20T11:45:00.000Z",
+          "start": "2026-06-17T18:29:00.000Z"
+        },
+        "user": {
+          "user_groups": {
+            "l1": {
+              "excludes": [],
+              "includes": []
+            },
+            "l2": {
+              "excludes": [],
+              "includes": []
+            }
+          },
+          "user_type": "all_user"
+        }
+      },
+      "slug": "sections/kidswear",
+      "updated_at": "2026-08-20T12:02:00.871Z",
+      "updated_by": "2ed498c0723dd33fa8deb39d"
+    }
+  ],
+  "path": "sections/kids-gfs-june-26",
+  "predicate": {
+    "platform": {
+      "android": true,
+      "ios": true,
+      "web": false
+    },
+    "schedule": {
+      "end": "2027-08-20T11:45:00.000Z",
+      "start": "2026-06-17T18:29:00.000Z"
+    },
+    "user": {
+      "user_groups": {
+        "l1": {
+          "excludes": [],
+          "includes": []
+        },
+        "l2": {
+          "excludes": [],
+          "includes": []
+        }
+      },
+      "user_type": "all_user"
+    }
+  },
+  "predicate_hash": "164a6baee7f0f38fcd102bc65926310066e511891319743ea735eb97fa79231c",
+  "props": [
+    {
+      "default": true,
+      "id": "header",
+      "label": "Header",
+      "type": "checkbox"
+    },
+    {
+      "default": true,
+      "id": "footer",
+      "label": "Footer",
+      "type": "checkbox"
+    }
+  ],
+  "sections": [
+    {
+      "__source": {
+        "bundle_name": "",
+        "id": "",
+        "
+
+====================================================================================================
+GET https://api.services.ajio.com/api/service/application/theme/v1.0/6924384620d2931b59eb94ec/womenswear?company=1
+--- request headers ---
+accept: application/json, text/plain, */*
+authorization: <REDACTED>
+x-currency-code: INR
+user-agent: Platform/Android
+x-location-detail: {"country":"INDIA","city":"BENGALURU","pincode":"560029","state":"KARNATAKA"}
+user-groups: l1:nontransacted|l2:p_null,false,unisex,noasp
+user_groups: l1:nontransacted|l2:p_null,false,unisex,noasp
+x-experimental-features: CMSABExp2,CMSABExp10,CMSABExp4
+x-fp-sdk-version: 1.10.6-9
+x-fp-date: 20260921T041448Z
+x-fp-signature: v1.1:c376b0cd0a55a9b6b9f367d6a92472e77a1e801e20ddd516a0e991500d407651
+device-id: c9401012-46ee-4997-9b15-6a6bebeb0da0R
+accept-encoding: gzip
+cookie: <REDACTED>
+--- response 200 headers ---
+content-type: application/json; charset=utf-8
+strict-transport-security: max-age=63072000; includeSubdomains
+x-content-type-options: nosniff
+referrer-policy: origin
+x-seller-details: {"country_code":"IN","currency":{"code":"INR","name":"Indian Rupee","symbol":"\u20b9"},"timezone":"Asia\/Kolkata"}
+strict-transport-security: max-age=63072000; includeSubdomains
+x-content-type-options: nosniff
+referrer-policy: origin
+x-seller-details: {"country_code":"IN","currency":{"code":"INR","name":"Indian Rupee","symbol":"\u20b9"},"timezone":"Asia\/Kolkata"}
+cross-origin-embedder-policy: credentialless
+referrer-policy: no-referrer
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-xss-protection: 1; mode=block
+x-fynd-trace-id: b8b700c2f4313fc4f00bc53c0321e9b3
+x-sc-cache-status: EXPIRED
+x-sc-cache-key: store1.ajiojcp.com|/service/application/theme/v1.0/6924384620d2931b59eb94ec/womenswear?company=1|india-karnataka-bengaluru|0|android|l1:nontransacted_l2:false,noasp,p_null,unisex||CMSABExp10,CMSABExp2,CMSABExp4|
+content-encoding: gzip
+x-fynd-trace-id: f1d2456a4610f981c3d9c5fa1798f701
+content-length: 23515
+expires: Mon, 21 Sep 2026 04:14:54 GMT
+cache-control: max-age=0, no-cache, no-store
+pragma: no-cache
+date: Mon, 21 Sep 2026 04:14:54 GMT
+vary: Accept-Encoding
+alt-svc: h3=":443"; ma=93600
+akamai-request-bc: [a=23.193.56.94,b=182919657,c=g,n=IN_KA_BANGALORE,o=55836]
+akamai-grn: 0.5e38c117.1789964094.ae721e9
+--- response body (redacted, truncated) ---
+{
+  "_id": "6a3271ebc817ea59748b57ad",
+  "_matched_mapping": {
+    "_id": "6a328f932986c1ee587e4822",
+    "created_at": "2026-06-17T12:14:11.178Z",
+    "fallback": null,
+    "feature_store": null,
+    "predicate": {
+      "platform": {
+        "android": true,
+        "ios": true,
+        "web": false
+      },
+      "schedule": {
+        "end": "2027-06-17T18:29:00.000Z",
+        "start": "2026-06-17T18:29:00.000Z"
+      },
+      "user": {
+        "user_groups": {
+          "l1": {
+            "excludes": [],
+            "includes": []
+          },
+          "l2": {
+            "excludes": [],
+            "includes": []
+          }
+        },
+        "user_type": "all_user"
+      }
+    },
+    "slug": "sections/womenswear",
+    "updated_at": "2026-06-17T12:14:11.175Z",
+    "updated_by": "245c446aeb0e6a3b7ce04fca"
+  },
+  "comment": "",
+  "content_changes": {
+    "updated_at": "2026-09-21T03:31:07.875Z",
+    "updated_by": "b66a8a2aaea9f620a8b3c022"
+  },
+  "created_at": "2026-06-17T10:07:39.638Z",
+  "errors": [],
+  "fallback": null,
+  "feature_store": {
+    "created_from": "",
+    "mapped_to": ""
+  },
+  "mapper_changes": {
+    "updated_at": "2026-06-16T05:41:44.379Z",
+    "updated_by": null
+  },
+  "page_mapper": true,
+  "page_mappings": [
+    {
+      "_id": "6a328f932986c1ee587e4822",
+      "created_at": "2026-06-17T12:14:11.178Z",
+      "fallback": null,
+      "feature_store": null,
+      "predicate": {
+        "platform": {
+          "android": true,
+          "ios": true,
+          "web": false
+        },
+        "schedule": {
+          "end": "2027-06-17T18:29:00.000Z",
+          "start": "2026-06-17T18:29:00.000Z"
+        },
+        "user": {
+          "user_groups": {
+            "l1": {
+              "excludes": [],
+              "includes": []
+            },
+            "l2": {
+              "excludes": [],
+              "includes": []
+            }
+          },
+          "user_type": "all_user"
+        }
+      },
+      "slug": "sections/womenswear",
+      "updated_at": "2026-06-17T12:14:11.175Z",
+      "updated_by": "245c446aeb0e6a3b7ce04fca"
+    }
+  ],
+  "path": "sections/gfs-women-np",
+  "predicate": {
+    "platform": {
+      "android": true,
+      "ios": true,
+      "web": false
+    },
+    "schedule": {
+      "end": "2027-06-17T18:29:00.000Z",
+      "start": "2026-06-17T18:29:00.000Z"
+    },
+    "user": {
+      "user_groups": {
+        "l1": {
+          "excludes": [],
+          "includes": []
+        },
+        "l2": {
+          "excludes": [],
+          "includes": []
+        }
+      },
+      "user_type": "all_user"
+    }
+  },
+  "predicate_hash": "164a6baee7f0f38fcd102bc65926310066e511891319743ea735eb97fa79231c",
+  "props": [
+    {
+      "default": true,
+      "id": "header",
+      "label": "Header",
+      "type": "checkbox"
+    },
+    {
+      "default": true,
+      "id": "footer",
+      "label": "Footer",
+      "type": "checkbox"
+    }
+  ],
+  "sections": [
+    {
+      "__source": {
+        "bundle_name": "",
+        "id": "",
+        "
