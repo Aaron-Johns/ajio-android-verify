@@ -71,3 +71,46 @@ def test_a_run_that_is_no_longer_live_shows_no_activity(tmp_path):
     fv.ActivityLog(tmp_path / "activity.jsonl")("a", "Reading image")
     stopped = {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=False)}
     assert stopped["a"]["result"] == "INCONCLUSIVE" and "activity" not in stopped["a"]
+
+
+# ---- UNAVAILABLE in the run view, the run summary and the alert diff ----
+
+def write_results(tmp_path, *recs):
+    (tmp_path / "results.json").write_text(json.dumps(list(recs)), encoding="utf-8")
+
+
+def res(bid, result, reason="", attempts=1, **extra):
+    return {"banner_id": bid, "result": result, "reason": reason, "alt_text": bid, "destination_raw": "x", "image_url": "u",
+            "attempts": attempts, **extra}
+
+
+def test_a_banner_that_used_up_its_retries_on_a_server_error_is_unavailable_and_offers_a_retry(tmp_path):
+    run_dir(tmp_path)
+    write_results(tmp_path, res("a", "INCONCLUSIVE", "listing_fetch_failed: HTTP 400", attempts=runner.MAX_TRIES),
+                  res("b", "INCONCLUSIVE", "empty_bounding_box_after_scaling"), res("c", "PASS"))
+    got = {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=False)}
+    assert got["a"]["result"] == "UNAVAILABLE" and got["a"]["retries_exhausted"] is True
+    assert "gave up after" in got["a"]["reason"]
+    assert got["b"]["result"] == "INCONCLUSIVE" and got["c"]["result"] == "PASS"
+
+
+def test_a_stopped_run_shows_its_half_retried_banner_as_unavailable_too(tmp_path):
+    run_dir(tmp_path)
+    write_results(tmp_path, res("a", "INCONCLUSIVE", "image_download_failed: error: ConnectionError", attempts=2))
+    got = {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=False)}
+    assert got["a"]["result"] == "UNAVAILABLE" and got["a"]["retries_exhausted"] is True
+
+
+def test_still_retrying_in_a_live_run_stays_processing(tmp_path):
+    run_dir(tmp_path)
+    write_results(tmp_path, res("a", "INCONCLUSIVE", "listing_fetch_failed: x", attempts=2))
+    got = {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=True)}
+    assert got["a"]["result"] == "PROCESSING"
+
+
+def test_load_shown_results_relabels_without_touching_the_raw_records(tmp_path):
+    write_results(tmp_path, res("a", "INCONCLUSIVE", "vision_failed: 503", attempts=5), res("b", "FAIL"))
+    shown = runner.load_shown_results(tmp_path)
+    assert (shown["a"]["result"], shown["b"]["result"]) == ("UNAVAILABLE", "FAIL")
+    assert runner.load_results(tmp_path)["a"]["result"] == "INCONCLUSIVE"        # the retry logic still reads the raw one
+    assert runner.load_shown_results(tmp_path, is_live=True)["a"]["result"] == "UNAVAILABLE"   # 5 tries = spent, even live

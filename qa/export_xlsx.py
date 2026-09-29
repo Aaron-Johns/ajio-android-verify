@@ -33,6 +33,17 @@ def load_results(run_dir: Path) -> list[dict]:
     or a run that was cancelled/failed before ever reaching write_outputs(). Neither file exists yet if
     the run died before checking a single banner (e.g. the initial feed fetch itself failed) - treated
     as zero results, not an error, since there's nothing to export."""
+    return [_shown(r) for r in _load_raw(run_dir)]
+
+
+def _shown(r: dict) -> dict:
+    """The result as a person sees it: a spent-retries temporary error is UNAVAILABLE, not INCONCLUSIVE."""
+    from qa.feed_verify import shown_result
+    label = shown_result(r)
+    return r if label == r["result"] else {**r, "result": label}
+
+
+def _load_raw(run_dir: Path) -> list[dict]:
     results_path = run_dir / "results.json"
     if results_path.exists():
         return json.loads(results_path.read_text(encoding="utf-8"))
@@ -49,7 +60,7 @@ def load_results(run_dir: Path) -> list[dict]:
         except json.JSONDecodeError:
             continue
         latest[rec.get("banner_id")] = rec
-    order = {"PASS": 0, "FAIL": 1, "INCONCLUSIVE": 2, "SKIPPED": 3}
+    order = {"PASS": 0, "FAIL": 1, "INCONCLUSIVE": 2, "UNAVAILABLE": 3, "SKIPPED": 4}
     return sorted(latest.values(), key=lambda r: (order.get(r["result"], 9), r.get("banner_id", "")))
 
 
@@ -100,7 +111,7 @@ def build_workbook(results: list[dict]) -> Workbook:
     for cell in ws[1]:
         cell.font = Font(bold=True)
 
-    fills = {"PASS": "C6EFCE", "FAIL": "FFC7CE", "INCONCLUSIVE": "FFEB9C", "SKIPPED": "D9D9D9"}
+    fills = {"PASS": "C6EFCE", "FAIL": "FFC7CE", "INCONCLUSIVE": "FFEB9C", "UNAVAILABLE": "DDEBF7", "SKIPPED": "D9D9D9"}
     from openpyxl.styles import PatternFill
 
     row_i = 2

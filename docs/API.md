@@ -65,8 +65,8 @@ Body:
 - `banner_limit` — `null`/omitted for everything in scope, or an integer ≥1 to cap it (first N in feed
   order).
 - `workers` — 1 to `/api/meta`'s `max_workers` (currently 10). Default 3. Gemma requests are paced to
-  `GEMMA_CALLS_PER_MINUTE` (default 6) across all workers of a run, so more workers only means more of
-  them waiting their turn, not more requests.
+  `GEMMA_CALLS_PER_MINUTE` (default 6) across all workers and all runs on the machine (a shared lock file), so
+  more workers only means more of them waiting their turn, not more requests.
 - `excluded_carousels` — list of `section_index` ints to drop entirely from this run. Get real
   section indexes from `GET /api/feed-preview` first if you want to use this. A section index is
   positional, so it only means the same thing across combinations that fetch the same feed.
@@ -130,7 +130,8 @@ minus any dismissed with `POST .../hide`.
   schedule's run-now. `null` for runs from before batches existed. Group by it to show a fire's runs
   together.
 - `counts` — a tally of `result` values across every banner that has one so far (missing/PENDING/
-  PROCESSING banners aren't counted). Recomputed fresh on every call, not cached.
+  PROCESSING banners aren't counted; a banner still inside its automatic retries counts as `PROCESSING`, and one
+  that spent them on a server/network error as `UNAVAILABLE`). Recomputed fresh on every call, not cached.
 - `excluded_sections` — CMS section ids left out of the run (a schedule's saved carousel exclusions, or
   the ids the UI sent). Empty when none.
 - `diff` — only for a *finished run that belongs to a schedule*, else `null`: the headline of what
@@ -213,9 +214,11 @@ every field a UI needs to render a full result lives here. `404` if `run_id` is 
 ```
 
 **Field notes** (fields not obvious from the name):
-- `result` — one of `PENDING`, `PROCESSING`, `PASS`, `FAIL`, `INCONCLUSIVE`, `SKIPPED`. See the status
+- `result` — one of `PENDING`, `PROCESSING`, `PASS`, `FAIL`, `INCONCLUSIVE`, `UNAVAILABLE`, `SKIPPED`. See the status
   table in `docs/UI_GUIDE.md` for what each means; briefly: `PASS`/`FAIL` are the pipeline's actual
-  determinations, `INCONCLUSIVE` means it couldn't confidently decide, `SKIPPED` means there was
+  determinations, `INCONCLUSIVE` means it couldn't confidently decide, `UNAVAILABLE` means a temporary
+  server/network error outlasted the 5 automatic tries (not a finding about the banner; `retries_exhausted` is
+  `true`, so a per-banner retry is offered), `SKIPPED` means there was
   nothing checkable (or it was manually skipped), `PENDING`/`PROCESSING` are in-progress states that
   only appear while the run is live.
 - `try_number` / `max_tries` — which attempt this is out of the max (always 5: 1 initial + 4 automatic

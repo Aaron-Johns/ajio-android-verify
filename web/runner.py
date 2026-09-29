@@ -488,8 +488,8 @@ def unrequest_skip(run_id: str, banner_id: str) -> None:
 
 # ---- reading a run's output (pure reads; safe to do in-process) ---------------------------
 
-from qa.feed_verify import (RETRY_ROUNDS, _safe, exclude_banners, is_retryable, load_activity,  # noqa: E402
-                            load_banners, select_banners)
+from qa.feed_verify import (RETRY_ROUNDS, UNAVAILABLE, _safe, exclude_banners, is_retryable, load_activity,  # noqa: E402
+                            load_banners, select_banners, shown_result)
 
 # 1 initial attempt + RETRY_ROUNDS retries - matches every web-triggered run exactly, since start_run()
 # never passes --retry-rounds (always the qa/feed_verify.py CLI default). A banner still INCONCLUSIVE
@@ -518,6 +518,17 @@ def current_activity(entry: dict | None, now: float | None = None) -> str:
     if entry["activity"] == "Cooling down" and entry.get("until") is not None and now >= entry["until"]:
         return "Retry queued"
     return entry["activity"]
+
+
+def load_shown_results(out_dir: Path, is_live: bool = False) -> dict[str, dict]:
+    """load_results with each record's `result` replaced by the status a person sees (see qa.feed_verify.shown_result):
+    a banner that only hit a temporary server/network error and used up its retries is UNAVAILABLE, not INCONCLUSIVE.
+    What run summaries, the alert diff and the exports count. The raw records (which the retry logic reads) are untouched."""
+    out = {}
+    for bid, r in load_results(out_dir).items():
+        label = shown_result(r, live=is_live, max_tries=MAX_TRIES)
+        out[bid] = r if label == r["result"] else {**r, "result": label}
+    return out
 
 
 def load_results(out_dir: Path) -> dict[str, dict]:
@@ -595,7 +606,8 @@ def run_view(out_dir: Path, scope: str, banner_limit: int | None, is_live: bool 
                 exhausted = is_retryable(r) and (attempts >= MAX_TRIES or not is_live)
                 note = f"gave up after {attempts} tries" if attempts >= MAX_TRIES else "run stopped before this banner finished retrying"
                 reason = f"{note}: {r['reason']}" if exhausted and r.get("reason") else (note if exhausted else r.get("reason", ""))
-                r = {**r, "try_number": attempts, "max_tries": MAX_TRIES, "retries_exhausted": exhausted, "reason": reason}
+                r = {**r, "try_number": attempts, "max_tries": MAX_TRIES, "retries_exhausted": exhausted, "reason": reason,
+                     **({"result": UNAVAILABLE} if exhausted else {})}
         if r["result"] == "PROCESSING":
             r = {**r, "activity": current_activity(activity.get(b.banner_id))}
         # always overlaid from banners.json (not just when missing) so this shows up even for

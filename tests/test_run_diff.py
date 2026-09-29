@@ -87,3 +87,19 @@ def test_a_new_failing_banner_is_not_listed_twice_in_any_change_text():
     d = rd.diff_runs({}, {"a": rec("FAIL", "Levis")})
     _, body = rd.alert_text(d, "s", "any_change")
     assert body.splitlines() == ["FAIL - Levis"]
+
+
+def test_a_banner_that_became_unavailable_is_not_a_finding_but_is_counted():
+    d = rd.diff_runs({"a": rec("PASS"), "b": rec("FAIL")}, {"a": rec("UNAVAILABLE"), "b": rec("UNAVAILABLE")})
+    assert d["newly_failing"] == [] and d["newly_inconclusive"] == [] and d["recovered"] == []
+    assert d["counts"]["unavailable"] == 2 and rd.summarize(d) == "2 couldn't be checked"
+    assert not rd.is_notable(d, "new_fails") and not rd.is_notable(d, "any_change")     # an outage never raises an alert
+
+
+def test_an_unavailable_banner_that_now_fails_is_a_new_failure():
+    d = rd.diff_runs({"a": rec("UNAVAILABLE")}, {"a": rec("FAIL")})
+    assert len(d["newly_failing"]) == 1 and rd.is_notable(d, "new_fails")
+
+
+def test_a_baseline_has_a_zero_unavailable_count():
+    assert rd.baseline("first run")["counts"]["unavailable"] == 0

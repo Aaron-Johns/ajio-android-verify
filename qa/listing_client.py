@@ -77,6 +77,13 @@ def listing_store(destination_raw: str | None) -> str | None:
     return LUXE if host.startswith("luxe.") else None
 
 
+def _is_server_bug(resp) -> bool:
+    """AJIO's listing service sometimes answers a perfectly valid request with HTTP 400 and a Java NullPointerException
+    ("facetData is null") - a fault on their side that passes on its own (the same links work minutes later), so it is
+    retried like a 5xx instead of being reported as a bad request."""
+    return resp.status_code == 400 and "NullPointerException" in (resp.text or "")
+
+
 def _path(slug: str, kind: str) -> str:
     return PATH if kind == CURATED else PATH.rsplit("/", 1)[0] + f"/{quote(slug, safe='')}"
 
@@ -128,7 +135,7 @@ def fetch_listing(slug: str, page: int = 0, page_size: int = PAGE_SIZE, kind: st
             if resp.status_code == 200:
                 return parse_listing(slug, page, resp.json())
             last = f"HTTP {resp.status_code}"
-            if resp.status_code not in RETRY_STATUSES:
+            if resp.status_code not in RETRY_STATUSES and not _is_server_bug(resp):
                 raise FeedError(f"listing {slug}: {last} ({resp.text[:200]!r})")
         if attempt < MAX_ATTEMPTS:
             sleep(2 ** attempt + random.uniform(0, 1))

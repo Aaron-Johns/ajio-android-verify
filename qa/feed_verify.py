@@ -375,6 +375,19 @@ def is_retryable(result: dict) -> bool:
     return any(any(t in h.get("reason", "") for t in _TRANSIENT) for h in result.get("hotspot_checks", []))
 
 
+UNAVAILABLE = "UNAVAILABLE"    # shown status: AJIO / Google / the network didn't answer - says nothing about the banner
+
+
+def shown_result(result: dict, live: bool = False, max_tries: int = RETRY_ROUNDS + 1) -> str:
+    """The status a person sees for a saved result. The pipeline keeps recording a temporary server/network failure as
+    INCONCLUSIVE + a transient reason (that is what the retry logic keys on), but once its automatic retries are used up
+    it isn't a finding about the banner at all - it's UNAVAILABLE, kept out of the "needs a look" pile and offered a
+    Retry instead. While a live run still has tries left for it, it's PROCESSING. Everything else is its own result."""
+    if not is_retryable(result):
+        return result["result"]
+    return "PROCESSING" if live and result.get("attempts", 1) < max_tries else UNAVAILABLE
+
+
 class PartialLog:
     """Appends each banner's result to partial.jsonl the moment it is known, so an interrupted run loses nothing."""
 
@@ -604,10 +617,10 @@ def write_outputs(results: list[dict], out_dir: Path) -> None:
 
 
 def format_summary(results: list[dict]) -> str:
-    counts = Counter(r["result"] for r in results)
+    counts = Counter(shown_result(r) for r in results)
     lines = [f"{len(results)} banners: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))]
     for r in results:
-        if r["result"] in ("PASS", "SKIPPED"):
+        if shown_result(r) in ("PASS", "SKIPPED"):
             continue
         c = r.get("banner_check") or {}
         why = r.get("reason") or "; ".join(filter(None, [
@@ -619,7 +632,7 @@ def format_summary(results: list[dict]) -> str:
             f"banner's gender reading {c.get('banner_gender')!r} isn't a recognized audience"
             if c.get("gender_matches") == "INCONCLUSIVE" else "",
             f"listing has extra brands not named on the banner: {_truncated(c['extra_brands'])}" if c.get("extra_brands") else ""]))
-        lines.append(f"{r['result']:12} {r.get('alt_text', '')[:38]!r:40} {r.get('destination_raw')} | {why}")
+        lines.append(f"{shown_result(r):12} {r.get('alt_text', '')[:38]!r:40} {r.get('destination_raw')} | {why}")
     return "\n".join(lines)
 
 

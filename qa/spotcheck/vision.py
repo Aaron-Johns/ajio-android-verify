@@ -38,17 +38,82 @@ CALLS_PER_MINUTE = 6   # [A] cap on Gemma requests (every try counts), whatever 
                        # minute is the ceiling; 6 leaves headroom. Override with GEMMA_CALLS_PER_MINUTE (0 = no limit).
 
 
+PACER_STATE = Path(__file__).resolve().parents[1] / ".cache" / "gemma_pacer.json"   # qa/.cache/ (gitignored)
+MAX_AHEAD_S = 3600.0   # a reserved slot further away than this is a leftover / a clock change, not a real queue
+
+
+@contextmanager
+def _file_lock(path: Path):
+    """An exclusive lock on `path` that every process on this machine respects (msvcrt on Windows, flock elsewhere).
+    Held for microseconds - only around reading and writing the pacer's one number."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = open(path, "a+b")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)     # not LK_LOCK: that one retries only once a second
+                    break
+                except OSError:
+                    time.sleep(0.005)
+            try:
+                yield
+            finally:
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+    finally:
+        f.close()
+
+
 class CallPacer:
     """Spaces Gemma requests at least 60/calls_per_minute seconds apart (+5% margin), across every worker thread of
     this process, first come first served. More workers than the limit needs don't send faster - the extra ones
     just wait their turn - so raising the worker count can never push the account over its per-minute limits.
-    Limits are per process: two run processes at once would each pace themselves."""
 
-    def __init__(self, calls_per_minute: float, clock=time.monotonic, sleep=time.sleep):
+    With `shared_path` the next free slot is kept in a small file (under a file lock) instead of in memory, so the
+    limit holds across every process on the machine too: two runs going at once, a scheduled run plus a manual one,
+    or a per-banner Retry all queue behind each other instead of each pacing only itself. If the file can't be used
+    (read-only folder, ...) it quietly falls back to pacing this process alone."""
+
+    def __init__(self, calls_per_minute: float, clock=None, sleep=time.sleep, shared_path: Path | None = None):
         self.interval = 60.0 / calls_per_minute * 1.05 if calls_per_minute and calls_per_minute > 0 else 0.0
-        self._clock, self._sleep = clock, sleep
+        self._shared = shared_path
+        # processes must agree on "now", so a shared pacer runs on the wall clock (a monotonic clock is per-process)
+        self._clock = clock or (time.time if shared_path else time.monotonic)
+        self._sleep = sleep
         self._lock = threading.Lock()
         self._next = 0.0
+
+    def _reserve(self) -> tuple[float, float]:
+        """(the time this request may go out, the time it asked), and books the slot after it. The clock is read only
+        once the lock is held: reading it first and then waiting for a busy lock would book a slot from a stale "now"
+        and let two processes fire together."""
+        if self._shared is not None:
+            try:
+                with _file_lock(self._shared.with_suffix(".lock")):
+                    now = self._clock()
+                    try:
+                        booked = float(json.loads(self._shared.read_text(encoding="utf-8"))["next"])
+                    except (OSError, ValueError, KeyError, TypeError):
+                        booked = 0.0
+                    slot = max(now, min(booked, now + MAX_AHEAD_S))
+                    self._shared.write_text(json.dumps({"next": slot + self.interval}), encoding="utf-8")
+                    return slot, now
+            except OSError as exc:
+                log.warning("shared Gemma pacer unavailable (%s) - pacing this process only", exc)
+        now = self._clock()
+        slot = max(now, self._next)
+        self._next = slot + self.interval
+        return slot, now
 
     def acquire(self, on_wait=None) -> float:
         """Blocks until this request may go out; returns how long it waited (seconds). `on_wait` is called once,
@@ -56,9 +121,7 @@ class CallPacer:
         if not self.interval:
             return 0.0
         with self._lock:
-            now = self._clock()
-            slot = max(now, self._next)
-            self._next = slot + self.interval
+            slot, now = self._reserve()
         delay = slot - now
         if delay > 0.05:
             if on_wait:
@@ -72,7 +135,8 @@ _pacer_lock = threading.Lock()
 
 
 def get_pacer() -> CallPacer:
-    """The process-wide pacer, built on first use from GEMMA_CALLS_PER_MINUTE (default CALLS_PER_MINUTE)."""
+    """The process-wide pacer, built on first use from GEMMA_CALLS_PER_MINUTE (default CALLS_PER_MINUTE); shared with every
+    other process through qa/.cache/gemma_pacer.json unless GEMMA_PACER_SHARED=0."""
     global _pacer
     with _pacer_lock:
         if _pacer is None:
@@ -81,7 +145,8 @@ def get_pacer() -> CallPacer:
                 per_minute = float(os.environ.get("GEMMA_CALLS_PER_MINUTE", CALLS_PER_MINUTE))
             except ValueError:
                 per_minute = CALLS_PER_MINUTE
-            _pacer = CallPacer(per_minute)
+            shared = os.environ.get("GEMMA_PACER_SHARED", "1") != "0"    # 0 = pace this process alone
+            _pacer = CallPacer(per_minute, shared_path=PACER_STATE if shared else None)
         return _pacer
 
 

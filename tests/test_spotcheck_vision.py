@@ -316,3 +316,70 @@ def test_a_request_with_no_wait_reports_nothing_extra():
         note("Reading image")
         vision._wait_for_turn()                                # conftest's pacer never waits
     assert seen == ["Reading image"]
+
+
+# ---- pacing across processes: the next free slot lives in a shared file -------------------------------
+
+def test_two_pacers_sharing_a_file_queue_behind_each_other(tmp_path):
+    """Stands in for two run processes: separate pacer objects (own thread locks, own memory), one state file."""
+    clock = FakeClock()
+    state = tmp_path / "pacer.json"
+    a = vision.CallPacer(6, clock=clock, sleep=clock.sleep, shared_path=state)
+    b = vision.CallPacer(6, clock=clock, sleep=clock.sleep, shared_path=state)
+    assert a.acquire() == 0
+    assert b.acquire() == pytest.approx(10.5)                  # b never asked before, yet it waits behind a's call
+    assert a.acquire() == pytest.approx(10.5)                  # ...and a then waits behind b's
+
+
+def test_without_a_shared_file_each_pacer_only_paces_itself(tmp_path):
+    clock = FakeClock()
+    a = vision.CallPacer(6, clock=clock, sleep=clock.sleep)
+    b = vision.CallPacer(6, clock=clock, sleep=clock.sleep)
+    a.acquire()
+    assert b.acquire() == 0                                    # the old per-process behaviour
+
+
+def test_a_booking_far_in_the_future_is_capped_not_waited_out(tmp_path):
+    clock = FakeClock()
+    state = tmp_path / "pacer.json"
+    state.write_text('{"next": %f}' % (clock.now + 10 ** 7), encoding="utf-8")     # a leftover / clock jump
+    pacer = vision.CallPacer(6, clock=clock, sleep=clock.sleep, shared_path=state)
+    assert pacer.acquire() == pytest.approx(vision.MAX_AHEAD_S)
+
+
+def test_a_corrupt_state_file_is_treated_as_empty(tmp_path):
+    state = tmp_path / "pacer.json"
+    state.write_text("not json", encoding="utf-8")
+    clock = FakeClock()
+    assert vision.CallPacer(6, clock=clock, sleep=clock.sleep, shared_path=state).acquire() == 0
+
+
+def test_an_unusable_state_folder_falls_back_to_pacing_this_process(tmp_path):
+    blocker = tmp_path / "file"
+    blocker.write_text("x", encoding="utf-8")
+    clock = FakeClock()
+    pacer = vision.CallPacer(6, clock=clock, sleep=clock.sleep, shared_path=blocker / "sub" / "pacer.json")   # parent is a file
+    assert pacer.acquire() == 0
+    assert pacer.acquire() == pytest.approx(10.5)              # still paced, just alone
+
+
+def test_real_processes_at_once_never_beat_the_limit(tmp_path):
+    """Three real OS processes hammering one shared pacer (300/min = 0.21 s apart): every call, from any process,
+    is at least that far from the previous one."""
+    import subprocess
+    import sys
+    state = tmp_path / "pacer.json"
+    code = ("import sys, time\n"
+            "from pathlib import Path\n"
+            "from qa.spotcheck import vision\n"
+            "p = vision.CallPacer(300, shared_path=Path(sys.argv[1]))\n"
+            "for _ in range(4):\n"
+            "    p.acquire()\n"
+            "    print(time.time(), flush=True)\n")
+    procs = [subprocess.Popen([sys.executable, "-c", code, str(state)], stdout=subprocess.PIPE, text=True,
+                              cwd=str(Path(__file__).resolve().parents[1])) for _ in range(3)]
+    stamps = sorted(float(line) for p in procs for line in p.communicate(timeout=60)[0].split())
+    assert len(stamps) == 12
+    interval = 60.0 / 300 * 1.05
+    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    assert min(gaps) >= interval * 0.85, f"two calls only {min(gaps):.3f}s apart; wanted >= {interval:.3f}s"

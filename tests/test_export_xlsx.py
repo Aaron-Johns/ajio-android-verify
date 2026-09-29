@@ -69,3 +69,11 @@ def test_a_saved_workbook_round_trips(tmp_path):
     wb.save(out)
     reloaded = load_workbook(out)
     assert reloaded.active.cell(row=2, column=3).value == "missing brands ['Nike']"
+
+
+def test_a_spent_retries_temporary_error_is_exported_as_unavailable_not_inconclusive(tmp_path):
+    rows = [result("a", "INCONCLUSIVE", reason="gave up: listing_fetch_failed: HTTP 400", attempts=5),
+            result("b", "INCONCLUSIVE", reason="empty_bounding_box_after_scaling"), result("c", "PASS")]
+    (tmp_path / "results.json").write_text(json.dumps(rows), encoding="utf-8")
+    got = {r["banner_id"]: r["result"] for r in xl.load_results(tmp_path)}
+    assert got == {"a": "UNAVAILABLE", "b": "INCONCLUSIVE", "c": "PASS"}       # b isn't a server/network problem

@@ -34,8 +34,8 @@ def compute_diff(row) -> dict:
         return run_diff.baseline("first completed run of this schedule for this l1/l2/state/pincode")
     if _config(prev) != _config(row):
         return run_diff.baseline("settings changed since the previous run", prev["run_id"])
-    current = runner.load_results(Path(row["out_dir"]))
-    before = runner.load_results(Path(prev["out_dir"]))
+    current = runner.load_shown_results(Path(row["out_dir"]))
+    before = runner.load_shown_results(Path(prev["out_dir"]))
     if not current:
         return run_diff.baseline("no results were saved for this run", prev["run_id"])
     if not before:

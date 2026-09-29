@@ -15,6 +15,7 @@
     --inconclusive-bg: #fff9db; --inconclusive-border: #f08c00; --inconclusive-text: #966200;
     --pending-bg: #f1f3f5; --pending-border: #adb5bd; --pending-text: #495057;
     --processing-bg: #f2effc; --processing-border: #7048e8; --processing-text: #5f3dc4;
+    --unavailable-bg: #eceff3; --unavailable-border: #7b8794; --unavailable-text: #3e4c59;   /* AJIO / the network didn't answer */
     --done-bg: #edf1ff; --done-border: #3b5bdb; --done-text: #364fc7;   /* a finished run: the same blue as the main buttons */
     --shadow: 0 1px 3px rgba(20,22,26,0.08);
   }
@@ -29,6 +30,7 @@
       --inconclusive-bg: rgba(240,140,0,0.16); --inconclusive-border: #ffd43b; --inconclusive-text: #ffe066;
       --pending-bg: rgba(173,181,189,0.10); --pending-border: #4b5158; --pending-text: #ced4da;
       --processing-bg: rgba(112,72,232,0.18); --processing-border: #9775fa; --processing-text: #d0bfff;
+      --unavailable-bg: rgba(138,150,163,0.16); --unavailable-border: #8a96a3; --unavailable-text: #c5ccd3;
       --done-bg: rgba(124,158,255,0.16); --done-border: #7c9eff; --done-text: #a5b8ff;
       --shadow: 0 1px 3px rgba(0,0,0,0.4);
     }
@@ -43,6 +45,7 @@
     --inconclusive-bg: rgba(240,140,0,0.16); --inconclusive-border: #ffd43b; --inconclusive-text: #ffe066;
     --pending-bg: rgba(173,181,189,0.10); --pending-border: #4b5158; --pending-text: #ced4da;
     --processing-bg: rgba(112,72,232,0.18); --processing-border: #9775fa; --processing-text: #d0bfff;
+    --unavailable-bg: rgba(138,150,163,0.16); --unavailable-border: #8a96a3; --unavailable-text: #c5ccd3;
     --done-bg: rgba(124,158,255,0.16); --done-border: #7c9eff; --done-text: #a5b8ff;
     --shadow: 0 1px 3px rgba(0,0,0,0.4);
   }
@@ -266,6 +269,7 @@
   .card.INCONCLUSIVE { border-color: var(--inconclusive-border); background: var(--inconclusive-bg); }
   .card.PENDING { border-color: var(--pending-border); background: var(--pending-bg); }
   .card.DONE { border-color: var(--done-border); background: var(--done-bg); }
+  .card.UNAVAILABLE { border: 2px dashed var(--unavailable-border); background: var(--unavailable-bg); }
   .card.PROCESSING { border-color: var(--processing-border); background: var(--processing-bg); animation: processing-pulse 1.6s ease-in-out infinite; }
   @keyframes processing-pulse { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 3px var(--processing-border); } }
   .card img {
@@ -282,6 +286,7 @@
   .card .result-badge.PENDING { color: var(--pending-text); }
   .card .result-badge.PROCESSING { color: var(--processing-text); }
   .card .result-badge.DONE { color: var(--done-text); }
+  .card .result-badge.UNAVAILABLE { color: var(--unavailable-text); }
   .card .alt { font-size: 12px; margin: 0 0 4px; }
   .card .dest { font-size: 11px; color: var(--text-dim); word-break: break-all; margin: 0 0 4px; }
   .card .dest a, #modal-detail dd a, .hotspot-block dd a { color: var(--accent); word-break: break-all; }
@@ -316,6 +321,7 @@
   .hotspot-block.FAIL { border-color: var(--fail-border); }
   .hotspot-block.SKIPPED { border-color: var(--skipped-border); }
   .hotspot-block.INCONCLUSIVE { border-color: var(--inconclusive-border); }
+  .hotspot-block.UNAVAILABLE { border-color: var(--unavailable-border); }
   .hotspot-block img { max-width: 100%; max-height: 130px; border-radius: 6px; display: block; margin-bottom: 6px; object-fit: cover; }
   .hotspot-block .hs-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
   .hotspot-block dt { color: var(--text-dim); font-size: 10px; margin-top: 4px; }
@@ -525,12 +531,13 @@ let pickerShowing = false;      // true while the main panel shows the list of r
 let lastRuns = [];              // the last GET /api/runs, for that list
 // PASS keeps the bare "P" (most common, shortest); PENDING/PROCESSING get 2 letters instead since
 // they'd otherwise collide with it and with each other.
-const STATUS_ABBR = { PASS: "P", FAIL: "F", SKIPPED: "S", INCONCLUSIVE: "I", PROCESSING: "Pr", PENDING: "Pe" };
+const STATUS_ABBR = { PASS: "P", FAIL: "F", SKIPPED: "S", INCONCLUSIVE: "I", UNAVAILABLE: "U", PROCESSING: "Pr", PENDING: "Pe" };
 // FAIL and INCONCLUSIVE both mean the same thing to a viewer: this one wasn't auto-resolved, a
 // human needs to look. Spelled out wherever the full status is shown (not in the compact sidebar
 // tally, which uses STATUS_ABBR instead).
 const STATUS_LABEL = {
   FAIL: "FAIL - human verification needed",
+  UNAVAILABLE: "UNAVAILABLE - not a banner problem",
   INCONCLUSIVE: "INCONCLUSIVE - human verification needed",
 };
 function statusLabel(status) { return STATUS_LABEL[status] || status; }
@@ -1008,7 +1015,7 @@ function resultCounts() {
 function renderCounts() {
   const el = document.getElementById("run-counts");
   const counts = resultCounts();
-  const order = ["PASS", "FAIL", "SKIPPED", "INCONCLUSIVE", "PROCESSING", "PENDING"];
+  const order = ["PASS", "FAIL", "SKIPPED", "INCONCLUSIVE", "UNAVAILABLE", "PROCESSING", "PENDING"];
   el.innerHTML = order.filter(k => counts[k]).map(k =>
     `<span class="count-chip ${k}" style="background:var(--${k.toLowerCase()}-bg);color:var(--${k.toLowerCase()}-text)">${k} ${counts[k]}</span>`
   ).join("");
@@ -1019,7 +1026,7 @@ function renderCounts() {
 function renderStatusFilters() {
   const el = document.getElementById("status-filters");
   const counts = resultCounts();
-  const order = ["PASS", "FAIL", "SKIPPED", "INCONCLUSIVE", "PROCESSING", "PENDING"];
+  const order = ["PASS", "FAIL", "SKIPPED", "INCONCLUSIVE", "UNAVAILABLE", "PROCESSING", "PENDING"];
   el.innerHTML = order.filter(k => counts[k]).map(k =>
     `<span class="count-chip ${k}${statusFilter.has(k) ? " active" : ""}" data-status="${k}"
       style="background:var(--${k.toLowerCase()}-bg);color:var(--${k.toLowerCase()}-text)">${k} ${counts[k]}</span>`
@@ -1177,7 +1184,7 @@ function cardHtml(b) {
   const brands = (b.banner_check && b.banner_check.banner_brands) || [];
   const deal = (b.banner_check && b.banner_check.banner_deal) || "";
   const carousel = carouselLabel(b);
-  const reason = (b.result === "FAIL" || b.result === "INCONCLUSIVE") ? explainReason(b, { truncate: true }) : "";
+  const reason = (b.result === "FAIL" || b.result === "INCONCLUSIVE" || b.result === "UNAVAILABLE") ? explainReason(b, { truncate: true }) : "";
   const isMultiLink = (b.total_links || 0) > 1;
   const tags = [
     isMultiLink ? '<span class="mu-tag" title="Multiple links in this banner">MU</span>' : "",
@@ -1494,7 +1501,7 @@ function tags(values, max = 4) {
 
 function tallyHtml(counts) {
   const c = counts || {};
-  return ["PASS", "FAIL", "INCONCLUSIVE", "SKIPPED"].filter(k => c[k]).map(k =>
+  return ["PASS", "FAIL", "INCONCLUSIVE", "UNAVAILABLE", "SKIPPED"].filter(k => c[k]).map(k =>
     `<span class="count-chip" style="background:var(--${k.toLowerCase()}-bg);color:var(--${k.toLowerCase()}-text)">${STATUS_ABBR[k]}${c[k]}</span>`).join(" ");
 }
 

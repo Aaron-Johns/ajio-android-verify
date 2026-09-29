@@ -42,9 +42,10 @@ def diff_runs(previous: dict[str, dict], current: dict[str, dict]) -> dict:
             recovered.append(_entry(banner_id, p, c))
     new_banners = [_entry(b, None, cur[b]) for b in cur if b not in prev]
     removed_banners = [_entry(b, prev[b], None) for b in prev if b not in cur]
+    unavailable = sum(1 for c in cur.values() if c["result"] == "UNAVAILABLE")
     diff = {"baseline": False, "newly_failing": newly_failing, "newly_inconclusive": newly_inconclusive,
             "recovered": recovered, "new_banners": new_banners, "removed_banners": removed_banners,
-            "still_failing": still_failing}
+            "still_failing": still_failing, "unavailable": unavailable}
     diff["counts"] = counts(diff)
     return diff
 
@@ -54,14 +55,16 @@ def baseline(reason: str, previous_run_id: str | None = None) -> dict:
     since the last one) - recorded so the UI can say so, never alerted on."""
     return {"baseline": True, "baseline_reason": reason, "previous_run_id": previous_run_id, "newly_failing": [],
             "newly_inconclusive": [], "recovered": [], "new_banners": [], "removed_banners": [], "still_failing": 0,
+            "unavailable": 0,
             "counts": {"newly_failing": 0, "newly_inconclusive": 0, "recovered": 0, "new_banners": 0,
-                       "removed_banners": 0, "still_failing": 0}}
+                       "removed_banners": 0, "still_failing": 0, "unavailable": 0}}
 
 
 def counts(diff: dict) -> dict[str, int]:
     return {"newly_failing": len(diff["newly_failing"]), "newly_inconclusive": len(diff["newly_inconclusive"]),
             "recovered": len(diff["recovered"]), "new_banners": len(diff["new_banners"]),
-            "removed_banners": len(diff["removed_banners"]), "still_failing": diff["still_failing"]}
+            "removed_banners": len(diff["removed_banners"]), "still_failing": diff["still_failing"],
+            "unavailable": diff.get("unavailable", 0)}
 
 
 def is_notable(diff: dict, mode: str) -> bool:
@@ -85,7 +88,8 @@ def summarize(diff: dict) -> str:
              f"{c['newly_inconclusive']} new INCONCLUSIVE" if c["newly_inconclusive"] else "",
              f"{c['recovered']} recovered" if c["recovered"] else "",
              f"{c['new_banners']} new banner{'s' if c['new_banners'] != 1 else ''}" if c["new_banners"] else "",
-             f"{c['removed_banners']} removed" if c["removed_banners"] else ""]
+             f"{c['removed_banners']} removed" if c["removed_banners"] else "",
+             f"{c['unavailable']} couldn't be checked" if c.get("unavailable") else ""]
     return ", ".join(p for p in parts if p) or "no change"
 
 

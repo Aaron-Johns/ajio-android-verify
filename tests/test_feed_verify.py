@@ -885,3 +885,38 @@ def test_a_fetcher_that_takes_no_store_argument_is_still_called_for_ordinary_lin
     cache = fv.ListingCache(lambda slug, kind="curated": calls.append((slug, kind)) or listing(), pause=0)
     cache.get("curated", "s-1")
     assert calls == [("s-1", "curated")]
+
+
+# ---- UNAVAILABLE: a temporary server/network error that outlived its retries is not a finding about the banner ----
+
+def _inc(reason, **extra):
+    return {"banner_id": "a", "result": "INCONCLUSIVE", "reason": reason, "attempts": 5, **extra}
+
+
+def test_shown_result_turns_a_spent_temporary_error_into_unavailable():
+    assert fv.shown_result(_inc("listing_fetch_failed: FeedError: HTTP 400")) == "UNAVAILABLE"
+    assert fv.shown_result(_inc("image_download_failed: error: ConnectionError")) == "UNAVAILABLE"
+    assert fv.shown_result(_inc("vision_failed: InternalServerError: 503")) == "UNAVAILABLE"
+
+
+def test_a_transient_hotspot_error_counts_too():
+    r = _inc("", hotspot_checks=[{"result": "INCONCLUSIVE", "reason": "listing_fetch_failed: timeout"}])
+    assert fv.shown_result(r) == "UNAVAILABLE"
+
+
+def test_other_inconclusive_reasons_stay_inconclusive_and_other_results_are_untouched():
+    assert fv.shown_result(_inc("empty_bounding_box_after_scaling")) == "INCONCLUSIVE"
+    assert fv.shown_result(_inc("vision_unavailable: no key")) == "INCONCLUSIVE"           # a missing key won't fix itself
+    for status in ("PASS", "FAIL", "SKIPPED"):
+        assert fv.shown_result({"banner_id": "a", "result": status, "reason": "listing_fetch_failed"}) == status
+
+
+def test_in_a_live_run_it_is_still_processing_while_tries_remain():
+    assert fv.shown_result(_inc("listing_fetch_failed: x", attempts=2), live=True) == "PROCESSING"
+    assert fv.shown_result(_inc("listing_fetch_failed: x", attempts=fv.RETRY_ROUNDS + 1), live=True) == "UNAVAILABLE"
+    assert fv.shown_result(_inc("listing_fetch_failed: x", attempts=2), live=False) == "UNAVAILABLE"   # run over: no more tries coming
+
+
+def test_the_cli_summary_counts_unavailable_separately():
+    text = fv.format_summary([{"banner_id": "a", "result": "PASS"}, _inc("listing_fetch_failed: x", alt_text="t")])
+    assert "PASS=1" in text and "UNAVAILABLE=1" in text and "INCONCLUSIVE" not in text.split("\n")[0]

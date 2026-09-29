@@ -1255,3 +1255,39 @@ tile), and the same mark is its tab icon. Classic: a new `.logo-mark` left of th
 The two tab icons are inline SVG data URIs, so no extra files. Checked in headless Edge, light and dark; 0 console
 errors. Not committed.
 
+## Added: UNAVAILABLE status, retry of AJIO's flaky 400, Gemma pacing shared across runs
+
+**Ask (2026-09-29), from the "what else to improve" list:** (1) stop temporary server/network failures counting as
+"needs a look", with the same Retry option as after 5 exhausted tries; (2) retry the intermittent HTTP 400; (4) share
+the Gemma rate limit across processes. (3 was resolved by the user - the title/deal FAIL is correct; 5 - resume of
+queued batches after a restart - deferred.)
+
+**1. UNAVAILABLE.** Internally a temporary failure is still `INCONCLUSIVE` + a transient reason (the retry queue,
+cache and resume logic key on that, untouched). `qa/feed_verify.shown_result()` decides what a person sees:
+INCONCLUSIVE + transient reason -> `UNAVAILABLE` (or `PROCESSING` while a live run still has tries left). Used by
+`web/runner.run_view` (card status; `retries_exhausted` stays true so **Retry** is offered), `runner.load_shown_results`
+(run-list counts, the scheduler diff), the CLI summary and the Excel export (own light-blue fill, sorted before
+SKIPPED). `qa/run_diff`: UNAVAILABLE is neither a new failure nor an inconclusive nor a recovery, is counted
+(`counts.unavailable`, "N couldn't be checked" in the summary) and never triggers an alert; UNAVAILABLE -> FAIL is a
+new failure. Both UIs: classic slate/dashed card, `U` tally chip, filter chip; manager "Couldn't check" pill, hatched
+bar segment, own legend chip, excluded from "need a look" and from the pass-rate denominator.
+Effect on real data: run 20260929T052515Z (the network drop) went from 47 INCONCLUSIVE to 7 INCONCLUSIVE + 40
+UNAVAILABLE; 9 of 27 runs have some. **Caveat:** a FAIL -> (outage) UNAVAILABLE -> FAIL sequence alerts "new FAIL"
+again, since the diff compares with the previous run's status only.
+
+**2. HTTP 400 NullPointerException.** `listing_client._is_server_bug()`: a 400 whose body contains
+`NullPointerException` is retried inside `fetch_listing` with the usual backoff (4 attempts); any other 400 still
+fails at once. Verified earlier that the affected links return normally when retried later. Not verified live that
+this clears them (it was intermittent).
+
+**4. Shared pacer.** `vision.CallPacer(shared_path=)`: the next free slot lives in `qa/.cache/gemma_pacer.json`
+under an OS file lock (msvcrt / flock), on the wall clock; falls back to per-process pacing if the file is
+unusable; a booking more than an hour ahead is capped. `GEMMA_PACER_SHARED=0` disables sharing. A first version read
+the clock *before* waiting for the lock, so a contended lock could let two processes fire together - caught by the
+3-real-process test failing about 1 run in 3, fixed by reading the clock inside the lock and polling with
+`LK_NBLCK`; stable since (8/8, then the full suite).
+**Tests:** 584 pass (new: shown_result cases, run view / summary / diff / export handling, 400 retry + give-up +
+other-400, shared pacer with two pacers, corrupt file, unusable folder, far-future booking, 3 real processes).
+**Live:** server restarted (the running check was adopted, untouched); both UIs checked in headless Edge on the
+real run above (9/9), 0 console errors. Not committed.
+

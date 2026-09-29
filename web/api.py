@@ -237,7 +237,7 @@ def _run_excluded_sections(row) -> set[str]:
 def _run_summary(row) -> dict:
     d = dict(row)
     out_dir = Path(d["out_dir"])
-    results = runner.load_results(out_dir)
+    results = runner.load_shown_results(out_dir, is_live=d["status"] == "running")
     counts: dict[str, int] = {}
     for r in results.values():
         counts[r["result"]] = counts.get(r["result"], 0) + 1

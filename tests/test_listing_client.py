@@ -109,3 +109,35 @@ def test_the_standard_store_is_still_the_default():
     s = Session(Resp(200, DATA))
     lc.fetch_listing("min70percentoffcurated-402881", session=s, sleep=lambda x: None)
     assert "store=rilfnl" in s.calls[0][0]
+
+
+NPE_400 = ('{"errors":[{"reason":"Oops! Something went wrong !!","type":"NullPointerException",'
+           '"message":"Cannot invoke \\"java.util.List.stream()\\" because \\"facetData\\" is null"}]}')
+
+
+def server_bug():
+    r = Resp(400)
+    r.text = NPE_400
+    return r
+
+
+def test_ajios_intermittent_400_nullpointer_is_retried_like_a_5xx():
+    session = Session(server_bug(), server_bug(), Resp(200, DATA))
+    ok = lc.fetch_listing("s", session=session, sleep=lambda x: None)
+    assert ok.title == "Min 70 Percent Off" and len(session.calls) == 3
+
+
+def test_it_gives_up_after_the_usual_number_of_attempts_if_the_400_never_clears():
+    session = Session(*[server_bug() for _ in range(lc.MAX_ATTEMPTS)])
+    with pytest.raises(FeedError, match="gave up after"):
+        lc.fetch_listing("s", session=session, sleep=lambda x: None)
+    assert len(session.calls) == lc.MAX_ATTEMPTS
+
+
+def test_any_other_400_is_still_a_real_error_and_not_retried():
+    bad = Resp(400)
+    bad.text = '{"errors":[{"reason":"invalid curatedid"}]}'
+    session = Session(bad, Resp(200, DATA))
+    with pytest.raises(FeedError, match="400"):
+        lc.fetch_listing("s", session=session, sleep=lambda x: None)
+    assert len(session.calls) == 1

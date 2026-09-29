@@ -18,6 +18,7 @@
     --proc: #7c4dff; --proc-soft: #f0eaff; --proc-ink: #5b34d6;
     --pend: #8792a5; --pend-soft: #eef0f4; --pend-ink: #566072;
     --skip: #0b8ad9; --skip-soft: #e4f3fc; --skip-ink: #0a6aa8;
+    --unav: #7b8794; --unav-soft: #eceff3; --unav-ink: #3e4c59;
     --shadow-1: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
     --shadow-2: 0 10px 30px rgba(16,24,40,.12);
     --r: 14px; --r-sm: 9px;
@@ -36,6 +37,7 @@
       --proc: #a78bfa; --proc-soft: rgba(167,139,250,.16); --proc-ink: #c6b5ff;
       --pend: #6f7b93; --pend-soft: rgba(111,123,147,.16); --pend-ink: #b4bdd0;
       --skip: #4db2f5; --skip-soft: rgba(77,178,245,.14); --skip-ink: #93d3fb;
+      --unav: #8a96a3; --unav-soft: rgba(138,150,163,.16); --unav-ink: #c5ccd3;
       --shadow-1: 0 1px 2px rgba(0,0,0,.4);
       --shadow-2: 0 14px 36px rgba(0,0,0,.55);
       color-scheme: dark;
@@ -53,6 +55,7 @@
     --proc: #a78bfa; --proc-soft: rgba(167,139,250,.16); --proc-ink: #c6b5ff;
     --pend: #6f7b93; --pend-soft: rgba(111,123,147,.16); --pend-ink: #b4bdd0;
     --skip: #4db2f5; --skip-soft: rgba(77,178,245,.14); --skip-ink: #93d3fb;
+    --unav: #8a96a3; --unav-soft: rgba(138,150,163,.16); --unav-ink: #c5ccd3;
     --shadow-1: 0 1px 2px rgba(0,0,0,.4);
     --shadow-2: 0 14px 36px rgba(0,0,0,.55);
     color-scheme: dark;
@@ -199,12 +202,14 @@
   .pill.proc::before { animation: blink 1.1s ease-in-out infinite; }
   .pill.skip { background: var(--skip-soft); color: var(--skip-ink); }
   .pill.pend { background: var(--pend-soft); color: var(--pend-ink); }
+  .pill.unav { background: var(--unav-soft); color: var(--unav-ink); box-shadow: inset 0 0 0 1px var(--unav); }
   .pill.plain::before { display: none; }
   @keyframes blink { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
   .seg { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--surface-3); gap: 2px; }
   .seg > i { display: block; height: 100%; min-width: 3px; }
   .seg .pass { background: var(--pass); } .seg .fail { background: var(--fail); } .seg .warn { background: var(--warn); }
   .seg .proc { background: var(--proc); } .seg .skip { background: var(--skip); } .seg .pend { background: var(--pend); opacity: .45; }
+  .seg .unav { background: repeating-linear-gradient(135deg, var(--unav) 0 3px, transparent 3px 6px); }
   .seg.lg { height: 12px; }
   .seg .proc { animation: shimmer 1.4s ease-in-out infinite; }
   @keyframes shimmer { 50% { opacity: .55; } }
@@ -308,6 +313,7 @@
   .lg-chip.on { border-color: var(--ink); background: var(--surface); }
   .lg-chip.pass .sw { background: var(--pass); } .lg-chip.fail .sw { background: var(--fail); } .lg-chip.warn .sw { background: var(--warn); }
   .lg-chip.proc .sw { background: var(--proc); } .lg-chip.skip .sw { background: var(--skip); } .lg-chip.pend .sw { background: var(--pend); }
+  .lg-chip.unav .sw { background: repeating-linear-gradient(135deg, var(--unav) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--unav); }
   .diff-note { margin-top: 12px; padding: 9px 13px; border-radius: 10px; background: var(--surface-2); font-size: 13px; display: flex; gap: 8px; align-items: center; }
   .diff-note.bad { background: var(--fail-soft); color: var(--fail-ink); font-weight: 600; }
   .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 20px 0 16px; }
@@ -333,19 +339,21 @@
   .bcard .status-pill.warn { background-image: linear-gradient(var(--warn-soft), var(--warn-soft)); }
   .bcard .status-pill.proc { background-image: linear-gradient(var(--proc-soft), var(--proc-soft)); }
   .bcard .status-pill.skip { background-image: linear-gradient(var(--skip-soft), var(--skip-soft)); }
+  .bcard .status-pill.unav { background-image: linear-gradient(var(--unav-soft), var(--unav-soft)); }
   .bcard .flags { position: absolute; right: 10px; top: 10px; display: flex; gap: 5px; }
   .bcard .flags span { font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: rgba(15,23,42,.78); color: #fff; letter-spacing: .04em; }
   .bcard .activity { position: absolute; left: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 7px; padding: 3px 11px 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface); color: var(--proc-ink); box-shadow: 0 2px 8px rgba(0,0,0,.22); }
   .bcard .activity i { width: 7px; height: 7px; border-radius: 50%; background: var(--proc); animation: blink 1s infinite; }
   .bcard .bar { height: 3px; background: var(--pend); }
   .bcard.s-PASS .bar { background: var(--pass); } .bcard.s-FAIL .bar { background: var(--fail); } .bcard.s-INCONCLUSIVE .bar { background: var(--warn); }
-  .bcard.s-PROCESSING .bar { background: var(--proc); } .bcard.s-SKIPPED .bar { background: var(--skip); }
+  .bcard.s-PROCESSING .bar { background: var(--proc); } .bcard.s-SKIPPED .bar { background: var(--skip); } .bcard.s-UNAVAILABLE .bar { background: var(--unav); }
   .bcard.s-PROCESSING { box-shadow: 0 0 0 2px color-mix(in srgb, var(--proc) 45%, transparent), var(--shadow-1); }
   .bcard .bd { padding: 13px 15px 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
   .bcard .where { font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
   .bcard .alt { font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .bcard .why { font-size: 12.5px; padding: 8px 10px; border-radius: 9px; background: var(--fail-soft); color: var(--fail-ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .bcard.s-INCONCLUSIVE .why { background: var(--warn-soft); color: var(--warn-ink); }
+  .bcard.s-UNAVAILABLE .why { background: var(--unav-soft); color: var(--unav-ink); }
   .bcard .foot { margin-top: auto; display: flex; gap: 8px; align-items: center; padding-top: 4px; }
   .bcard .link { font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
   .bcard.skip-req { opacity: .55; filter: grayscale(.8); }
@@ -475,9 +483,9 @@
   .sheet .imgbox { position: sticky; top: 0; align-self: start; }
   .sheet .imgbox img { width: 100%; border-radius: var(--r); display: block; box-shadow: var(--shadow-1); background: var(--surface-3); }
   .verdict { padding: 16px 18px; border-radius: var(--r); display: flex; gap: 14px; align-items: flex-start; background: var(--pend-soft); }
-  .verdict.pass { background: var(--pass-soft); } .verdict.fail { background: var(--fail-soft); } .verdict.warn { background: var(--warn-soft); } .verdict.proc { background: var(--proc-soft); } .verdict.skip { background: var(--skip-soft); }
+  .verdict.pass { background: var(--pass-soft); } .verdict.fail { background: var(--fail-soft); } .verdict.warn { background: var(--warn-soft); } .verdict.proc { background: var(--proc-soft); } .verdict.skip { background: var(--skip-soft); } .verdict.unav { background: var(--unav-soft); }
   .verdict .vi { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--pend); color: #fff; flex: none; }
-  .verdict.pass .vi { background: var(--pass); } .verdict.fail .vi { background: var(--fail); } .verdict.warn .vi { background: var(--warn); } .verdict.proc .vi { background: var(--proc); } .verdict.skip .vi { background: var(--skip); }
+  .verdict.pass .vi { background: var(--pass); } .verdict.fail .vi { background: var(--fail); } .verdict.warn .vi { background: var(--warn); } .verdict.proc .vi { background: var(--proc); } .verdict.skip .vi { background: var(--skip); } .verdict.unav .vi { background: var(--unav); }
   .verdict b { font-size: 16px; display: block; }
   .verdict p { color: var(--ink-2); font-size: 13.5px; margin-top: 3px; }
   .dl-card { padding: 4px 18px; margin-top: 14px; }
@@ -627,8 +635,9 @@ const pad2 = n => String(n).padStart(2, "0");
 const ST = {
   PASS: { label: "Passed", cls: "pass" }, FAIL: { label: "Failed", cls: "fail" }, INCONCLUSIVE: { label: "Inconclusive", cls: "warn" },
   PROCESSING: { label: "Checking", cls: "proc" }, PENDING: { label: "Queued", cls: "pend" }, SKIPPED: { label: "Skipped", cls: "skip" },
+  UNAVAILABLE: { label: "Couldn't check", cls: "unav" },   // AJIO / the network didn't answer: not a banner problem, not counted as needing review
 };
-const ORDER = ["PASS", "FAIL", "INCONCLUSIVE", "PROCESSING", "PENDING", "SKIPPED"];
+const ORDER = ["PASS", "FAIL", "INCONCLUSIVE", "UNAVAILABLE", "PROCESSING", "PENDING", "SKIPPED"];
 const stCls = k => (ST[k] || { cls: "pend" }).cls;
 const stLabel = k => (ST[k] || { label: k }).label;
 const needsReview = c => ((c || {}).FAIL || 0) + ((c || {}).INCONCLUSIVE || 0);
@@ -659,7 +668,8 @@ function runLine(r) {
     return `<span class="dim">Stopped early · ${judged} judged</span>${c.FAIL ? ` · <span class="num-warn">${c.FAIL} failed</span>` : ""}`;
   }
   if (!t) return "No results";
-  return n ? `<span class="num-warn">${n} need${n === 1 ? "s" : ""} a look</span>` : "All clear";
+  const u = c.UNAVAILABLE ? ` <span class="muted">· ${c.UNAVAILABLE} couldn't be checked</span>` : "";
+  return (n ? `<span class="num-warn">${n} need${n === 1 ? "s" : ""} a look</span>` : "All clear") + u;
 }
 
 // ---------- state ----------
@@ -987,7 +997,7 @@ async function viewOverview(route, view, stale) {
     </div>
     <div class="kpis">
       <div class="card kpi"><div class="k"><i class="dotk pass"></i>Passing</div><div class="v">${totals.PASS || 0}</div><div class="n">of ${judged} judged banners</div></div>
-      <div class="card kpi"><div class="k"><i class="dotk ${review ? "fail" : "pass"}"></i>Need a look</div><div class="v">${review}</div><div class="n">${(totals.FAIL || 0)} failed · ${(totals.INCONCLUSIVE || 0)} inconclusive</div></div>
+      <div class="card kpi"><div class="k"><i class="dotk ${review ? "fail" : "pass"}"></i>Need a look</div><div class="v">${review}</div><div class="n">${(totals.FAIL || 0)} failed · ${(totals.INCONCLUSIVE || 0)} inconclusive${totals.UNAVAILABLE ? ` · ${totals.UNAVAILABLE} couldn't be checked` : ""}</div></div>
       <div class="card kpi"><div class="k"><i class="dotk brand"></i>Automatic checks</div><div class="v">${enabled.length}</div><div class="n">${!scheds.length ? "no schedules yet" : scheds.length - enabled.length ? `${scheds.length - enabled.length} paused` : "all schedules on"}</div></div>
       <div class="card kpi"><div class="k"><i class="dotk warn"></i>Next scheduled check</div><div class="v txt">${nextSched ? esc(inTime(nextSched.next_run_at)) : "—"}</div><div class="n">${nextSched ? esc(nextSched.name) : "nothing scheduled"}</div></div>
     </div>
@@ -1180,7 +1190,8 @@ function paintRun() {
   const head = run.status === "running" ? `Checking… ${done} of ${total} banners done`
     : !total ? "No banners in this check"
     : stopped ? `Stopped early — ${plural(judged, "banner")} judged before it ended`
-    : review ? `${plural(review, "banner")} ${review === 1 ? "needs" : "need"} a look` : "All banners look right";
+    : review ? `${plural(review, "banner")} ${review === 1 ? "needs" : "need"} a look`
+      : counts.UNAVAILABLE ? `All judged banners look right — ${plural(counts.UNAVAILABLE, "banner")} couldn't be checked` : "All banners look right";
   const sum = byId("rp-summary");
   sum.innerHTML = `<div><div class="big">${esc(head)}</div>
       <div style="margin-top:12px">${segBar(counts, "lg")}</div>
@@ -1208,7 +1219,7 @@ function paintRun() {
 
   let list = all.filter(b => (!R.filter.size || R.filter.has(b.result)) && (R.carousel === "" || String(b.section_index) === String(R.carousel)));
   if (R.sort === "problems") {
-    const rank = { FAIL: 0, INCONCLUSIVE: 1, PROCESSING: 2, PENDING: 3, SKIPPED: 4, PASS: 5 };
+    const rank = { FAIL: 0, INCONCLUSIVE: 1, UNAVAILABLE: 2, PROCESSING: 3, PENDING: 4, SKIPPED: 5, PASS: 6 };
     list = list.map((b, i) => [b, i]).sort((x, y) => (rank[x[0].result] - rank[y[0].result]) || x[1] - y[1]).map(x => x[0]);
   }
   R.list = list;
@@ -1222,7 +1233,7 @@ function paintRun() {
   });
 }
 function bannerCardHtml(b) {
-  const why = (b.result === "FAIL" || b.result === "INCONCLUSIVE") ? reasonText(b, true) : "";
+  const why = (b.result === "FAIL" || b.result === "INCONCLUSIVE" || b.result === "UNAVAILABLE") ? reasonText(b, true) : "";
   const brands = (b.banner_check && b.banner_check.banner_brands) || [], deal = (b.banner_check && b.banner_check.banner_deal) || "";
   const label = b.result === "PROCESSING" && b.max_tries ? `Checking · try ${b.try_number}/${b.max_tries}` : stLabel(b.result);
   return `<article class="bcard s-${b.result}${b.skip_requested ? " skip-req" : ""}" data-id="${esc(b.banner_id)}" tabindex="0">
@@ -1278,7 +1289,7 @@ function closeSheet() { byId("sheet").classList.remove("open"); byId("sheet").se
 function row(k, v, cls = "") { return (v === undefined || v === null || v === "") ? "" : `<div class="dl-row"><div class="k">${esc(k)}</div><div class="v ${cls}">${v}</div></div>`; }
 function paintSheet() {
   const b = sheetList[sheetIdx], c = b.banner_check || {}, cls = stCls(b.result);
-  const headline = { PASS: "This banner opens the right page", FAIL: "This banner doesn't match its page", INCONCLUSIVE: "The tool couldn't decide — please look", PROCESSING: "Being checked right now", PENDING: "Waiting in the queue", SKIPPED: "Skipped" }[b.result] || b.result;
+  const headline = { PASS: "This banner opens the right page", FAIL: "This banner doesn't match its page", INCONCLUSIVE: "The tool couldn't decide — please look", UNAVAILABLE: "AJIO or the network didn't answer — not a banner problem", PROCESSING: "Being checked right now", PENDING: "Waiting in the queue", SKIPPED: "Skipped" }[b.result] || b.result;
   const reason = reasonText(b);
   const yn = v => v === true ? "Yes" : v === false ? "No" : (v === "AJIO_BEAUTY" || v === "INCONCLUSIVE") ? String(v).replace("_", " ").toLowerCase() : "";
   const hs = (b.hotspot_checks || []).map(h => {

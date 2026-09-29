@@ -66,8 +66,10 @@ a random sample, so it'll always be the same early banners on the page, never th
 **paced to 6 a minute across all workers** (sized to a 16K tokens-per-minute limit, ~2,200 input tokens per
 call), so a worker that needs Gemma while the pace is used up shows **Waiting turn** on its card - going
 above ~10 workers buys nothing, since about that many are already enough to keep the pace busy at the
-~90 s a Gemma call takes. To change the pace set `GEMMA_CALLS_PER_MINUTE` in `.env` (`0` = no limit;
-the pace is per run process). Higher is faster
+~90 s a Gemma call takes. The pace is **shared by every run on this PC** through a small lock file
+(`qa/.cache/gemma_pacer.json`), so two runs at once, a scheduled run plus a manual one, or a Retry during a run
+queue behind each other instead of each pacing itself. To change the pace set `GEMMA_CALLS_PER_MINUTE` in `.env`
+(`0` = no limit); `GEMMA_PACER_SHARED=0` goes back to pacing each run on its own. Higher is faster
 wall-clock time, but it's also more simultaneous load on Gemini and on AJIO's listing-search API —
 if you start seeing more `listing_fetch_failed`/`vision_failed` transient errors than usual, dropping
 this back down is worth trying before assuming something else is wrong.
@@ -103,7 +105,8 @@ Each card is colored and labeled by its current status:
 | **PROCESSING X/N TRIES** | Being checked right now, or waiting out the pause between automatic retry attempts (X = current attempt, N = max, always 5) | No |
 | **PASS** | The banner's claimed brand/deal/audience all matched the destination it links to | No |
 | **FAIL** | The pipeline found a concrete mismatch (wrong brand, deal text doesn't match the listing title, wrong audience) | **Yes** |
-| **INCONCLUSIVE** | The pipeline couldn't confidently resolve something — an ambiguous gender read, an AJIO Beauty banner (gender check doesn't apply), or a genuinely transient error that used up all 5 retries | **Yes** |
+| **INCONCLUSIVE** | The pipeline couldn't confidently resolve something — an ambiguous gender read or an AJIO Beauty banner (gender check doesn't apply) | **Yes** |
+| **UNAVAILABLE** | AJIO, Google or the network didn't answer, and the banner used up all 5 automatic tries. Says nothing about the banner itself. Slate grey with a dashed border in the classic UI; **Couldn't check** in the manager view | No - **Retry this banner** |
 | **SKIPPED** | Nothing to check (banner has no listing link at all — a webview/external/cart-type destination), it's currently hidden/out-of-schedule, or you skipped it manually | No |
 
 **The activity tag.** While a banner is in progress, a small tag at the **bottom left of its card** says
@@ -124,6 +127,16 @@ While it cools down, workers carry on with untried banners, so a failed banner n
 banner gets at most 5 tries (the "X/5"); a call that hangs is cut off by its own timeout (Gemini 3 min,
 listing and image downloads 30 s) and counts as a failed try. The retry pass no longer exists as a
 separate step, so a banner waiting for its retry shows PROCESSING for seconds, not minutes.
+
+**UNAVAILABLE** is what used to show up as INCONCLUSIVE whenever a *temporary server or network error* outlasted
+the automatic retries (a listing lookup that kept failing, an image that wouldn't download, Gemma erroring or
+overloaded). It is kept out of the "needs a look" count so an outage can't make a run look like it found problems,
+and it is not part of the alert diff (a run that only had outages never alerts). It has its own filter chip, a
+`U` in run tallies, and the same **Retry this banner** button as any banner that ran out of tries. A banner in a
+run that was stopped part-way through its retries is UNAVAILABLE too. AJIO's listing service also sometimes
+answers a good request with an HTTP 400 (a `NullPointerException` on their side); that particular error is now
+retried automatically with a growing pause, like a 5xx, so most of them clear on their own and never reach this
+status.
 
 **FAIL and INCONCLUSIVE are not the same thing**, even though both need a look: FAIL means the
 pipeline made a determination and it didn't match — that's a real, specific finding you can act on.
@@ -163,7 +176,7 @@ turn would otherwise come up — genuinely never sent, no image download, no API
 button (now labeled Unskip) to undo, as long as it hasn't already been processed in the meantime.
 
 **Retry this banner** — only appears once a banner has burned through all 5 of its automatic attempts
-and is still stuck on a transient-looking error. Redoes just that one banner in place; nothing else in
+and is still stuck on a transient-looking error (it then shows as **UNAVAILABLE**). Redoes just that one banner in place; nothing else in
 the run is touched. Consider *why* it failed 5 times before retrying blindly — a genuinely transient
 AJIO-side hiccup (a 5xx, a one-off backend error) is worth retrying and will often resolve; a
 consistently-reproducing error (the same listing 400ing every single time) probably won't be fixed by
