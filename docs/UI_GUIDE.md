@@ -381,6 +381,15 @@ black, glowing **Manager view** button in the original's header) switch between 
   controls, the scope, a carousel checklist (untick a carousel to leave it out) and, under *Advanced*, the banner
   cap, parallelism and **Forget saved results** (the cache clear). **Repeat automatically...** carries these
   choices into the new-schedule form.
+- **Schedule search.** A search box beside the **Schedules** heading filters the schedule cards as you type - every
+  word has to appear in the schedule's name, customer type / department, state, pincode, interval (`2 hours` or
+  `2h`), last result or active / paused, in any order. It works together with the All / Active / Paused / Needs
+  attention tabs (their counts follow the search), Esc clears it, and it is remembered when you come back to the page.
+- **A schedule's checks** get the same two extras as the original's runs page: **From / to date pickers** (checks
+  that *started* between those days, both included, this PC's local time; one-sided, single-day and reversed ranges
+  all work; **Clear dates** resets; kept across the page's live refresh) and a **Download Excel** button on every
+  completed check's tile (status complete - not a cancelled or stopped one), which downloads without opening the
+  check. As in the original, only the latest 120 checks are loaded.
 - **Schedules** and **Alerts** have everything the original's scheduler has: create / edit (start date + time,
   every N minutes/hours/days, multi-select axes, carousels to leave out, alert mode + Windows notification),
   pause / resume, run now, delete, a schedule's checks grouped by the fire that made them, and mark read / remove /

@@ -1362,3 +1362,21 @@ afterwards: full list, 4 buttons (none on the cancelled one), 12-20 Sep -> 3, on
 dates, an empty range, survives re-render, a real click saved a 1.4 MB .xlsx and stayed on the page, Clear dates; 12/13
 (the one miss was the test's expectation of lowercase text). 0 console errors.
 
+## Added: the original's filters in the manager view (still not the default page)
+
+**Ask (2026-09-29):** keep `/` as the classic UI, but bring the original's filters to the manager view. (Also reported
+by the user: they tested a scheduler and it fires on its own - the open "never seen a scheduled fire" item is closed.)
+Audit of the original's filters against the manager: status chips, carousel filter, show-hidden switch, clear filters
+and the schedule list's All / Enabled / Disabled / Needs-attention tabs already existed; three were missing and are now
+in `web/static/manager/index.html`:
+1. **Schedule search** in the Schedules page heading (`schedMatchesQuery`: name, l1, l2, state, pincode, interval as
+   `2 hours` and `2h`, last status, active/paused; AND of words; combines with the tabs and their counts; Esc clears; the
+   query is a module variable, so it survives navigating away and back).
+2. **Date range** on a schedule's checks (`detailRange`, `runInRange`, same rules as the classic page: local calendar days,
+   both included, one-sided / single-day OK, reversed swapped, kept across the live refresh, which now waits while a date
+   box is focused).
+3. **Download Excel** on completed check tiles (`runTile(r, {excel: true})`, download only, doesn't open the check).
+The checks list is now painted by `paintRuns()` so a date change only repaints that block. Verified in headless Edge with 3
+throwaway schedulers and 5 temporary runs (all removed; the user's own schedulers untouched): 24/25, the one miss being the
+test's expectation of lowercase for an uppercase heading; 0 console errors.
+

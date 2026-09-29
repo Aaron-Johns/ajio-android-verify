@@ -269,6 +269,9 @@
   .mini { min-width: 130px; }
   .mini .seg { margin-bottom: 4px; }
   .mini .lab { font-size: 12px; color: var(--ink-2); }
+  .search-box { width: 250px; max-width: 100%; }
+  .range-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; font-size: 13px; color: var(--ink-2); }
+  .range-row .input { width: 160px; }
   .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
   .tab {
     padding: 6px 13px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer;
@@ -1460,24 +1463,48 @@ function schedCard(s) {
       <a class="btn sm" href="#/schedules/${s.id}/edit">${ico("edit", "sm")} Edit</a><button class="btn sm danger" data-act="delete" style="margin-left:auto">${ico("trash", "sm")}</button></div></div>`;
 }
 
+// The schedule search: every word typed has to appear in the schedule's name, l1 / l2, state, pincode, interval ("2 hours"
+// or "2h"), last result or active / paused - any order, any case. Works together with the tabs below it.
+let schedQuery = "";
+const shortInterval = m => (m % 1440 === 0 ? `${m / 1440}d` : m % 60 === 0 ? `${m / 60}h` : `${m}m`);
+function schedMatchesQuery(s, query = schedQuery) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const text = [s.name, ...s.l1s, ...s.l2s, ...s.states, ...s.pincodes, fmtInterval(s.interval_minutes), shortInterval(s.interval_minutes),
+    s.last_status || "", s.enabled ? "enabled active" : "disabled paused"].join(" ").toLowerCase();
+  return words.every(w => text.includes(w));
+}
+
 async function viewSchedules(route, view, stale) {
   await refreshCore();
   if (stale()) return;
   const F = [["all", "All"], ["enabled", "Active"], ["disabled", "Paused"], ["attention", "Needs attention"]];
-  const match = (s, k) => k === "all" || (k === "enabled" && s.enabled) || (k === "disabled" && !s.enabled) || (k === "attention" && needsAttention(s));
+  const match = (s, k) => (k === "all" || (k === "enabled" && s.enabled) || (k === "disabled" && !s.enabled) || (k === "attention" && needsAttention(s))) &&
+    schedMatchesQuery(s);
   const perDay = Math.round(scheds.filter(s => s.enabled).reduce((n, s) => n + s.combo_count * 1440 / s.interval_minutes, 0));
   view.innerHTML = `${pageHead({ title: "Schedules", sub: scheds.length ? `${plural(scheds.filter(s => s.enabled).length, "schedule")} active · about ${plural(perDay, "check")} a day when they all fire` : "Let the tool check the feed on its own and warn you when something breaks.",
-      actions: `<a class="btn primary" href="#/schedules/new">${ico("plus")} New schedule</a>` })}
-    ${scheds.length ? `<div class="tabs" id="sc-tabs">${F.map(([k, l]) => `<button class="tab${schedFilter === k ? " on" : ""}" data-f="${k}">${l}<span class="c">${scheds.filter(s => match(s, k)).length}</span></button>`).join("")}</div>` : ""}
+      actions: `${scheds.length ? `<input class="input search-box" id="sc-search" placeholder="Search schedules…" autocomplete="off" spellcheck="false" aria-label="Search schedules" title="Filter by name, customer type, department, state, pincode, interval or status">` : ""}<a class="btn primary" href="#/schedules/new">${ico("plus")} New schedule</a>` })}
+    ${scheds.length ? `<div class="tabs" id="sc-tabs"></div>` : ""}
     <div id="sc-body"></div>`;
+  const paintTabs = () => {
+    const tabs = byId("sc-tabs"); if (!tabs) return;
+    tabs.innerHTML = F.map(([k, l]) => `<button class="tab${schedFilter === k ? " on" : ""}" data-f="${k}">${l}<span class="c">${scheds.filter(s => match(s, k)).length}</span></button>`).join("");
+    $$(".tab", tabs).forEach(t => t.addEventListener("click", () => { schedFilter = t.dataset.f; paintTabs(); paint(); }));
+  };
   const paint = () => {
     const shown = scheds.filter(s => match(s, schedFilter));
     byId("sc-body").innerHTML = shown.length ? `<div class="sched-grid">${shown.map(schedCard).join("")}</div>`
-      : `<div class="empty"><div class="big">${scheds.length ? "No schedule matches this filter" : "No schedules yet"}</div>${scheds.length ? "" : `Create one and it will check on its own, then alert you when a banner newly breaks.<p style="margin-top:14px"><a class="btn primary" href="#/schedules/new">Create your first schedule</a></p>`}</div>`;
+      : `<div class="empty"><div class="big">${!scheds.length ? "No schedules yet" : schedQuery.trim() ? `No schedule matches “${esc(schedQuery.trim())}”` : "No schedule matches this filter"}</div>${scheds.length ? "" : `Create one and it will check on its own, then alert you when a banner newly breaks.<p style="margin-top:14px"><a class="btn primary" href="#/schedules/new">Create your first schedule</a></p>`}</div>`;
     wireSchedCards(byId("sc-body"));
     paintIcons(byId("sc-body"));
   };
-  $$("#sc-tabs .tab").forEach(t => t.addEventListener("click", () => { schedFilter = t.dataset.f; $$("#sc-tabs .tab").forEach(x => x.classList.toggle("on", x === t)); paint(); }));
+  const box = byId("sc-search");
+  if (box) {
+    box.value = schedQuery;
+    box.addEventListener("input", () => { schedQuery = box.value; paintTabs(); paint(); });
+    box.addEventListener("keydown", e => { if (e.key === "Escape" && box.value) { box.value = ""; schedQuery = ""; paintTabs(); paint(); } });
+  }
+  paintTabs();
   paint();
 }
 function wireSchedCards(root) {
@@ -1495,12 +1522,13 @@ function groupRuns(list) {
   for (const g of groups) g.runs.sort((a, b) => (a.started_at < b.started_at ? -1 : 1));
   return groups;
 }
-function runTile(r) {
+function runTile(r, opts = {}) {
   const t = totalOf(r.counts), took = r.finished_at ? fmtDuration(Math.max(0, Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000))) : "";
   return `<div class="card rtile" data-open="${esc(r.run_id)}" tabindex="0" role="link"><div class="h"><span class="grow">${feedLabel(r)}</span>${runPill(r.status)}</div>
     <div class="cell-sub">${placeLabel(r)}</div>${segBar(r.counts)}
     <div class="lab dim" style="font-size:12.5px">${runLine(r)} <span class="muted">· ${plural(t, "banner")}${took ? ` · ${esc(took)}` : ""}</span></div>
-    ${r.diff ? `<div style="font-size:12.5px;${!r.diff.baseline && r.diff.counts.newly_failing ? "color:var(--fail-ink);font-weight:600" : "color:var(--ink-3)"}">${esc(r.diff.summary)}</div>` : ""}</div>`;
+    ${r.diff ? `<div style="font-size:12.5px;${!r.diff.baseline && r.diff.counts.newly_failing ? "color:var(--fail-ink);font-weight:600" : "color:var(--ink-3)"}">${esc(r.diff.summary)}</div>` : ""}
+    ${opts.excel && r.status === "done" ? `<div><button type="button" class="btn sm" data-xlsx="${esc(r.run_id)}" title="Download this check's results as an Excel file">${ico("download", "sm")} Download Excel</button></div>` : ""}</div>`;
 }
 function alertRow(a, withRun = true) {
   return `<div class="alert ${a.kind === "test" ? "test" : ""} ${a.is_read ? "read" : ""}"><div class="ico">${ico(a.kind === "test" ? "info" : "alert")}</div>
@@ -1517,10 +1545,30 @@ function wireAlerts(root, reload) {
 }
 
 let detailOpen = { settings: false, alerts: false };
+// The checks list's date filter: only runs that started between two calendar days (both included, this PC's local time).
+// Kept per schedule so the page's live refresh - and coming back to it - doesn't lose it.
+let detailRange = { id: null, from: "", to: "" };
+const RUNS_LOADED = 120;
+function runInRange(r, from, to) {
+  if (from && to && from > to) [from, to] = [to, from];             // reversed dates are swapped, not an empty result
+  if (!from && !to) return true;
+  const t = new Date(r.started_at).getTime();
+  return t >= (from ? new Date(from + "T00:00:00").getTime() : -Infinity) && t <= (to ? new Date(to + "T23:59:59.999").getTime() : Infinity);
+}
+function checksHtml(list) {
+  return groupRuns(list).map(g => {
+    if (g.runs.length === 1) return `<div class="run-tiles" style="margin-bottom:14px">${runTile(g.runs[0], { excel: true })}</div>`;
+    const tot = {}; for (const r of g.runs) for (const [k, v] of Object.entries(r.counts || {})) tot[k] = (tot[k] || 0) + v;
+    const going = g.runs.filter(r => r.status === "running").length;
+    return `<div class="fire"><b>${esc(fmtWhen(g.runs[0].started_at))}</b><span class="dim">${plural(g.runs.length, "check")}${going ? `, ${going} still going` : ""} · ${runLine({ counts: tot, status: "done" })}</span><span class="line"></span></div>
+      <div class="run-tiles">${g.runs.map(r => runTile(r, { excel: true })).join("")}</div>`;
+  }).join("");
+}
+
 async function viewSched(route, view, stale) {
-  const [s, rs] = await Promise.all([api(`/api/schedules/${route.id}`), api(`/api/runs?schedule_id=${route.id}&limit=120`), refreshCore()]);
+  const [s, rs] = await Promise.all([api(`/api/schedules/${route.id}`), api(`/api/runs?schedule_id=${route.id}&limit=${RUNS_LOADED}`), refreshCore()]);
   if (stale()) return;
-  const groups = groupRuns(rs);
+  if (detailRange.id !== s.id) detailRange = { id: s.id, from: "", to: "" };       // another schedule: start unfiltered
   const rows = [
     ["Repeats", `Every ${esc(fmtInterval(s.interval_minutes))}${s.enabled ? "" : " (paused)"}`],
     ["First run", s.start_at ? esc(fmtWhen(s.start_at)) : "When it was saved"],
@@ -1538,26 +1586,53 @@ async function viewSched(route, view, stale) {
       sub: `${s.enabled ? `Every ${esc(fmtInterval(s.interval_minutes))} · next check ${esc(inTime(s.next_run_at) || "—")}` : "Paused — it won't run on its own"}${s.last_status ? ` · last result: ${esc(s.last_message || s.last_status)}` : ""}`,
       actions: `<button class="btn primary" data-act="run">${ico("play", "sm")} Run now</button><button class="btn" data-act="toggle">${ico(s.enabled ? "pause" : "play", "sm")} ${s.enabled ? "Pause" : "Resume"}</button>
         <a class="btn" href="#/schedules/${s.id}/edit">${ico("edit", "sm")} Edit</a><button class="btn danger" data-act="delete">${ico("trash", "sm")}</button>` })}
-    <div class="section-title">Checks so far (${rs.length})</div>
-    ${rs.length ? groups.map(g => {
-      if (g.runs.length === 1) return `<div class="run-tiles" style="margin-bottom:14px">${runTile(g.runs[0])}</div>`;
-      const tot = {}; for (const r of g.runs) for (const [k, v] of Object.entries(r.counts || {})) tot[k] = (tot[k] || 0) + v;
-      const going = g.runs.filter(r => r.status === "running").length;
-      return `<div class="fire"><b>${esc(fmtWhen(g.runs[0].started_at))}</b><span class="dim">${plural(g.runs.length, "check")}${going ? `, ${going} still going` : ""} · ${runLine({ counts: tot, status: "done" })}</span><span class="line"></span></div>
-        <div class="run-tiles">${g.runs.map(runTile).join("")}</div>`; }).join("")
-      : `<div class="empty"><div class="big">Hasn't run yet</div>It will at its next check time, or start one now.</div>`}
+    <div class="section-title">Checks so far <span id="sd-count"></span></div>
+    ${rs.length ? `<div class="range-row" id="sd-range"><label for="sd-from">From</label><input class="input" type="date" id="sd-from" value="${esc(detailRange.from)}" aria-label="Show checks from this date">
+        <label for="sd-to">to</label><input class="input" type="date" id="sd-to" value="${esc(detailRange.to)}" aria-label="Show checks up to this date">
+        <button type="button" class="btn sm ghost" id="sd-clear-range" style="display:none">Clear dates</button></div>` : ""}
+    <div id="sd-runs-body"></div>
     <details class="fold" data-key="settings" ${detailOpen.settings ? "open" : ""}><summary>Settings</summary><div class="fold-body"><dl class="facts" style="gap:10px 20px">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></div></details>
     <details class="fold" data-key="alerts" ${detailOpen.alerts ? "open" : ""}><summary>Alerts (${s.alerts.length}${s.unread_alerts ? `, ${s.unread_alerts} unread` : ""})</summary>
       <div class="fold-body" style="padding:0">${s.alerts.length ? `<div style="padding:0 20px 8px"><button class="btn sm danger" id="sd-clear">Clear these</button></div>${s.alerts.map(a => alertRow(a)).join("")}` : `<div class="empty flat">No alerts from this schedule.</div>`}</div></details>`;
   $$("[data-act]", view).forEach(b => b.addEventListener("click", () => schedAction(b.dataset.act, s)));
-  $$("[data-open]", view).forEach(el => { const go = () => { location.hash = `#/runs/${el.dataset.open}`; }; el.addEventListener("click", go); el.addEventListener("keydown", e => { if (e.key === "Enter") go(); }); });
+  const paintRuns = () => {
+    const { from, to } = detailRange, filtering = !!(from || to);
+    const shown = rs.filter(r => runInRange(r, from, to));
+    byId("sd-count").textContent = rs.length ? (filtering ? `(${shown.length} of ${rs.length})` : `(${rs.length})`) : "(0)";
+    const clr = byId("sd-clear-range"); if (clr) clr.style.display = filtering ? "" : "none";
+    const body = byId("sd-runs-body");
+    body.innerHTML = !rs.length ? `<div class="empty"><div class="big">Hasn't run yet</div>It will at its next check time, or start one now.</div>`
+      : !shown.length ? `<div class="empty"><div class="big">No checks started in this date range</div>Try widening the dates, or clear them.</div>`
+      : checksHtml(shown) + (rs.length >= RUNS_LOADED ? `<p class="hint">Only the latest ${RUNS_LOADED} checks are loaded.</p>` : "");
+    $$("[data-open]", body).forEach(el => { const go = () => { location.hash = `#/runs/${el.dataset.open}`; }; el.addEventListener("click", go); el.addEventListener("keydown", e => { if (e.target === el && e.key === "Enter") go(); }); });
+    $$("[data-xlsx]", body).forEach(b => b.addEventListener("click", ev => {
+      ev.stopPropagation();                                            // the button is on a tile that opens the check
+      const a = document.createElement("a"); a.href = `/api/runs/${encodeURIComponent(b.dataset.xlsx)}/export.xlsx`; a.download = ""; document.body.appendChild(a); a.click(); a.remove();
+    }));
+    paintIcons(body);
+  };
+  const fromEl = byId("sd-from"), toEl = byId("sd-to");
+  if (fromEl) {
+    const onRange = () => { detailRange = { id: s.id, from: fromEl.value, to: toEl.value }; fromEl.max = toEl.value || ""; toEl.min = fromEl.value || ""; paintRuns(); };
+    fromEl.addEventListener("input", onRange); toEl.addEventListener("input", onRange);
+    byId("sd-clear-range").addEventListener("click", () => { fromEl.value = ""; toEl.value = ""; onRange(); });
+  }
+  paintRuns();
   $$("details.fold", view).forEach(d => d.addEventListener("toggle", () => { detailOpen[d.dataset.key] = d.open; }));
   wireAlerts(view, () => renderRoute());
   if (byId("sd-clear")) byId("sd-clear").onclick = async () => {
     if (!await confirmDialog({ title: "Clear these alerts?", text: `Remove every alert from “${s.name}”.`, ok: "Clear", danger: true })) return;
     try { await api(`/api/alerts?schedule_id=${s.id}`, { method: "DELETE" }); renderRoute(); } catch (e) { toast(errText(e), true); }
   };
-  if (rs.some(r => r.status === "running")) { const t = setTimeout(() => { if (!stale()) renderRoute(true); }, 8000); onLeave(() => clearTimeout(t)); }
+  if (rs.some(r => r.status === "running")) {
+    let t;
+    const again = () => {
+      if (stale()) return;
+      if (document.activeElement && document.activeElement.closest && document.activeElement.closest("#sd-range")) { t = setTimeout(again, 4000); return; }   // don't rebuild the page under a date being picked
+      renderRoute(true);
+    };
+    t = setTimeout(again, 8000); onLeave(() => clearTimeout(t));
+  }
 }
 
 // ---- schedule form (new / edit) ----
