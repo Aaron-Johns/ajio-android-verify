@@ -10,10 +10,65 @@ from qa.spotcheck import vision
 ORIGINAL = Path(__file__).resolve().parent.parent / "inputs" / "image_segmentation_2.py"
 
 
-def test_prompt_is_verbatim_from_the_original():
+# The only intentional deviations from the ported original: two new numbered sections (inserted
+# before the original's final "VERIFICATION" section, which is renumbered to make room), two new
+# JSON fields (added for the gender-audience and open-ended-brand-list rules), and one paragraph
+# inserted into section 2 telling the model not to drop an ambiguous but plausible brand name just
+# because a more prominent brand/logo is also on the banner - a real miss seen live (a banner's
+# prominent "FYRE ROSE" logo caused the model to talk itself out of also listing "Leia", reasoning
+# it was "likely a collection name", even though nothing ruled that out - AJIO Feed Verify §user
+# rules, none of this in the original script). The test below checks that undoing exactly these
+# edits reconstructs the original verbatim.
+_GENDER_SECTION = '''5. TARGET GENDER
+
+Decide who this banner is promoting products for, using explicit text (e.g. "Men's", "Women's",
+"Boys", "Girls", "Infants") and, failing that, the clothing/models shown.
+
+Return exactly one of:
+- "men" (men's/boys' products only - no women's or girls' items shown or implied)
+- "women" (women's/girls' products only - no men's or boys' items shown or implied)
+- "boys" (specifically boys, not men)
+- "girls" (specifically girls, not women)
+- "infants" (babies/toddlers)
+- "men_and_women" (clearly for both men and women together, e.g. a mixed shot, or a brand/store-wide banner)
+- "girls_and_boys" (clearly for both girls and boys together, a kids-wide banner, with no adult men's/women's products)
+- "unclear" (cannot confidently tell, or it does not cleanly fit any category above)
+
+Do not guess a specific category just to avoid "unclear".
+
+'''
+_BRAND_LIST_SECTION = '''6. OPEN-ENDED BRAND LIST
+
+Check whether the banner's own text says there are more brands beyond the ones named - phrases
+like "& more", "and more", "+ more", "many more brands".
+
+Return true if such a phrase is visible on the banner. Return false if the named brand(s) appear
+to be the complete list, or if no brands are mentioned at all.
+
+Do not guess; only return true if the phrase is actually visible.
+
+'''
+_GENDER_FIELD = '  "target_gender": "",\n'
+_BRAND_LIST_FIELD = '  "more_brands_than_named": false,\n'
+_AMBIGUOUS_BRAND_PARAGRAPH = '''A banner can promote more than one brand or label at once. If a short name (one or two words) is
+shown in its own distinct, title- or wordmark-like styling - not as part of a marketing sentence -
+list it as a brand even if you suspect it might instead be a collection or product-line name, and
+even if a different, more prominent logo also appears on the same banner. Do not pick only the most
+prominent name and drop the rest - a downstream check reconciles this list against the actual product
+listing, so it is far worse to omit a real brand than to list an extra candidate.
+
+'''
+
+
+def test_prompt_matches_the_original_plus_the_documented_additions():
     # The original can't be imported (it prompts for an API key at import time - fix #3), so read its source.
     original = re.search(r'PROMPT = """(.*?)"""', ORIGINAL.read_text(encoding="utf-8"), re.DOTALL).group(1)
-    assert vision.PROMPT == original and vision.MODEL == "gemma-4-31b-it"
+    reconstructed = (vision.PROMPT
+                      .replace(_GENDER_SECTION, "").replace(_BRAND_LIST_SECTION, "")
+                      .replace("7. VERIFICATION", "5. VERIFICATION")
+                      .replace(_GENDER_FIELD, "").replace(_BRAND_LIST_FIELD, "")
+                      .replace(_AMBIGUOUS_BRAND_PARAGRAPH, ""))
+    assert reconstructed == original and vision.MODEL == "gemma-4-31b-it"
 
 
 # ---- fix 2: robust JSON parsing ----
@@ -68,6 +123,24 @@ def test_missing_key_raises_vision_unavailable_instead_of_prompting(monkeypatch)
     with pytest.raises(vision.VisionUnavailable, match="GEMINI_API_KEY"):
         vision.get_client()
     assert "getpass" not in Path(vision.__file__).read_text(encoding="utf-8").replace("no getpass", "")
+
+
+def test_client_is_created_with_a_request_timeout(monkeypatch):
+    # No timeout is set by the SDK itself - a stalled connection (e.g. after a 5xx) would otherwise
+    # hang the calling worker thread forever instead of raising something _analyze()'s retry loop
+    # can catch (a live run got stuck on exactly this - see qa/spotcheck/vision.py's TIMEOUT_MS).
+    monkeypatch.setattr(vision, "load_env", lambda: None)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    calls = []
+
+    class FakeGenaiClient:
+        def __init__(self, **kw):
+            calls.append(kw)
+
+    import google.genai as genai_module
+    monkeypatch.setattr(genai_module, "Client", FakeGenaiClient)
+    vision.get_client()
+    assert calls == [{"api_key": "test-key", "http_options": {"timeout": vision.TIMEOUT_MS}}]
 
 
 # ---- fix 4: uploaded file deleted after use ----
@@ -140,3 +213,106 @@ def test_extra_instructions_are_appended_without_changing_the_ported_prompt():
     vision.analyze_image("x.png", client=client)
     vision.analyze_image("x.png", client=client, extra=vision.HERO_EXTRA)
     assert seen[0] == vision.PROMPT and seen[1].startswith(vision.PROMPT) and "PROMOTING" in seen[1]
+
+
+# ---- pacing: Gemma requests are spaced out across all worker threads ----------------------------------
+
+class FakeClock:
+    def __init__(self):
+        self.now, self.slept = 1000.0, []
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+def test_pacer_spaces_requests_by_the_per_minute_limit_plus_a_margin():
+    clock = FakeClock()
+    pacer = vision.CallPacer(6, clock=clock, sleep=clock.sleep)
+    waits = [pacer.acquire() for _ in range(4)]
+    assert waits[0] == 0                                       # nothing to wait for on an idle pacer
+    assert all(abs(w - 10.5) < 1e-6 for w in waits[1:])        # 60 / 6 = 10 s, +5% margin
+    assert clock.slept == [pytest.approx(10.5)] * 3
+
+
+def test_a_burst_of_requests_never_exceeds_the_limit_in_any_minute():
+    clock = FakeClock()
+    pacer = vision.CallPacer(6, clock=clock, sleep=clock.sleep)
+    starts = []
+    for _ in range(30):                                        # 30 workers all asking at once
+        pacer.acquire()
+        starts.append(clock.now)
+    for i, t in enumerate(starts):
+        assert sum(1 for s in starts if t <= s < t + 60) <= 6, f"more than 6 requests within a minute of #{i}"
+
+
+def test_an_idle_pacer_lets_the_next_request_straight_through():
+    clock = FakeClock()
+    pacer = vision.CallPacer(6, clock=clock, sleep=clock.sleep)
+    pacer.acquire()
+    clock.now += 120                                           # a quiet two minutes
+    assert pacer.acquire() == 0 and clock.slept == []
+
+
+def test_zero_or_negative_means_no_limit():
+    for value in (0, -1):
+        pacer = vision.CallPacer(value, sleep=lambda s: pytest.fail("must not sleep"))
+        assert [pacer.acquire() for _ in range(5)] == [0.0] * 5
+
+
+def test_waiting_is_announced_once_and_only_when_there_is_a_wait():
+    clock = FakeClock()
+    pacer = vision.CallPacer(6, clock=clock, sleep=clock.sleep)
+    calls = []
+    pacer.acquire(on_wait=lambda: calls.append(1))
+    assert calls == []
+    pacer.acquire(on_wait=lambda: calls.append(1))
+    assert calls == [1]
+
+
+def test_threads_really_are_held_back_and_never_share_a_slot():
+    import threading
+    pacer = vision.CallPacer(600)                              # 10/s (0.105 s apart) - fast enough to run for real
+    starts, lock = [], threading.Lock()
+
+    def worker():
+        pacer.acquire()
+        with lock:
+            starts.append(vision.time.monotonic())
+    threads = [threading.Thread(target=worker) for _ in range(6)]
+    [t.start() for t in threads]
+    [t.join(10) for t in threads]
+    starts.sort()
+    assert len(starts) == 6 and all(b - a >= 0.09 for a, b in zip(starts, starts[1:])), starts
+
+
+def test_analyze_image_waits_its_turn_before_uploading(tmp_path, monkeypatch):
+    order = []
+    monkeypatch.setattr(vision, "_pacer", type("P", (), {"acquire": lambda self, on_wait=None: order.append("turn") or 0.0})())
+    client = FakeClient(GOOD)
+    real_upload = client.upload
+    client.upload = lambda file: (order.append("upload"), real_upload(file))[1]
+    vision.analyze_image(tmp_path / "x.png", client)
+    assert order == ["turn", "upload"]                         # the turn comes first: a waiting request holds no upload
+
+
+def test_a_request_that_waits_says_so_then_puts_back_its_step(monkeypatch):
+    clock = FakeClock()
+    monkeypatch.setattr(vision, "_pacer", vision.CallPacer(6, clock=clock, sleep=clock.sleep))
+    vision._pacer.acquire()                                    # use up the free slot
+    seen = []
+    with vision.reporting(seen.append) as note:
+        note("Reading image")
+        vision._wait_for_turn()
+    assert seen == ["Reading image", "Waiting turn", "Reading image"]
+
+
+def test_a_request_with_no_wait_reports_nothing_extra():
+    seen = []
+    with vision.reporting(seen.append) as note:
+        note("Reading image")
+        vision._wait_for_turn()                                # conftest's pacer never waits
+    assert seen == ["Reading image"]

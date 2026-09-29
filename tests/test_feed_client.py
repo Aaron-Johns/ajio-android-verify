@@ -1,5 +1,6 @@
 """Feed client tests: parsing runs on the saved redacted sample, HTTP behaviour on a fake session."""
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -54,9 +55,123 @@ def test_non_banner_widget_without_destination_is_skipped():
     assert feed_client.parse_banners({"sections": [sec]}) == []
 
 
+def test_hotspots_are_read_with_their_bounding_boxes_and_the_images_own_dimensions():
+    hotspots = [{"url": "https://ajio.com/s/a-1", "x": 7.4, "y": -1.8, "width": 480.2, "height": 601.5, "alt": "Brand A"},
+               {"url": "https://ajio.com/s/b-2", "x": 519.4, "y": 2.4, "width": 495.4, "height": 613.9}]
+    props = {"image": {"value": {"image": "https://x/y.png", "imageWidth": 1024, "imageHeight": 672, "hotspots": hotspots}}}
+    (b,) = feed_client.parse_banners({"sections": [_block(props)]})
+    assert b.image_width == 1024 and b.image_height == 672
+    assert [h.url for h in b.hotspots] == ["https://ajio.com/s/a-1", "https://ajio.com/s/b-2"]
+    assert b.hotspots[0].x == 7.4 and b.hotspots[0].width == 480.2 and b.hotspots[0].alt == "Brand A"
+    assert b.hotspots[1].alt == ""   # alt is optional per-hotspot
+
+
+def test_hotspots_without_a_url_are_dropped():
+    props = {"image": {"value": {"image": "https://x/y.png", "hotspots": [{"x": 0, "y": 0, "width": 10, "height": 10}]}}}
+    (b,) = feed_client.parse_banners({"sections": [_block(props)]})
+    assert b.hotspots == []
+
+
+def test_hotspots_come_from_the_displayed_image_not_an_unrelated_image_prop():
+    # popup_image also carries an "image" value with its own hotspots - they must not leak onto
+    # the banner's displayed image (bannerImage/image), since x/y only make sense per-image.
+    props = {
+        "bannerImage": {"value": {"image": "https://x/shown.png", "hotspots": []}},
+        "popup_image": {"value": {"image": "https://x/popup.png", "hotspots": [{"url": "https://ajio.com/s/p-1", "x": 0, "y": 0, "width": 5, "height": 5}]}},
+    }
+    (b,) = feed_client.parse_banners({"sections": [_block(props)]})
+    assert b.image_url == "https://x/shown.png"
+    assert b.hotspots == []
+
+
 def test_block_banners_get_block_scoped_ids(theme):
     gallery = [b for b in feed_client.parse_banners(theme) if b.section_type == "hybrid-swipe-gallery"]
     assert gallery and all(":" in b.banner_id and b.block_index is not None for b in gallery)
+
+
+# ---- hidden: a CMS visibility flag off, and/or outside its schedule window as of fetch time ----
+
+def _dest_props(extra=None):
+    props = {"redirectURL": {"value": "https://ajio.com/s/x-1"}}
+    props.update(extra or {})
+    return props
+
+
+def _block_with_schedule(props, schedule):
+    section = _block(props)
+    section["blocks"][0]["predicate"] = {"schedule": schedule}
+    return section
+
+
+def test_default_visible_banner_is_not_hidden():
+    (b,) = feed_client.parse_banners({"sections": [_block(_dest_props())]})
+    assert b.hidden is False and b.hidden_reason == ""
+
+
+def test_showblock_false_marks_hidden_with_reason():
+    props = _dest_props({"showBlock": {"type": "checkbox", "value": False}})
+    (b,) = feed_client.parse_banners({"sections": [_block(props)]})
+    assert b.hidden is True and b.hidden_reason == "block_hidden"
+
+
+def test_showcomponent_false_marks_hidden_with_reason():
+    props = _dest_props({"showComponent": {"type": "checkbox", "value": False}})
+    (b,) = feed_client.parse_banners({"sections": [_block(props)]})
+    assert b.hidden is True and b.hidden_reason == "component_hidden"
+
+
+def test_both_showblock_and_showcomponent_false_combine_reasons():
+    props = _dest_props({"showBlock": {"type": "checkbox", "value": False},
+                         "showComponent": {"type": "checkbox", "value": False}})
+    (b,) = feed_client.parse_banners({"sections": [_block(props)]})
+    assert b.hidden is True and b.hidden_reason == "block_hidden, component_hidden"
+
+
+def test_showblock_true_is_not_hidden():
+    props = _dest_props({"showBlock": {"type": "checkbox", "value": True}})
+    (b,) = feed_client.parse_banners({"sections": [_block(props)]})
+    assert b.hidden is False
+
+
+def test_outside_schedule_window_is_hidden():
+    schedule = [{"cron": "* * * * * *", "start": "2026-01-01T00:00:00.000Z", "end": "2026-01-02T00:00:00.000Z"}]
+    now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    (b,) = feed_client.parse_banners({"sections": [_block_with_schedule(_dest_props(), schedule)]}, now=now)
+    assert b.hidden is True and b.hidden_reason == "outside_schedule"
+
+
+def test_inside_schedule_window_is_not_hidden():
+    schedule = [{"cron": "* * * * * *", "start": "2026-01-01T00:00:00.000Z", "end": "2027-01-01T00:00:00.000Z"}]
+    now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    (b,) = feed_client.parse_banners({"sections": [_block_with_schedule(_dest_props(), schedule)]}, now=now)
+    assert b.hidden is False
+
+
+def test_one_matching_window_among_several_is_enough():
+    schedule = [{"start": "2020-01-01T00:00:00.000Z", "end": "2020-01-02T00:00:00.000Z"},
+               {"start": "2026-01-01T00:00:00.000Z", "end": "2027-01-01T00:00:00.000Z"}]
+    now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    (b,) = feed_client.parse_banners({"sections": [_block_with_schedule(_dest_props(), schedule)]}, now=now)
+    assert b.hidden is False
+
+
+def test_both_cms_hidden_and_outside_schedule_combine_reasons():
+    props = _dest_props({"showBlock": {"type": "checkbox", "value": False}})
+    schedule = [{"start": "2020-01-01T00:00:00.000Z", "end": "2020-01-02T00:00:00.000Z"}]
+    now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    (b,) = feed_client.parse_banners({"sections": [_block_with_schedule(props, schedule)]}, now=now)
+    assert b.hidden is True and b.hidden_reason == "block_hidden, outside_schedule"
+
+
+def test_malformed_schedule_window_is_skipped_not_fatal():
+    schedule = [{"start": "not-a-date", "end": "also-not-a-date"}]
+    (b,) = feed_client.parse_banners({"sections": [_block_with_schedule(_dest_props(), schedule)]})
+    assert b.hidden is True and b.hidden_reason == "outside_schedule"   # no valid window matched, so it reads as outside
+
+
+def test_empty_schedule_list_is_always_in_schedule():
+    (b,) = feed_client.parse_banners({"sections": [_block_with_schedule(_dest_props(), [])]})
+    assert b.hidden is False
 
 
 class FakeResp:
@@ -85,6 +200,10 @@ class FakeSession:
 def fake_credentials(monkeypatch):
     monkeypatch.setenv("AJIO_THEME_BEARER", "dGVzdC1iZWFyZXI=")
     monkeypatch.setenv("AJIO_DEVICE_ID", "dev-R")
+    # Without this, _resolve_user_groups falls through to a real, live cohort_client call - these
+    # tests use a fake `session` for fetch_theme itself, but cohort_client talks to the real network
+    # directly (see test_cohort_client.py for that path's own offline-only coverage).
+    monkeypatch.setenv("AJIO_USER_GROUPS", "l1:test|l2:test")
 
 
 def test_retries_on_503_then_succeeds():
@@ -141,3 +260,28 @@ def test_run_log_redacts_secrets(tmp_path):
     text = "".join(p.read_text(encoding="utf-8") for p in log.dir.glob("*.attempt1.json"))
     assert "SECRET" not in text and "s=1" not in text and "abc" not in text
     assert '"accept": "x"' in text
+
+
+# ---- _resolve_user_groups: explicit override wins; otherwise live cohort resolution, with a
+# fallback to the confirmed default baseline if that fails (FINDINGS 6.10) ----
+
+def test_explicit_override_wins_and_never_calls_the_cohort_client(monkeypatch):
+    monkeypatch.setenv("AJIO_USER_GROUPS", "l1:nonpremium|l2:men")
+    monkeypatch.setattr(feed_client.cohort_client, "resolve_user_groups",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not be called")))
+    assert feed_client._resolve_user_groups("dev-1") == "l1:nonpremium|l2:men"
+
+
+def test_unset_override_uses_the_live_resolved_value(monkeypatch):
+    monkeypatch.delenv("AJIO_USER_GROUPS", raising=False)
+    monkeypatch.setattr(feed_client.cohort_client, "resolve_user_groups", lambda device_id, run_log=None: "l1:x|l2:y")
+    assert feed_client._resolve_user_groups("dev-1") == "l1:x|l2:y"
+
+
+def test_unset_override_falls_back_to_the_default_baseline_if_resolution_fails(monkeypatch):
+    monkeypatch.delenv("AJIO_USER_GROUPS", raising=False)
+
+    def boom(*a, **k):
+        raise feed_client.cohort_client.CohortError("network down")
+    monkeypatch.setattr(feed_client.cohort_client, "resolve_user_groups", boom)
+    assert feed_client._resolve_user_groups("dev-1") == feed_client.cohort_client.DEFAULT_USER_GROUPS

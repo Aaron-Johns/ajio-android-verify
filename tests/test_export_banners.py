@@ -88,6 +88,14 @@ def test_csv_has_no_excel_365_only_formulas():
     assert "image_preview" not in exp.COLUMNS
 
 
+def test_build_rows_with_hero_scope_only_keeps_hero_candidates():
+    theme = {"sections": json.loads(SAMPLE.read_text(encoding="utf-8"))["one_example_section_per_type"]}
+    all_rows = exp.build_rows(theme, images={}, slug="home", fetched_at="2026-09-21T00:00:00+00:00", scope="all")
+    hero_rows = exp.build_rows(theme, images={}, slug="home", fetched_at="2026-09-21T00:00:00+00:00", scope="hero")
+    assert len(hero_rows) < len(all_rows)
+    assert all(r["section_type"] == "hybrid-dynamic-banner" and r["block_index"] != "" for r in hero_rows)
+
+
 def test_export_end_to_end_without_network(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()

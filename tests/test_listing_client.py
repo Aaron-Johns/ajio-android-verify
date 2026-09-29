@@ -35,6 +35,7 @@ def test_parse_listing_extracts_title_totals_brands_and_products():
     lst = lc.parse_listing("min70", 0, DATA)
     assert lst.title == "Min 70 Percent Off" and lst.total_results == 29504 and len(lst.products) == 2
     assert lst.brands == {"Arrabi": 46, "NETPLAY": 675} and lst.facets == {"Gender": 1, "Brands": 2}
+    assert lst.genders == {"Women": 5}
 
 
 @pytest.mark.parametrize("raw,expected", [
@@ -80,3 +81,31 @@ def test_product_rows_flatten_the_server_record():
     assert row == {"code": "7", "brand": "JOMPERS", "name": "Suit", "price": 9310, "mrp": 18999, "discount_percent": 51,
                    "offer_price": 8810, "rating": 4.2, "rating_count": 9, "category": "Ethnic Wear", "gender": "Men", "url": "/u"}
     assert lc.product_row({"code": "8"})["price"] is None
+
+
+# ---- luxe.ajio.com links live in the Luxe store, not the standard one --------------------------------
+
+@pytest.mark.parametrize("raw,expected", [
+    ("https://luxe.ajio.com/s/allstarsearlyoffersmen-403091", "luxe"),
+    ("luxe.ajio.com/s/x-1", "luxe"),
+    ("https://LUXE.ajio.com/c/x-1", "luxe"),
+    ("https://www.ajio.com/s/x-1", None),
+    ("https://ajio.com/s/x-1", None),
+    ("https://www.ajio.com/luxe/s/x-1", None),          # "luxe" only counts as the host
+    ("", None), (None, None),
+])
+def test_listing_store_comes_from_the_links_host(raw, expected):
+    assert lc.listing_store(raw) == expected
+
+
+def test_a_luxe_link_asks_the_luxe_store_and_keeps_its_slug():
+    s = Session(Resp(200, DATA))
+    lc.fetch_listing("allstarsearlyoffersmen-403091", session=s, sleep=lambda x: None, store="luxe")
+    url = s.calls[0][0]
+    assert "store=luxe" in url and "store=rilfnl" not in url and "curatedid=allstarsearlyoffersmen-403091" in url
+
+
+def test_the_standard_store_is_still_the_default():
+    s = Session(Resp(200, DATA))
+    lc.fetch_listing("min70percentoffcurated-402881", session=s, sleep=lambda x: None)
+    assert "store=rilfnl" in s.calls[0][0]

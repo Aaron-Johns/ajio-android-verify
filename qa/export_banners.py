@@ -83,9 +83,18 @@ def _schedule_text(schedule: list[dict]) -> str:
     return "; ".join(f"{s.get('start', '?')} -> {s.get('end', '?')}" for s in schedule)
 
 
-def build_rows(theme: dict, images: dict[str, tuple[str, str]], slug: str, fetched_at: str) -> list[dict]:
+def _is_hero(b) -> bool:
+    """Same rule as qa.spotcheck.hero.hero_candidates() - duplicated rather than imported, since
+    that module imports download_images from this one and importing it back would be circular."""
+    return b.block_index is not None and b.section_type == "hybrid-dynamic-banner" and bool(b.image_url)
+
+
+def build_rows(theme: dict, images: dict[str, tuple[str, str]], slug: str, fetched_at: str, scope: str = "all") -> list[dict]:
     rows = []
-    for b in parse_banners(theme):
+    banners = parse_banners(theme)
+    if scope == "hero":
+        banners = [b for b in banners if _is_hero(b)]
+    for b in banners:
         t = dl.resolve(b.destination_raw)
         status, path = images.get(b.image_url, ("no_image" if not b.image_url else "not_downloaded", ""))
         rows.append({
@@ -103,7 +112,7 @@ def build_rows(theme: dict, images: dict[str, tuple[str, str]], slug: str, fetch
             "target_identifier": t.identifier or "",
             "destination_host": t.host or "",
             "destination_note": t.reason or "",
-            "hotspot_urls": " | ".join(b.hotspot_urls),
+            "hotspot_urls": " | ".join(h.url for h in b.hotspots),
             "schedule": _schedule_text(b.schedule),
             "user_type": b.user_type or "",
             "section_index": b.section_index,
@@ -176,16 +185,20 @@ def write_xlsx(rows: list[dict], path: Path, base_dir: Path) -> int:
     return embedded
 
 
-def export(run_dir: Path, out_dir: Path, slug: str = "home", download: bool = True, getter=requests.get) -> list[dict]:
+def export(run_dir: Path, out_dir: Path, slug: str = "home", download: bool = True, getter=requests.get,
+          scope: str = "all") -> list[dict]:
     theme = json.loads((run_dir / f"{slug}.response.json").read_text(encoding="utf-8"))
     fetched_at = run_dir.name
     try:
         fetched_at = datetime.strptime(run_dir.name, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc).isoformat()
     except ValueError:
         pass
-    urls = sorted({b.image_url for b in parse_banners(theme) if b.image_url})
+    banners = parse_banners(theme)
+    if scope == "hero":
+        banners = [b for b in banners if _is_hero(b)]
+    urls = sorted({b.image_url for b in banners if b.image_url})
     images = download_images(urls, out_dir / "images", getter) if download else {}
-    rows = build_rows(theme, images, slug, fetched_at)
+    rows = build_rows(theme, images, slug, fetched_at, scope=scope)
     for name, write in (("banners.xlsx", lambda p: write_xlsx(rows, p, out_dir)), ("banners.csv", lambda p: write_csv(rows, p))):
         try:
             write(out_dir / name)
@@ -200,9 +213,10 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path(__file__).resolve().parent.parent / "data")
     ap.add_argument("--slug", default="home")
     ap.add_argument("--no-images", action="store_true")
+    ap.add_argument("--scope", choices=["hero", "all"], default="all", help="hero = only the hero carousel's slides")
     args = ap.parse_args()
     run_dir = args.run or latest_run(args.slug)
-    rows = export(run_dir, args.out, args.slug, download=not args.no_images)
+    rows = export(run_dir, args.out, args.slug, download=not args.no_images, scope=args.scope)
     ok = sum(1 for r in rows if r["image_status"] == "OK")
     print(f"{len(rows)} banners from {run_dir}; {ok} images OK; output folder: {args.out}")
 

@@ -200,8 +200,9 @@ def _server_listing(banner: Banner | None) -> list[Listing] | None:
     if not target:
         return None
     kind, slug = target
+    store = lc.listing_store(banner.destination_raw)
     try:
-        return [lc.fetch_listing(slug, page=p, kind=kind) for p in range(SERVER_PAGES)]
+        return [lc.fetch_listing(slug, page=p, kind=kind, store=store) for p in range(SERVER_PAGES)]
     except Exception as exc:
         log.warning("server listing fetch failed for %s: %s", slug, exc)
         return None
@@ -211,7 +212,8 @@ def _server_check(pages: list[Listing], hero_shot: str, aliases: AliasMap, analy
     """Banner brands/deal vs the server's Brands facet and title; products come from the same response."""
     first = pages[0]
     try:
-        check = filters.verify_from_listing(_analyze(analyzer, hero_shot), first.title, first.brands, aliases)
+        check = filters.verify_from_listing(_analyze(analyzer, hero_shot), first.title, first.brands, aliases,
+                                            first.genders, first.total_results)
     except vision.VisionUnavailable as exc:
         check = {"result": "INCONCLUSIVE", "error": f"vision_unavailable: {exc}"}
     except Exception as exc:

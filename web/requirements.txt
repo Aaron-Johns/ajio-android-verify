@@ -1,0 +1,4 @@
+# Only the web UI/API layer needs these - qa/ itself has no new dependencies.
+fastapi
+uvicorn[standard]
+apscheduler

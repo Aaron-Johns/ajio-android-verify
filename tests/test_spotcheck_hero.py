@@ -176,11 +176,11 @@ def test_hero_candidates_are_dynamic_banner_blocks_with_images():
 from qa import listing_client as lc  # noqa: E402
 
 
-def _listing(title="Delivery Starts in 30 Mins", brands=None, page=0):
+def _listing(title="Delivery Starts in 30 Mins", brands=None, page=0, genders=None):
     prod = {"code": "p1", "fnlColorVariantData": {"brandName": "RIO"}, "name": "Tee", "price": {"value": 356.0},
             "wasPriceData": {"value": 699.0}, "discountPercent": "49% off", "offerPrice": {"value": 249.0},
             "averageRating": 3.6, "verticalNameText": "Tees", "segmentNameText": "Women", "url": "/x/p/1"}
-    return lc.Listing("slug", title, 1234, page, brands or {"RIO": 10, "NIKE": 5}, {"Brands": 2},
+    return lc.Listing("slug", title, 1234, page, brands or {"RIO": 10, "NIKE": 5}, genders or {}, {"Brands": 2},
                       [dict(prod, code=f"p{page}a"), dict(prod, code=f"p{page}b")])
 
 
@@ -189,7 +189,7 @@ def test_server_mode_reads_the_listing_from_the_server_and_only_taps_in_the_app(
     calls = []
     monkeypatch.setattr(hero.lc, "fetch_listing", lambda slug, page=0, kind="curated", **k: calls.append((slug, page, kind)) or _listing(page=page))
     monkeypatch.setattr(hero, "load_candidates", lambda banners, data_dir: [(b, hero.signature(pattern(0))) for b in banners])
-    info = {"brands_mentioned": ["Rio", "Nike"], "deal_offered": "Delivery Starts in 30 Mins"}
+    info = {"brands_mentioned": ["Rio", "Nike"], "deal_offered": "Delivery Starts in 30 Mins", "target_gender": "men_and_women"}
     d = FakeDevice()
     results = hero.run_hero(d, feed, tmp_path, tmp_path, slides=1, aliases=ALIASES, analyzer=lambda p: info)
     r = results[0]
@@ -212,9 +212,21 @@ def test_server_mode_fails_when_a_banner_brand_is_not_in_the_servers_brand_filte
     feed = [banner("Rush", "https://www.ajio.com/s/4hoursdelivery-160865", 0)]
     monkeypatch.setattr(hero.lc, "fetch_listing", lambda *a, **k: _listing(brands={"RIO": 10}))
     monkeypatch.setattr(hero, "load_candidates", lambda banners, data_dir: [(b, hero.signature(pattern(0))) for b in banners])
-    info = {"brands_mentioned": ["Rio", "Nyrika Acai"], "deal_offered": "Delivery Starts in 30 Mins"}
+    info = {"brands_mentioned": ["Rio", "Guess"], "deal_offered": "Delivery Starts in 30 Mins", "target_gender": "men_and_women"}
     r = hero.run_hero(FakeDevice(), feed, tmp_path, tmp_path, slides=1, aliases=ALIASES, analyzer=lambda p: info)[0]
-    assert r["banner_check"]["result"] == "FAIL" and r["banner_check"]["missing_brands"] == ["Nyrika Acai"]
+    assert r["banner_check"]["result"] == "FAIL" and r["banner_check"]["missing_brands"] == ["Guess"]
+
+
+def test_server_mode_still_matches_when_vision_runs_two_adjacent_brands_into_one_string(tmp_path, monkeypatch):
+    # Nyrika and Acai are two distinct real brands; a banner featuring both logos side by side can come
+    # back from vision as a single "Nyrika Acai" string. The filter-contains-brand-or-vice-versa rule
+    # should still find it against whichever of the two the listing's Brands filter actually has.
+    feed = [banner("Rush", "https://www.ajio.com/s/4hoursdelivery-160865", 0)]
+    monkeypatch.setattr(hero.lc, "fetch_listing", lambda *a, **k: _listing(brands={"RIO": 10, "Nyrika": 4}))
+    monkeypatch.setattr(hero, "load_candidates", lambda banners, data_dir: [(b, hero.signature(pattern(0))) for b in banners])
+    info = {"brands_mentioned": ["Rio", "Nyrika Acai"], "deal_offered": "Delivery Starts in 30 Mins", "target_gender": "men_and_women"}
+    r = hero.run_hero(FakeDevice(), feed, tmp_path, tmp_path, slides=1, aliases=ALIASES, analyzer=lambda p: info)[0]
+    assert r["banner_check"]["result"] == "PASS" and r["banner_check"]["missing_brands"] == []
 
 
 def test_server_failure_falls_back_to_reading_the_app(tmp_path, monkeypatch):

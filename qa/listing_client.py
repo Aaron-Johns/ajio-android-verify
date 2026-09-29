@@ -31,6 +31,7 @@ class Listing:
     total_results: int
     page: int
     brands: dict[str, int] = field(default_factory=dict)          # brand facet: name -> product count
+    genders: dict[str, int] = field(default_factory=dict)         # gender facet: name -> product count (Men/Women/Girls/Boys/Infants)
     facets: dict[str, int] = field(default_factory=dict)          # facet name -> number of options
     products: list[dict] = field(default_factory=list)
     raw_query: str | None = None
@@ -61,17 +62,34 @@ def listing_target(destination_raw: str | None) -> tuple[str, str] | None:
     return None
 
 
+LUXE = "luxe"
+
+
+def listing_store(destination_raw: str | None) -> str | None:
+    """Which AJIO store serves this link: "luxe" for a link on luxe.ajio.com, else None (the standard store).
+    Same slug, different catalogue - e.g. luxe.ajio.com/s/allstarsearlyoffersmen-403091 is 1,254 products from
+    4 brands in the standard store (no BOSS) but 6,794 from 14 brands, BOSS included, in the Luxe one - so a Luxe
+    link checked against the standard store reports brands "missing" that the page really has."""
+    raw = dl._unwrap((destination_raw or "").strip())
+    if "://" not in (destination_raw or ""):
+        raw = "https://" + raw.lstrip("/")
+    host = (urlsplit(raw).hostname or "").lower()
+    return LUXE if host.startswith("luxe.") else None
+
+
 def _path(slug: str, kind: str) -> str:
     return PATH if kind == CURATED else PATH.rsplit("/", 1)[0] + f"/{quote(slug, safe='')}"
 
 
-def _params(slug: str, page: int, page_size: int, kind: str = CURATED) -> dict[str, str]:
+def _params(slug: str, page: int, page_size: int, kind: str = CURATED, store: str | None = None) -> dict[str, str]:
     p = {"advfilter": "true", "store": "rilfnl", "fields": "FULL",
          "pageSize": str(page_size), "currentPage": str(page), "platform": "android", "displayRatings": "true",
          "pincode": os.environ.get("AJIO_PINCODE", "560029"), "latitude": os.environ.get("AJIO_LATITUDE", "12.933113"),
-         "longitude": os.environ.get("AJIO_LONGITUDE", "77.601536"), "userState": "NON_LOGGED_IN"}
+         "longitude": os.environ.get("AJIO_LONGITUDE", "77.601536"), "userState": "LOGGED_IN"}
     if kind == CURATED:
         p.update({"curatedid": slug, "curated": "true"})
+    if store:
+        p["store"] = store
     return p
 
 
@@ -81,16 +99,20 @@ def parse_listing(slug: str, page: int, data: dict) -> Listing:
     facets = {f.get("name"): len(f.get("values") or []) for f in data.get("facets", [])}
     brand_facet = next((f for f in data.get("facets", []) if f.get("name") == "Brands"), {})
     brands = {v["name"]: v.get("count", 0) for v in brand_facet.get("values") or [] if v.get("name")}
+    gender_facet = next((f for f in data.get("facets", []) if f.get("name") == "Gender"), {})
+    genders = {v["name"]: v.get("count", 0) for v in gender_facet.get("values") or [] if v.get("name")}
     return Listing(slug=slug, title=title, total_results=(data.get("pagination") or {}).get("totalResults", 0), page=page,
-                   brands=brands, facets=facets, products=data.get("products") or [],
+                   brands=brands, genders=genders, facets=facets, products=data.get("products") or [],
                    raw_query=((data.get("currentQuery") or {}).get("query") or {}).get("value"))
 
 
 def fetch_listing(slug: str, page: int = 0, page_size: int = PAGE_SIZE, kind: str = CURATED, run_log: RunLog | None = None,
-                  timeout: float = 30.0, session: requests.Session | None = None, sleep=time.sleep) -> Listing:
+                  timeout: float = 30.0, session: requests.Session | None = None, sleep=time.sleep,
+                  store: str | None = None) -> Listing:
+    """`store`: None for the standard store, LUXE for a luxe.ajio.com link (see listing_store)."""
     load_env()
     http = session or requests
-    query = urlencode(_params(slug, page, page_size, kind))
+    query = urlencode(_params(slug, page, page_size, kind, store))
     url = f"https://{HOST}{_path(slug, kind)}?{query}"
     device_id, last = _device_id(), "no attempt made"
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -139,6 +161,6 @@ if __name__ == "__main__":
     import sys
     arg = sys.argv[1] if len(sys.argv) > 1 else "https://www.ajio.com/s/min70percentoffcurated-402881"
     kind, slug = listing_target(arg) or (CURATED, arg)
-    lst = fetch_listing(slug, kind=kind, run_log=RunLog())
+    lst = fetch_listing(slug, kind=kind, run_log=RunLog(), store=listing_store(arg))
     print(f"title={lst.title!r} total={lst.total_results} products_on_page={len(lst.products)} brands={len(lst.brands)}")
     print("facets:", lst.facets)

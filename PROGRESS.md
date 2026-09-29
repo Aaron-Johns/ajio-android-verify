@@ -351,3 +351,875 @@ Also fixes three checker bugs found in the first live run: vision over-reading
 prop brands, abbreviated brand names not matching the filter's full name, and
 "up to" vs "upto" being read as different deals.
 ```
+
+### Phase 5 addendum 4: `qa/feed_verify.py` — the primary check with no emulator at all
+
+**What it is:** the goal from CLAUDE.md §1 finally assembled standalone — reads the destination straight from
+the feed and verifies it against the listing it points to, with no Appium, no emulator, no device. For each
+banner: download its image from the CDN, read brands/deal/gender off it with Gemma, fetch the linked listing
+(title + Brands + Gender facets) from search-edge, and run the same checks `filters.py` used for the emulator
+hero checks. `--scope hero` (default) or `--scope all` (every banner on the feed that resolves to a listing
+link, not just the hero carousel).
+
+**Built:** `qa/feed_verify.py` (`verify_banner`, `run_feed_verify`, `ListingCache` — one fetch per distinct
+listing link, serialized with a short pause; `PartialLog` appends each result to `partial.jsonl` the moment
+it's known so a killed run loses nothing; `--resume-from` continues an interrupted run, reusing downloaded
+images and redoing only what's missing or failed on a transient error; retry rounds with a pause, separate
+from Phase 5's in-process Gemini retry, for image-download/listing-fetch/vision failures — a missing API key
+is treated as permanent, not retried). `qa/export_xlsx.py` (exports a run to one `.xlsx`, banner image embedded
+per row — `=IMAGE()` formulas confirmed unsupported in the user's Excel, so the actual picture is embedded
+instead).
+
+**Tested:** 318 tests pass total (`tests/test_feed_verify.py` new, plus expanded coverage in
+`test_spotcheck_filters.py`, `test_spotcheck_hero.py`, `test_spotcheck_vision.py`, `test_listing_client.py`).
+Run live multiple times today against the real feed (8 run folders under `runs/`); most recent
+(`20260924T102949Z_feedverify`) exported to `.xlsx` mid-run: 17 banners checked so far, 12 PASS, 3 FAIL,
+1 INCONCLUSIVE, 1 SKIPPED.
+
+**`filters.py` checks got stricter and gained a third rule, gender:**
+1. **Gender check (new).** Vision now reads a `target_gender` (men/women/kids/unisex/unclear) off the banner;
+   `gender_matches()` requires that audience to appear in the listing's Gender facet (`unisex` requires both
+   men's and women's products present). `None` (unclear, or no listing-side evidence) never blocks a PASS.
+2. **Closed vs. open brand lists (new).** Vision also reads whether the banner itself says there are more
+   brands than named ("Nike, Puma & more"). If not, any other brand surviving in the listing's Brands filter
+   (after AJIO's own store-wide labels are set aside) is now a hard mismatch (`extra_brands`), not silently
+   ignored — closes a gap where a banner naming 2 of 40 promoted brands still passed.
+3. AJIO's own labels ("AJIO", "AJIO beauty", ...) are recognized and excluded from brand checking outright.
+4. Brand matching gained two fallbacks beyond exact/whole-word: accent-folding (RENÉE == renee) and a
+   substring/contains check for acronym-style names.
+5. A "missing" brand is no longer failed if it isn't in AJIO's own ~7,000-name master brand list at all —
+   treated as a likely vision misread rather than a real feed defect, and reported separately as `ignored_brands`.
+
+**Other changes bundled in:**
+- `vision.py`: two new fields added to the Gemma prompt (`target_gender`, `more_brands_than_named`) feeding
+  the checks above. The ported prompt text itself is unchanged, per the [!] constraint — these are appended
+  as new numbered sections, not edits to the existing ones.
+- `feed_client.py`: default `AJIO_USER_GROUPS` changed to `l1:premium|l2:men` (was
+  `l1:nontransacted|l2:...,unisex,...`) — changes which feed segment gets pulled.
+- `listing_client.py`: requests now send `userState: LOGGED_IN` (was `NON_LOGGED_IN`); `Listing` gained a
+  `genders` field parsed from the response's Gender facet, feeding the new gender check.
+
+**[A] defaults:** `WORKERS = 3` (banners verified in parallel — mostly waiting on the vision model);
+`RETRY_ROUNDS = 4` / `RETRY_PAUSE = 60s` for feed_verify's own transient-failure retries.
+
+**Known gaps / open items:** the interrupted `20260924T102949Z_feedverify` run wasn't let finish or
+investigated (3 FAIL, 1 INCONCLUSIVE among the first 17 — not yet looked into); `--scope all` (past the hero
+carousel) not yet run live; `analysis/traffic_capture/recap_20260924/session.flow` (a fresh capture from
+today) not yet folded into `FINDINGS.md`; the `AJIO_USER_GROUPS`/`userState` changes above haven't been
+written up as a [D]/[A] decision in CLAUDE.md or explained — worth confirming this was intentional before
+relying on it for the reference checks in §8; real reference rows still missing; Akamai under sustained
+polling still untested; server_mode still not exercised end-to-end on a `/c/` category link through the
+emulator hero runner.
+
+**Commit message:**
+```
+Add feed_verify: primary no-emulator check, plus gender and closed-brand-list rules
+
+qa/feed_verify.py reads a banner's image and destination straight from the live
+feed, reads brands/deal/gender off the image with Gemma, fetches the linked
+listing from search-edge, and checks brand/title/gender against it - the
+CLAUDE.md Sec.1 goal with no Appium or device involved. Adds qa/export_xlsx.py
+to export a run to a spreadsheet with embedded banner images.
+
+filters.py gains a gender check (banner's target audience vs the listing's
+Gender facet) and treats an unqualified brand list as closed, failing on any
+extra brand the listing's filter has that the banner didn't name. Also excludes
+AJIO's own store-wide labels from brand checking and adds two brand-matching
+fallbacks (accent-folding, substring). vision.py's ported prompt gains two new
+fields (target_gender, more_brands_than_named) as new sections, text otherwise
+unchanged. feed_client/listing_client default to a logged-in, l2:men feed
+segment instead of the previous non-transacted/unisex one.
+```
+
+## Phase 6 (early): local API + UI for feed_verify, on demand and on a schedule
+
+**Why:** so anyone can trigger a check or set up a recurring one without a terminal, and so other
+UIs can plug into the same thing. **[!] `qa/` was not modified at all for this** - confirmed by
+re-running the full suite afterward (318 pass, unchanged). `web/` is a separate layer that only
+launches `qa/feed_verify.py` as a subprocess (the same command line as the CLI) and reads the run
+folders it already writes; see `web/__init__.py`'s docstring for why subprocess rather than an
+in-process import (`AJIO_USER_GROUPS` is read once from the environment at import time by
+`feed_client.py`, so there's no function argument to vary l1/l2 per request without a subprocess).
+
+**Built:**
+- `web/db.py` - SQLite (`web/app.sqlite3`, gitignored): `runs` and `schedules` tables, no ORM.
+- `web/runner.py` - `start_run()` launches `python -m qa.feed_verify` with a custom `env`
+  (`AJIO_USER_GROUPS` built from the picked l1/l2), discovers the run's own timestamped folder by
+  diffing `runs/` before/after launch (feed_verify.py has no flag to name its output folder), and
+  watches the process in a background thread to record done/failed/cancelled. `run_view()` merges
+  `banners.json` (the full feed, read via feed_verify's own `load_banners`/`select_banners`) with
+  whatever `results.json`/`partial.jsonl` has so far, so not-yet-verified banners show as `PENDING`
+  immediately instead of only appearing once finished.
+- `web/api.py` - FastAPI, CORS open (any origin can plug in), binds 127.0.0.1 only (`uvicorn
+  web.api:app`). `POST /api/runs` (start), `GET /api/runs[/{id}][/banners]`, `GET
+  /api/runs/{id}/stream` (SSE, polls the run's output files every second and pushes only changed
+  banners), `POST /api/runs/{id}/cancel` (terminates the subprocess), full CRUD + `run-now` on
+  `/api/schedules` (backed by APScheduler `BackgroundScheduler`, one interval job per enabled
+  schedule, re-synced on every create/update/delete), `GET /api/meta` (l1/l2/scope options + which
+  l1/l2 combo is confirmed, so the UI never hardcodes that).
+- `web/static/index.html` - single self-contained page (no build step, no CDN dependency): light/
+  dark toggle (system-preference default, manual override in `localStorage`), run controls (l1,
+  l2 with a confirmed/unverified badge, hero/all scope, banner count blank-means-all, concurrency
+  1-5), a save-as-schedule panel (interval + unit dropdown), a schedule list (enable/disable/run-
+  now/delete), a run history list, and a banner grid: each card colored by result (PASS green /
+  FAIL red / SKIPPED light blue / INCONCLUSIVE yellow / PENDING grey), thumbnail from the feed's
+  own CDN `image_url` (no image proxy needed), click-to-enlarge modal with the full `banner_check`
+  detail. Live runs update the grid via the SSE stream as each banner finishes.
+
+**l1/l2 handling:** only `l1:nontransacted|l2:p_null,false,unisex,noasp` has ever been seen in a
+live capture (`analysis/FINDINGS.md` line 405). `build_user_groups()` keeps that exact flag
+skeleton and swaps only the gender token, rather than the simpler (and unverified)
+`l1:premium|l2:men` form the addendum-4 diff had been using. The UI exposes all 9 l1/l2 combos per
+the user's decision, with the 8 unconfirmed ones visibly badged "unverified combo - read results
+with caution" rather than restricted, since AJIO's edge may silently personalize differently for a
+guessed combo rather than erroring.
+
+**Tested live end-to-end** (1-banner smoke run through the actual API, not a mock): feed fetch,
+image download, Gemini read, listing fetch, verdict (`FAIL` - "NEW30" title didn't match "FLAT 30%
+OFF" deal, a legitimate catch), all correctly surfaced through `/api/runs/{id}/banners`. Schedule
+create/disable/delete exercised too (against a 600-minute interval so it wouldn't actually fire
+during the check). Full `pytest` suite re-run afterward: still 318 passed, confirming `qa/` truly
+wasn't touched. Not yet tested: the SSE stream from an actual browser tab (only curled the JSON
+endpoints), a `/c/` category-scope run, and a schedule actually firing on its own.
+
+**[A] defaults:** run folders are matched by diffing `runs/` for up to 30s after launch (long
+enough for a `--scope all` feed fetch); SSE polls output files once per second; CORS wide open
+(`allow_origins=["*"]`) since this is meant to be pluggable and still binds to localhost only.
+
+**Known gaps:** no resume-from-interrupted-run support in the UI yet (feed_verify.py's
+`--resume-from` isn't wired up - only fresh runs); no way to see a *running* schedule's live grid
+without separately selecting its run once started; a killed uvicorn process leaves any run it
+launched to finish or die on its own (the subprocess isn't a child of the API in a way Windows job
+objects would clean up automatically); `web/app.sqlite3` and `runs/` are both local-only, so this
+doesn't share state across machines. Needs `pip install -r web/requirements.txt` (fastapi,
+uvicorn[standard], apscheduler - not part of `qa/`'s own dependencies).
+
+**Run it:** `python -m uvicorn web.api:app --port 8000` from the repo root, then open
+`http://127.0.0.1:8000/`.
+
+**Commit message:**
+```
+Add a local API + UI to run and schedule feed_verify, without touching qa/
+
+web/api.py (FastAPI) launches qa/feed_verify.py as a subprocess - the same
+command line as the CLI - so per-run l1/l2 segment selection can be injected
+via the environment without adding a parameter to feed_client.py. Reads the
+run folders feed_verify.py already writes (banners.json, partial.jsonl,
+results.json) rather than reimplementing any of its logic. Adds SQLite-backed
+run history and APScheduler-backed recurring schedules, both driving the same
+start_run() path, and a self-contained static UI (light/dark, l1/l2 picker
+with a confirmed-vs-unverified badge, hero/all scope, banner count and
+concurrency controls, a banner grid color-coded by result with click-to-
+enlarge images, live SSE updates). Verified live end-to-end and against the
+full existing test suite (318 pass, unchanged) to confirm qa/ was not edited.
+```
+
+## Gender-check rule rewrite: closed categories with allowed/required/excluded sets
+
+**User decision, superseding the earlier "audience must be represented" gender check** (the one
+described in Phase 5 addendum 4). The old check only asked "is the banner's claimed audience
+*present* in the listing's Gender facet" - a men's banner passed against a listing tagged
+`["Men", "Women"]` just as easily as one tagged `["Men"]` alone. The user specified a stricter,
+closed rule set instead: five listing categories (**Men, Women, Boys, Girls, Infants**), each
+banner audience reading either restricted to an *allowed* subset of those, requiring a *minimum*
+set, or *excluding* specific ones - see `qa/spotcheck/filters.py`'s `_BANNER_GENDER_RULES` table:
+
+| Banner reads as | Listing's Gender facet must be |
+|---|---|
+| `men` | only `Men`, optionally also `Boys` — `Men` itself must be present |
+| `women` | only `Women`, optionally also `Girls` — `Women` itself must be present |
+| `boys` | exactly `Boys`, nothing else |
+| `girls` | exactly `Girls`, nothing else |
+| `infants` | exactly `Infants`, nothing else |
+| `men_and_women` (unisex) | at minimum both `Men` and `Women` (others OK too) |
+| `girls_and_boys` (kids-wide) | must exclude `Men` and `Women` (Boys/Girls/Infants unrestricted) |
+| anything else (including `unclear`) | **forces the whole banner `INCONCLUSIVE`**, not a skip |
+
+**Built:** `vision.py`'s TARGET GENDER prompt section rewritten to the seven categories above (was
+men/women/kids/unisex/unclear); `filters.py` gained `GENDER_CATEGORIES`, `_BANNER_GENDER_RULES`,
+and a rewritten `gender_key()` (now normalizes a listing facet value to one of the five categories,
+not three buckets) and `gender_matches()` (returns `True`/`False`/`None`/the string `"INCONCLUSIVE"`
+- the last one is new and is checked in `_finish()` before the FAIL branch, so an unrecognized
+banner reading overrides brand/title into `INCONCLUSIVE` even if those would say PASS).
+
+**Tested:** every gender-related test in `test_spotcheck_filters.py` rewritten for the new rule
+table (subset/minimum/exclude cases, the INCONCLUSIVE sentinel, the five-category normalization).
+Rewriting `filters.gender_matches` also exposed that ~14 older, gender-*unrelated* tests across
+`test_spotcheck_filters.py`, `test_feed_verify.py`, and `test_spotcheck_hero.py` built banner-info
+dicts with no `target_gender` key at all - previously a silent no-op, now correctly read as "not
+one of the seven categories" and forced INCONCLUSIVE, breaking their PASS/FAIL expectations. Fixed
+by giving those fixtures a real, neutral `target_gender` (`"men_and_women"`) rather than softening
+the production rule - in live use Gemma's schema always returns some value for this field, so an
+absent key was only ever a test-fixture artifact. Full suite: 332 passed (up from 318 - 14 net new
+gender tests).
+
+**Not yet re-verified live** against the real feed/model - only unit-tested so far.
+
+**Commit message:**
+```
+Rewrite the gender check to closed per-audience category rules
+
+Replace "banner's claimed audience is present in the listing" with the user's
+specified rule table: Men/Women/Boys/Girls/Infants as the only recognized
+listing categories, each banner audience reading (men, women, boys, girls,
+infants, men_and_women, girls_and_boys) mapped to an allowed/required/excluded
+set of them rather than a simple presence check. A banner reading that isn't
+one of those seven (including "unclear") now forces the whole banner
+INCONCLUSIVE instead of silently skipping the gender check. Updates vision.py's
+TARGET GENDER prompt section to match. 332 tests pass (14 net new; ~14 older
+gender-unrelated fixtures needed a realistic target_gender added, since a
+missing key used to no-op and now correctly reads as unrecognized).
+```
+
+## Gender-check rule rewrite v2: required/excluded per category, 2% noise tolerance, AJIO beauty flag
+
+**User decision, refining the rule table above.** Three changes:
+
+1. **Boys/Girls/Infants rules loosened.** Previously "exactly that one tag, nothing else." Now each
+   requires its own tag but the *other two* kid categories are unrestricted (a "boys" banner no
+   longer fails just because Girls/Infants also appear) - only Men/Women stay excluded.
+2. **Excluded categories get a 2% noise tolerance, not a hard zero.** `gender_matches()` now takes
+   the listing's Gender facet as `{name: count}` (previously just names) plus the listing's
+   `total_results`, sums counts per normalized category, and lets an excluded category through if
+   its count is under `EXCLUDE_MAX_SHARE = 0.02` (2%) of `total_results` - checked per category
+   individually, not combined. Without a `total_results` (or it's falsy), falls back to the old
+   zero-tolerance behavior rather than silently passing. `qa/feed_verify.py` and
+   `qa/spotcheck/hero.py` both updated to pass `listing.total_results`/`first.total_results` through.
+3. **AJIO beauty bypasses gender entirely.** New `is_ajio_beauty_brand()` (stricter than
+   `is_ajio_own_brand` - specifically "ajio" + "beauty" together, not just any AJIO label). If any
+   banner brand matches it, `gender_matches` is never called; `gender_ok` is set to the sentinel
+   `"AJIO_BEAUTY"` and a new `ajio_beauty_flag` field is added to the check dict. Both this sentinel
+   and the existing `"INCONCLUSIVE"` one are caught by `_finish()` via `isinstance(gender_ok, str)`,
+   forcing the banner's overall result to `INCONCLUSIVE` - brand and title checks still run and are
+   reported normally, only gender is skipped.
+
+**Rule table is now uniform** (`_BANNER_GENDER_RULES`): every entry is just `{required, excluded}`
+category sets; anything in neither is unrestricted. `format_summary()`'s human-readable "why" line
+extended to explain both new INCONCLUSIVE causes (previously would've printed blank for either).
+
+**Tested:** new/rewritten tests for the loosened boys/girls/infants rules, the 2%-tolerance math
+(1.99% passes, 2.00% doesn't, combined-facet-name summing e.g. "Girls" + "Junior Girls"), the
+zero-tolerance fallback when `total_results` is missing/0, `is_ajio_beauty_brand` itself, and the
+AJIO-beauty skip-and-flag behavior (including that brand/title checks still run underneath it).
+Full suite: **344 passed** (up from 332).
+
+**Not yet re-verified live** - unit-tested only so far, same caveat as the first gender rewrite.
+
+**Commit message:**
+```
+Loosen boys/girls/infants gender rules, add 2% noise tolerance, flag AJIO beauty
+
+Boys/Girls/Infants banners now only exclude Men/Women (the other two kid
+categories are unrestricted, not forbidden). Excluded categories in every rule
+now tolerate up to 2% of the listing's total product count as cross-tagging
+noise before counting as a real presence, computed from the Gender facet's
+actual counts (previously discarded) and the listing's total_results; falls
+back to zero-tolerance if total_results isn't available. A banner mentioning
+AJIO's beauty vertical specifically skips the gender check altogether and is
+flagged (forces INCONCLUSIVE) rather than scored, since beauty listings don't
+carry a Men/Women/Boys/Girls/Infants split. 344 tests pass (12 net new).
+```
+
+## Phase 6 continued: hidden-banner awareness, retry/skip, carousel picker, Excel export, cache controls
+
+Builds directly on "Phase 6 (early)" above - same architecture (subprocess-per-run, `qa/` untouched
+except where a real underlying bug needed fixing - noted explicitly below where that happened). Full
+suite is now **436 passed** (up from 344), including new test files `tests/test_export_xlsx.py` and
+new tests added to `tests/test_feed_verify.py`, `tests/test_banner_cache.py`, `tests/test_asset_set.py`.
+
+**Hidden/scheduled banner detection** (`qa/feed_client.py`): a banner is `hidden=True` if the CMS's
+`showBlock`/`showComponent` checkbox props are explicitly `False`, or if fetch-time falls outside
+every `predicate.schedule` window (`[start, end]` bounds only - every `cron` field observed in real
+data has been `"* * * * * *"` or `""`, never a real restrictive pattern, so cron itself isn't
+evaluated). `hidden_reason` is a comma-joined subset of `block_hidden`/`component_hidden`/
+`outside_schedule`. `parse_banners()` takes an optional `now` for testability. Verified live: 37/385
+real banners hidden in one capture, all `block_hidden`, none `outside_schedule` at that fetch time.
+UI: hidden banners are excluded from the grid by default, with a "Show hidden / out-of-schedule
+banners" toggle; a grey/white "H" tag (positioned beside the existing purple "MU" multi-link tag) shows
+on the card with a human-readable hover reason ("Hidden Block" / "Hidden Component" / "Wrong Time").
+
+**Cross-run banner cache** (`qa/banner_cache.py`) - already existed going into this session; verified
+genuinely wired into `run_feed_verify()` (not dead code) by tracing a real cross-run cache hit through
+actual run data, and confirmed live that a repeat banner (same perceptual image hash, same
+destination/hotspot urls) skips the vision+listing work entirely on a second run.
+
+**Gemini vision call timeout** (`qa/spotcheck/vision.py`): `genai.Client(...)` was being constructed
+with no `http_options.timeout` at all - the SDK has no default, so a stalled connection (observed: one
+real hang ran ~16 minutes) blocked its worker thread forever instead of raising something the outer
+retry loop could catch. Fixed by adding `TIMEOUT_MS = 180_000` (3 minutes), sized from real per-banner
+timing data gathered via image-file download-mtime analysis across 3 completed runs (worker-adjusted
+for concurrent vision calls sharing one `ListingCache` lock): mean ~112-117s, median ~88-114s, max
+seen 210-252s in normal operation - 180s comfortably clears real slow-but-working calls while still
+catching genuine hangs quickly.
+
+**Live progress + manual per-banner retry:**
+- `qa/feed_verify.py` gained `--resume-from <run_dir> --only-banner <id>` (repeatable), and a matching
+  `only` parameter on `run_feed_verify()` - redoes just the named banner(s) against an existing run
+  folder, leaving every other banner's saved result untouched. **Real bug found and fixed while
+  building this:** the CLI's final `write_outputs()` call was unconditional, so a `--only-banner` retry
+  run against a still-*live* parent (the common case - the whole point is retrying one banner without
+  waiting for the rest) wrote a `results.json` covering the *entire* run, with `null` for every banner
+  the parent hadn't finished yet - this both crashed anything reading that file and silently clobbered
+  the live run's own eventual output. Fixed by skipping `write_outputs()` entirely when `--only-banner`
+  is set (`qa/feed_verify.py`); the one retried banner is still durably saved via the normal
+  `on_result`/`partial.jsonl` path.
+- `web/runner.py`'s `run_view()` now shows `PROCESSING X/N TRIES` (try number / `MAX_TRIES` = 1 +
+  `RETRY_ROUNDS`) for a banner still cycling through automatic retries, and `retries_exhausted=True`
+  once it's used all its tries - **or** immediately, regardless of attempt count, if the run itself is
+  no longer live (`is_live` param, from `status == "running"`) so a cancelled/failed run never shows a
+  permanently-stuck "still processing" with no way forward. `retry_banner()`/`POST
+  /api/runs/{id}/banners/{id}/retry` launches the `--resume-from --only-banner` subprocess described
+  above; the UI shows the card as a normal in-progress banner while it runs (not a separate "retrying"
+  state) and polls for the real result.
+
+**Skip / Unskip** (a still-*PENDING* banner only - deliberately not offered for one already
+PROCESSING, since an in-flight network call can't be safely interrupted mid-request): `qa/feed_verify.py`
+checks a small `skip_requests.json` file (written by `web/runner.request_skip`/`unrequest_skip`) right
+before starting a banner's real work, short-circuiting to a `SKIPPED`/`user_skipped` result with zero
+image download, listing fetch, or vision call if the id is listed. The UI toggles the card between
+"Skip" and "Unskip" instantly (no polling needed - nothing is in flight to wait on) and greys out a
+skipped card.
+
+**Carousel picker / preview** - "Load carousels to choose which to run" fetches the feed fresh (no
+verification) via a new `qa/feed_verify.py --list-carousels` mode and `GET /api/feed-preview`, then
+renders every banner **in the main grid itself**, grouped under a checkbox heading per carousel
+(checked by default, real banner thumbnails underneath, unchecking one hides its banners immediately -
+a live client-side filter, not just a form control). Whatever's still unchecked when "Run now" is
+clicked is passed as `excluded_carousels` (new `runs.excluded_carousels` DB column, JSON list of
+`section_index` ints) through `--exclude-carousel` (repeatable) - those banners are dropped from
+`chosen` before `run_feed_verify()` does anything, so they never appear in the run's output at all,
+not even as a placeholder.
+
+**Excel export with embedded images** - `qa/export_xlsx.py` (built in an earlier session, unwired
+until now) is exposed via `GET /api/runs/{id}/export.xlsx` and a "Download Excel" button, greyed out
+while the run is live and enabled once it's done/failed/cancelled. Regenerated fresh on every click
+(not cached) since a completed run's `results.json` can still change afterward via a per-banner Retry.
+Downloaded filename is `{l1}_{l2}_{timestamp}.xlsx`. The click also fires `POST
+/api/runs/{id}/open-folder` (`os.startfile`) to open the run's folder in Explorer - reasonable only
+because this is a local, single-user, same-machine tool (CLAUDE.md §0.1: dev machine is Windows).
+`qa/export_xlsx.py`'s `load_results()` was hardened to return `[]` (not raise) when a run died before
+writing even `partial.jsonl`, so the export endpoint doesn't 500 on an edge-case run.
+
+**Clear cache button** - `qa/banner_cache.clear_cache()` deletes the on-disk cross-run cache file;
+`POST /api/cache/clear` + a confirm-gated button next to "Run now". Global, not per-run; only affects
+runs *started after* the click (an already-loaded `BannerCache` in a live run keeps its in-memory
+entries). Note for future reference: a transient failure (`listing_fetch_failed` etc.) is never
+written to the cache in the first place (`verify_banner`'s `not transient` guard), so this button was
+never actually needed to un-stick a one-off AJIO-side error - it's for when the *matching rules*
+change and old cached verdicts need to be forced fresh.
+
+**Real bug found and fixed via a live "is premium actually giving premium banners" check**
+(`qa/asset_set.py`): `detect_asset_set()`'s regex was anchored on `UHP-<SET>-MB-`, assuming the
+segment code after `ST`/`PR` was always `MB` (true of the one example captured when this was written).
+A live `l1:premium|l2:men` pull (2026-09-28) showed 15 real `PR`-tagged banners, using segment codes
+`ALS`/`RE`/`SBI`/`BBX`/`FC`/`NB` - **zero** using `MB` - so the old regex matched none of them, making
+`--confirm-asset-set PR` report "never saw a PR banner" on pulls that actually had 15. Fixed by
+anchoring only on `UHP-<SET>-`, not what follows it; added a regression test
+(`test_detects_premium_set_with_a_non_mb_segment_code`).
+
+**Not a bug - accepted as known variance (user call, 2026-09-28):** that same live check showed every
+`PR`-tagged banner in that one pull was a secondary strip/tile (bank-offer banners at 1024x90, a
+bento-box tile at 400x488, etc.), not the near-square ~1024x1000 hero creative `analysis/FINDINGS.md`
+6.10 originally described - the hero carousel's own `-MB-` segment banners were all `ST` in that
+particular pull, none `PR`. This looked concerning in isolation, but it's consistent with what
+FINDINGS 6.10 already established: which asset set AJIO's edge returns for `l1:premium` varies
+per-request, even with l1/l2/device-id held identical - it's the exact reason
+`fetch_confirmed_banners`/`--confirm-asset-set` exists (retries the feed pull up to 8x until a target
+asset set is actually seen). In practice this succeeds on the very first attempt roughly 90% of the
+time - a real but occasional timing/probability thing, not a broken mechanism, and not worth chasing
+further right now.
+
+**`run.bat`** (repo root) - double-click launcher: `cd`s to its own folder, checks `.venv\Scripts\
+python.exe` exists, starts uvicorn, and opens the browser automatically after a 3s delay (backgrounded
+so it doesn't race the server's own startup). For anyone who doesn't want to type the venv-activation
+dance in PowerShell every time.
+
+**Operational gotcha worth knowing, not a code bug:** restarting the API server (`uvicorn`) while a
+run is in progress orphans that run's in-memory tracking (`web/runner.py`'s `_procs`/`_retrying`/
+`_skip` state lives in the process, not the DB) - the subprocess itself keeps running and writing to
+disk completely normally, but the API can no longer cancel it, and its DB row will stay stuck on
+`status="running"` forever since the `_watch()` thread that would call `db.finish_run()` on completion
+died with the old process. Hit this twice in one session restarting for code changes. Recovery is
+manual: kill the orphaned PID directly (`taskkill /PID <pid> /F`) and call `db.finish_run(run_id,
+"cancelled")` by hand. Not fixed - would need either persisting `_procs` state outside the API
+process, or a startup reconciliation pass that checks every DB-"running" row's `pid` against the OS
+and finalizes any that are actually dead (and flags/kills any that are alive but orphaned).
+
+**Known gaps:**
+- No tracked dependency manifest for `qa/`'s own packages (`openpyxl`, `Pillow`, `google-genai`, etc.)
+  - `web/requirements.txt` only covers the web layer (see the Phase 6 (early) entry above); everything
+  else has only ever been `pip install`ed ad hoc into `.venv`. Worth a real `requirements.txt` at the
+  repo root before this leaves one machine.
+- Skip/Unskip and the carousel picker have no automated web-layer tests (this project's convention has
+  been to unit-test `qa/` and leave `web/`'s subprocess/DB-touching code covered by live manual
+  verification instead - consistent with the rest of Phase 6, not a new gap introduced here).
+
+**Commit message:**
+```
+Hidden banners, per-banner retry/skip, carousel picker, Excel export, cache controls
+
+Extends the Phase 6 web UI: CMS-hidden/out-of-schedule banner detection with a
+toggle and tag; PROCESSING X/N TRIES progress and a manual per-banner Retry
+button (--resume-from --only-banner); a Skip/Unskip toggle for not-yet-started
+banners; a carousel picker that previews real banners grouped by carousel in
+the main grid before a run starts, letting whole carousels be excluded; an
+Excel export with embedded banner images; and a manual cross-run-cache-clear
+button. Along the way, fixed two real bugs: a --only-banner retry could
+clobber a still-live parent run's results.json with null entries, and
+qa/asset_set.py's premium-banner detector regex missed every real premium
+banner that didn't use the exact segment code from its one original example.
+436 tests pass (up from 344).
+```
+
+## Removed: the confirmed-vs-unverified l1/l2 combo badge (user call, 2026-09-28)
+
+**User decision:** drop the whole "tested vs untested cohort" feature - the badge next to the l1/l2
+pickers reading "confirmed against live traffic" / "unverified combo - read results with caution",
+and everything backing it.
+
+**Removed:**
+- `web/runner.py` - the `CONFIRMED` set and `is_confirmed()`.
+- `web/db.py` - the `runs.confirmed` column (migration drops it from existing DBs via `ALTER TABLE
+  runs DROP COLUMN confirmed`; `insert_run()` no longer takes a `confirmed` arg).
+- `web/api.py` - `confirmed_combos` from `GET /api/meta`, `confirmed` from each run summary.
+- `web/static/index.html` - the `#confirm-badge` element, `updateConfirmBadge()`, and its `.badge`/
+  `.badge.confirmed`/`.badge.unverified` CSS.
+- `docs/UI_GUIDE.md` and `docs/API.md` - every mention of the badge/field, including the AI-agent
+  prompt block's "which l1/l2 combo is confirmed" step.
+
+**Not removed:** the underlying fact this was based on - that only `nontransacted`/`unisex` has ever
+been observed in a real captured session (`analysis/FINDINGS.md` line 405) - is left as-is in
+FINDINGS.md; that's a record of what Phase 2 actually captured, not part of the UI feature being
+removed. Every l1/l2 combo still works exactly as before, just without the badge distinguishing them.
+
+**Commit message:**
+```
+Remove the confirmed-vs-unverified l1/l2 combo badge
+
+User call: this distinction wasn't earning its keep. Drops CONFIRMED/
+is_confirmed from web/runner.py, the confirmed column from web/db.py
+(with a migration for existing DBs), confirmed_combos/confirmed from
+web/api.py, and the badge UI + its docs. All l1/l2 combos still work
+identically; only the "confirmed against live traffic" labeling is gone.
+```
+
+## Hidden banners are no longer actually verified (user call, 2026-09-29)
+
+**User decision:** hidden/out-of-schedule banners should still show up in the grid (toggle-controlled,
+as before) but should never actually be processed - no image download, no vision call, no listing
+fetch. First pass over-corrected and stripped the whole hidden-banner UI (toggle, H tag, docs); user
+caught it immediately ("no wait it shud not process hidden banners but the banners shud still show up
+in the feed with the toggle") and the UI/display side was restored exactly as it was.
+
+**Change:** `qa/feed_verify.py`'s `verify_banner()` now checks `banner.hidden` first, before the
+existing no-image/no-link checks, and returns `SKIPPED` with `reason: "hidden: <hidden_reason>"`
+immediately - `select_banners()` itself is untouched, so hidden banners still flow through `chosen`,
+still get a row in `run_view()`/the carousel preview, still carry `hidden`/`hidden_reason`, and the
+web UI's toggle/H-tag/reason-label code is all unchanged. The only thing that changed is that a hidden
+banner's row is now always `SKIPPED` rather than a real PASS/FAIL/INCONCLUSIVE - saves an image
+download + a Gemini call + a listing fetch per hidden banner, for a check nobody can act on since no
+real user sees that banner right now anyway.
+
+Two new tests in `tests/test_feed_verify.py`: `test_a_hidden_banner_is_skipped_before_any_image_
+download_or_listing_fetch` (asserts zero image/listing fetcher calls) and `test_select_banners_still_
+includes_hidden_ones_so_the_ui_toggle_can_show_them` (guards against re-introducing the first, wrong
+approach). 438 tests pass (up from 436). Docs (`docs/UI_GUIDE.md`, `docs/API.md`) updated to note a
+shown hidden banner is a SKIPPED card, not a real verdict.
+
+**Commit message:**
+```
+Skip verification for hidden banners instead of checking them
+
+Hidden/out-of-schedule banners were fully verified (image download,
+vision call, listing fetch) and only hidden from the UI by default -
+wasted work for a banner no real user currently sees. verify_banner()
+now short-circuits to SKIPPED (reason "hidden: <hidden_reason>") before
+any of that, while select_banners() and the web UI's show/hide toggle
+are untouched, so hidden banners still appear (toggle-controlled) as a
+SKIPPED card rather than disappearing or carrying a real verdict.
+```
+
+## Real bug found and fixed: `--scope all` silently dropped multi-link banners with no listing-type own link
+
+**User report:** "the multi links aren't showing the verification for sub links."
+
+**Root cause:** `select_banners()`'s `all`-scope filter (`qa/feed_verify.py`) only checked the banner's
+own `destination_raw` against `listing_client.listing_target()` - a banner whose own tap target wasn't
+itself a `/s/` or `/c/` listing link (e.g. a `/shop/...` page, or no own link at all - real examples
+seen in a live feed: a swipe-gallery banner with an empty own `destination_raw` and two per-hotspot
+`/s/` links) was dropped from `chosen` entirely before verification ever started - not just its own
+link but *every one of its hotspot sub-links* never got checked, because the banner never reached
+`verify_banner()` at all. `hero` scope was never affected (it doesn't pre-filter on the own link), which
+is why this went unnoticed - every hotspot banner exercised so far had happened to also carry a valid
+own `/s/`/`/c/` link.
+
+**Fix:** `select_banners()`'s `all`-scope filter now also checks each hotspot's own URL - a banner is
+kept if its own destination is a listing link *or* any hotspot's URL is. `verify_banner()` already
+handled "own link not checkable, hotspots are" correctly (that logic predates this bug and has its own
+tests) - the bug was purely in `select_banners()` never letting such a banner reach it in `all` scope.
+
+New test: `test_all_scope_keeps_a_banner_whose_only_checkable_link_is_a_hotspot` - three banners (a
+gallery banner with only hotspot links, a banner with `destination_raw=None` and one hotspot, and a
+truly uncheckable banner), asserts the first two survive `select_banners(..., "all")` and the third
+doesn't, then runs the gallery banner end-to-end and confirms both hotspots actually get verified
+(PASS) even though the banner's own link is correctly left out of the overall verdict. 439 tests pass
+(up from 438).
+
+**Commit message:**
+```
+Fix --scope all dropping multi-link banners with no listing-type own link
+
+select_banners()'s all-scope filter checked only a banner's own
+destination_raw against listing_target(), so a banner whose own tap
+target wasn't a /s/ or /c/ link - even one with hotspots that were -
+got dropped before verify_banner() ever ran, silently skipping every
+one of its sub-links too. Now also checks each hotspot's own URL, so
+a banner with at least one checkable link anywhere on it (own or
+hotspot) is kept. hero scope was never affected. New regression test
+covers a real example from a live feed pull (a swipe-gallery banner
+with an empty own link and two per-hotspot listing links).
+```
+
+## Added: per-run pincode override in the UI
+
+**User request:** a text field under l1/l2 for the delivery pincode used in listing lookups, default
+`560029`, sent to AJIO as `AJIO_PINCODE`.
+
+`qa/listing_client.py` already read `AJIO_PINCODE` from the environment per-call (not import-time like
+`AJIO_USER_GROUPS`), so no `qa/` change was needed - this was entirely a web-layer wiring job:
+
+- `web/static/index.html` - new "Pincode" text input under l2 (default `560029`), included in
+  `currentSettings()` (so both "Run now" and "Save as schedule" pick it up automatically), shown in the
+  selected run's title and each schedule's meta line.
+- `web/api.py` - `pincode: str = "560029"` on `RunRequest`/`ScheduleRequest`/`ScheduleUpdate`; a new
+  `_validate_pincode()` (non-empty numeric string, 422 otherwise) called from `create_run`,
+  `create_schedule`, and `update_schedule` (when `pincode` is included).
+- `web/db.py` - `pincode` column on both `runs` and `schedules` (migration adds it to existing DBs,
+  defaulting existing rows to `560029`); `insert_run()`/`insert_schedule()` take a `pincode` param.
+- `web/runner.py` - `start_run()` adds `AJIO_PINCODE` to the subprocess's `env` alongside the existing
+  `AJIO_USER_GROUPS`. **Also fixed along the way:** `retry_banner()`'s subprocess previously inherited
+  the server's own environment with no override at all, so a manual per-banner Retry on a run started
+  with a non-default pincode would silently re-check under `.env`'s/the default pincode instead of the
+  run's actual one - now it explicitly passes the run's own stored `pincode`.
+
+Verified live: `POST /api/schedules` with `pincode: "400001"` stored and round-tripped correctly;
+`pincode: "abc123"` correctly rejected with 422; confirmed the exact env-construction `start_run()`
+uses actually reaches `qa.listing_client._params()` (ran it as a real subprocess, got back
+`"pincode": "400001"` in the built request params). DB migration verified against the real on-disk
+`web/app.sqlite3` - existing rows backfilled to `560029` without data loss. 439 tests pass (unchanged -
+this was a `web/`-only change; per this project's convention `web/` isn't unit-tested, only manually
+verified live - see the Phase 6 entries above).
+
+**Commit message:**
+```
+Add a per-run pincode override, sent to AJIO as AJIO_PINCODE
+
+qa/listing_client.py already read AJIO_PINCODE from the environment
+per-call, so this is pure web-layer wiring: a text field in the UI
+(default 560029) flows through RunRequest/ScheduleRequest into
+start_run()'s subprocess env, alongside the existing AJIO_USER_GROUPS
+override. New pincode columns on runs/schedules (migrated) so a
+schedule remembers its own pincode across fires. Also fixes a related
+gap found while wiring this up: retry_banner()'s subprocess had no
+env override at all, so retrying a single banner on a non-default-
+pincode run silently used the wrong pincode - it now reuses the run's
+own stored value.
+```
+
+## Added: per-run state override in the UI (AJIO_LOCATION_DETAIL), plus a blank-input-defaults fix
+
+**User request:** a "State" field above Pincode - typed autocomplete dropdown, every Indian state,
+multi-word states offered both space- and underscore-separated (unconfirmed which AJIO's edge expects -
+neither has been seen in a live capture the way "KARNATAKA" has), default `KARNATAKA` if nothing is
+entered.
+
+Unlike pincode, nothing existing read a per-request env override for this - `qa/feed_client.py`'s
+`LOCATION` constant (`AJIO_LOCATION_DETAIL`, the home-feed's `x-location-detail` header) was read once
+at import time from a single env var holding the *whole* JSON blob (`country`/`city`/`pincode`/`state`
+together), same import-time pattern as `AJIO_USER_GROUPS` - so this needed the same subprocess-env
+treatment as l1/l2, not just a new field on an existing mechanism.
+
+**Built:**
+- `web/runner.py` - `STATE_OPTIONS` (28 states; the 7 multi-word ones doubled for space/underscore = 35
+  entries, sorted) and `build_location_detail(state, pincode)` (`json.dumps` - never hand-built string
+  interpolation, so a state value can't break the JSON or inject header content). `start_run()` now
+  also sets `AJIO_LOCATION_DETAIL` in the subprocess env, built from the run's own state *and* pincode -
+  country/city stay fixed (`INDIA`/`BENGALURU`, the tool's original defaults) since nothing has asked to
+  vary those yet.
+- `web/static/index.html` - "State" field above Pincode: `<input list="state-options">` +
+  `<datalist>`, populated from `/api/meta`'s new `state_options` (matches the existing l1/l2-from-meta
+  pattern - one source of truth, not a duplicated list in JS). Shown in the run title and schedule meta
+  line alongside pincode.
+- `web/api.py` / `web/db.py` - `state` follows the exact same path pincode just got: `RunRequest`/
+  `ScheduleRequest`/`ScheduleUpdate` fields, a `state` column on both `runs` and `schedules` (migrated),
+  `_validate_state()` (422 if not one of `STATE_OPTIONS`).
+- **Blank-input handling (follow-up fix, same request):** a blank/whitespace-only `state` now falls
+  back to `KARNATAKA` via a new `_normalize_state()` instead of 422ing - applied in `create_run`,
+  `create_schedule`, and `update_schedule` before validation. A *non-blank but unrecognized* value (a
+  real typo, e.g. `"NARNIA"`) still 422s - only "nothing entered" gets the silent default, not "entered
+  something wrong." The bundled UI already sent a JS-side `|| "KARNATAKA"` fallback so this mostly
+  matters for direct API/script callers (see `docs/API.md`'s AI-agent prompt), but it's defense in depth
+  either way.
+
+**retry_banner() note:** deliberately *not* given an `AJIO_LOCATION_DETAIL` override, unlike the pincode
+fix a few commits back - `--resume-from` never re-calls the feed endpoint (the only place
+`x-location-detail` is read), so a retry can't be affected by it either way; only `AJIO_PINCODE`
+(listing calls) matters for a retry.
+
+Verified live: `POST /api/schedules` with `state: "ASSAM"` and `state: "TAMIL_NADU"` both accepted
+(200); `state: "NARNIA"` rejected (422); `state: ""` and `state: "   "` both silently became
+`"KARNATAKA"` (200, confirmed in the response body) rather than erroring. `runner.build_location_detail`
+checked directly against the real default LOCATION shape from `qa/feed_client.py`. 439 tests pass
+(unchanged - `web/` isn't unit-tested, same as the pincode addition; verified live instead).
+
+**Commit message:**
+```
+Add a per-run state override (AJIO_LOCATION_DETAIL), default to Karnataka on blank input
+
+State needed its own subprocess-env wiring since AJIO_LOCATION_DETAIL
+is a single JSON blob read once at import time (same pattern as
+AJIO_USER_GROUPS), not a per-call env read like AJIO_PINCODE was.
+Added STATE_OPTIONS (28 states, 7 multi-word ones doubled for space/
+underscore = 35) and build_location_detail(state, pincode) in
+web/runner.py; a State autocomplete field in the UI sourced from
+/api/meta's state_options; state columns on runs/schedules (migrated).
+Also normalizes a blank/whitespace state to KARNATAKA instead of
+422ing, in create_run/create_schedule/update_schedule, while still
+rejecting a genuinely unrecognized (non-blank) value.
+```
+
+## Added: `nogender` as an l2 option
+
+**User request:** one more l2 dropdown value, `"nogender"`.
+
+One-line change - `web/runner.py`'s `L2_OPTIONS` is the single source of truth for the l2 dropdown
+(`/api/meta`'s `l2_options` → `web/static/index.html`'s `l2.innerHTML = meta.l2_options.map(...)`,
+already data-driven, no HTML/JS edit needed) and for `_validate()`'s l2 check in `web/api.py` - so
+adding `"nogender"` to the list was the whole change. `build_user_groups()` passes it straight through
+into the `l2:p_null,false,<value>,noasp` segment of `AJIO_USER_GROUPS` exactly like the other three
+values, unvalidated against AJIO itself - same "unconfirmed guess at the cohort grammar" status as
+`premium`/`nonpremium`/`men`/`women` already have (only `nontransacted`/`unisex` has ever been seen in
+a live capture - see `analysis/FINDINGS.md` line 405). No `qa/` change needed (same reason as the l1
+additions before it - `AJIO_USER_GROUPS` is read verbatim as an override, not validated against a list
+there). Verified live via `GET /api/meta`. 439 tests pass (unchanged - `web/` isn't unit-tested).
+
+**Commit message:**
+```
+Add nogender as an l2 cohort option
+
+One-line addition to web/runner.py's L2_OPTIONS - already the single
+source of truth for the l2 dropdown (via /api/meta) and its
+validation, so nothing else needed to change. Same status as the
+other unconfirmed l2 values: a guess at AJIO's cohort grammar, not
+verified against live traffic.
+```
+
+## Scheduler expansion: block + drill-down UI, alerts, editing, orphan recovery, multi-select, start time
+
+**User requests (2026-09-29):** (1) a "Scheduler" block - make / scrolling list with view+delete /
+expand - that opens inside the main window; startup reconciliation of orphaned runs plus a concurrency
+cap; change alerts; schedule editing with saved carousel exclusions. (2) A **start date + time** (calendar
+date defaulting to today, hh:mm with AM/PM); l1/l2 as multi-select buttons; state (checkmark dropdown)
+and pincode (type + Enter chips) multi-select, current values as defaults; an expanded "show schedulers"
+page; schedule -> run cards -> normal banner listing, same drill-down from the schedulers list.
+
+**Built (backend):**
+- `web/runner.py` - `reconcile_orphans()` at startup (adopt a live run process via `psutil`, with a
+  pid-reuse guard on cmdline + create time; finalize a dead one from whether `results.json` exists);
+  `MAX_CONCURRENT_RUNS = 1` gate + `SCHEDULED_MAX_WAIT_S = 3600` for scheduled fires (manual runs never
+  gated); `expand_combos`/`combos_of`, `MAX_COMBOS = 24`, `start_batch` (first run now, rest sequential;
+  cancelling one stops the batch), `start_scheduled_batch` (each combination through the gate).
+- `web/db.py` - `schedules.l1/l2/pincode/state` now hold JSON lists (`as_list` still reads old plain
+  strings), new `schedules.start_at`, `runs.batch_id`, per-combo `previous_done_run`, `schedule_stats`.
+- `web/alerts.py` + `qa/run_diff.py` + `web/notify.py` - each scheduled run is diffed against the previous
+  finished run **of the same schedule and the same l1/l2/state/pincode** (otherwise premium/men would be
+  diffed against nonpremium/women); baseline never alerts; `off | new_fails | any_change`; failed run
+  alerts; Windows toast; multi-combo alert titles name the combination.
+- `web/api.py` - list-valued `l1s/l2s/states/pincodes` (singular names still accepted), cap 422, `start_at`
+  (UTC, anchors `IntervalTrigger(start_date=...)`; nullable in PATCH), `GET /api/runs?schedule_id=`,
+  `GET /api/runs/{id}/diff`, `/api/alerts*`, `/api/notify/test`, schedule view with `run_count`,
+  `unread_alerts`, `latest_run`, `combo_count`; `POST /api/runs` and `run-now` return `batch_id/combos/queued`.
+  `psutil==7.2.2` added to `requirements.txt`.
+
+**Built (UI, `web/static/index.html`):** toggle buttons, checkmark state dropdown (type-to-filter,
+arrows/Enter), pincode chip box (6 digits, comma/space split, Backspace), live "N x N x N x N = runs"
+line, shared by the New run panel and the scheduler form; Start date/time with a "First run:" line;
+Scheduler block, list page (health-coloured cards, summary, filter chips, alerts), runs page (run cards
+grouped per fire, self-refreshing while a run is going, Settings/Alerts folded), back button above a
+run's banners. The New run panel now sends carousel exclusions by section id (works across combos).
+
+**[A] Defaults chosen (change on request):** cross product of the four selections, capped at 24 runs;
+combos run one at a time; concurrency cap 1 with a 60 min wait before a fire is recorded "skipped";
+alerts default `new_fails` with the toast on; alerts Windows-only (no email/Slack); the manual batch
+queue is in memory (a server restart forgets combos not yet started); schedules with no `start_at`
+count from server start as before; fires missed while the server is down are not made up; a
+half-typed pincode blocks Run/Save instead of being dropped.
+
+**Verified:** 515 tests pass (was 439; new: run diff, alert/gate/reconciliation with real subprocesses,
+multi-combo batches, and API validation/cap/`start_at` anchoring via TestClient). Live, in headless Edge
+against the restarted server: every widget behaviour, the over-cap warning, the start/AM-PM controls and
+first-run rule, create/edit/cancel round trip, list filters, and the full schedule -> run cards -> banners
+-> back drill-down, including a real 2-combination batch (`limit=1`) that ran strictly one after the other
+with a shared batch id. Not verified: a real Windows toast (`Send test notification` pops on screen -
+never sent), and an actual scheduled fire (all test schedulers were disabled).
+
+**Open item:** the live DB had no schedules when checked (the earlier "Daily check" was already gone before
+this restart; unknown who deleted it) - its one orphaned run is still in history.
+
+**Commit message:**
+```
+Scheduler: block + drill-down UI, change alerts, editing, multi-select, start time
+
+Scheduled runs are diffed against the previous run of the same
+l1/l2/state/pincode and alert on new FAILs (in-app + Windows toast);
+orphaned runs are adopted or finalized on startup; scheduled fires wait
+for a free slot. l1/l2/state/pincode are multi-select (one run per
+combination, sequential, capped at 24) in the New run panel and the
+scheduler form, which also gets a start date/time. Scheduler UI drills
+schedulers -> runs -> banners.
+```
+
+## Added: start the server at Windows logon; missed slots are ignored; Expand button restyled
+
+**User request (2026-09-29):** yes to the autostart step, with: a run scheduled for a time the PC was off
+is ignored (wait for the next one); make the Expand button blue like the others.
+
+- `scripts/autostart.ps1` (install / `-Status` / `-Remove`) registers a per-user scheduled task "AJIO Feed
+  Verify server" (30 s after logon, hidden, restarts on crash, runs as the user while logged on - the toasts
+  need the desktop; no admin needed). `scripts/start_server.ps1` is what it runs: no-op if port 8000 is
+  already listening, otherwise uvicorn with output appended to `logs/server.log` (rotated at 5 MB;
+  `logs/` gitignored).
+- Missed slots: no code change needed - jobs are in-memory and rebuilt from the DB at every start, and a
+  rebuilt job's first fire is always in the future (start + k x interval). Pinned by
+  `test_a_slot_missed_while_the_server_was_off_is_never_run_late`. A run *in progress* at shutdown is not
+  resumed (marked failed by reconciliation); auto-resume via `--resume-from` is not built.
+- Expand is now `class="primary"` like Make scheduler.
+- Verified: task installed, live server stopped, `Start-ScheduledTask` brought it back hidden with the API
+  answering. Not verified: an actual reboot/logon. 516 tests pass.
+
+## Changed: failed banners re-enter the queue immediately (no separate retry pass)
+
+**User request (2026-09-29):** with banners 1-7 and 3 workers, if 1 fails, the freed worker should retry it
+next (ahead of the still-untried 7) instead of waiting for the whole first pass to end.
+
+- `qa/feed_verify.py` `run_feed_verify`: the "pass, then up to 4 retry passes with a 60 s pause each" loop is
+  replaced by one shared queue drained by `workers` threads. Order: a failed banner whose cooldown is over
+  first, else the next untried banner in feed order; a cooling-down banner never holds a worker; the run ends
+  when nothing is queued or in flight. Still 1 + `retry_rounds` (4) tries per banner, so the web UI's
+  "PROCESSING n/5" bookkeeping is unchanged. `RETRY_PAUSE` is now a per-banner cooldown, default 10 s (was
+  60 s between passes) [A] - short enough that a retry is effectively immediate, long enough not to
+  hammer an outage; `--retry-pause` still overrides it.
+- Tests: the user's 7-banner/3-worker scenario, single-worker ordering, cooldown-doesn't-block, and
+  no-hang on persistent failure with several workers. The old "60 s pause before every retry round" test
+  asserted the removed design (and would now really wait 3 min) - replaced by a real 0.2 s cooldown check.
+  Suite: 521 pass in 8 s (was 181 s with that test).
+- A run already in progress keeps the old behaviour (its process loaded the old code); new runs get this.
+
+## Added: live activity tag on in-progress banner cards
+
+**User request (2026-09-29):** while a banner is processing, show what it's currently doing - max two words
+per state - at the bottom left of its card.
+
+- `qa/feed_verify.py`: `verify_banner(note=...)` reports each step (Downloading, Cache check, Listing lookup,
+  Reading image / Reading hotspot, Comparing); `run_feed_verify(on_activity=...)` also reports "Cooling
+  down" (+ due time) when a failed banner re-enters the queue; `ActivityLog` appends one line per change to
+  `activity.jsonl` in the run folder, `load_activity` reads the latest per banner (cut-off line ignored).
+- `web/runner.py`: `run_view` attaches `activity` to every PROCESSING banner (live runs only) and now treats a
+  banner with any activity as PROCESSING even before its image is on disk; `current_activity` turns
+  "Cooling down" into "Retry queued" once the due time passes; "Working" when there's no entry (older runs).
+- UI: `.activity-tag` pill with a blinking dot, absolutely positioned bottom-left (8 px in), with extra card
+  bottom padding so it never covers text.
+- Verified: 535 tests pass (new: step order incl. hotspots and cache, the two-word limit, cooldown event,
+  log reading, and the run-view overlay). Live: real run showed Downloading / Listing lookup / Reading image on
+  PROCESSING cards (measured 10 px from the card's left and bottom edges); all 8 states rendered in headless
+  Edge for a screenshot. Not seen live: "Comparing" (too brief to catch) and "Cooling down" / "Retry
+  queued" (no banner failed in that run) - the latter two are covered by tests and the rendered sample.
+
+## Added: Gemma request pacing (6 a minute), worker cap 5 -> 10
+
+**User request (2026-09-29):** the account's limits are 30 requests/min and **16K tokens/min**; measured ~2,160
+input (+~630 reasoning, ~100 output) tokens per call, so ~7 calls/min is the real ceiling. Chosen: a rate
+limiter rather than just a worker cap (the safe worker count depends on how slow Gemma happens to be).
+
+- `qa/spotcheck/vision.py`: `CallPacer` spaces every Gemma request >= 60/rate s (+5% margin) apart across all
+  worker threads of the process, FIFO; `analyze_image` waits for its turn *before* the upload, and each
+  retry inside `hero._analyze` is a new request so counts too. Default `CALLS_PER_MINUTE = 6` [A]; override
+  with `GEMMA_CALLS_PER_MINUTE` in `.env` (`0` = off). The pace is per process, so two run processes at once
+  (e.g. a manual run during a scheduled one, or a per-banner Retry) each pace themselves - together they
+  could exceed it.
+- `vision.reporting()` + `feed_verify.verify_one`: a waiting request shows **Waiting turn** on its card, then
+  puts back its previous step.
+- `web/runner.py` `MAX_WORKERS` 5 -> 10 (UI max, API validation, docs). Default stays 3; 3 workers at ~90 s a call
+  is only ~2 calls/min, so pacing only bites when workers are raised.
+- `tests/conftest.py` disables pacing in tests. Tests: spacing, no more than 6 in any 60 s window for a
+  30-thread burst, idle pacer passes straight through, 0 = off, real threads never share a slot, wait comes
+  before upload, "Waiting turn" then the step is restored. 544 pass.
+
+## Fixed: luxe.ajio.com links were checked against the wrong AJIO store
+
+**User report (2026-09-29):** carousel 3 slide 7 (premium/men) FAILed with "missing brands ['BOSS']", but BOSS is
+on the page.
+
+**Cause:** the listing lookup always sent `store=rilfnl` (the standard store) and never looked at the link's
+host. `luxe.ajio.com/s/allstarsearlyoffersmen-403091` is 1,254 products / 4 brands (Brooks Brothers, EA7, Amiri,
+Tom Ford - no BOSS) in the standard store but 6,794 products / 14 brands (BOSS 1,991, ALL SAINTS 337, ...) with
+`store=luxe`; same slug, same title and query. Pincode, `userState` and `x-tenant-id` made no difference
+(tried 400001, 110001, GUEST, LUXE).
+
+**Fix:** `listing_client.listing_store(url)` -> `"luxe"` for a `luxe.` host; `fetch_listing(store=)`;
+`ListingCache` keys on (kind, slug, store) and only passes `store=` when set (existing fetchers unchanged);
+the result carries `listing_store: "luxe"`; the hero spot-check's server lookup does the same. Cached verdicts:
+entries now carry `store_aware`, and an entry for a luxe link (own or hotspot) without it is never reused -
+13 such entries (incl. FAILs like bossluxe15) were in the cache.
+
+**Verified:** 562 tests pass (host parsing, `store=luxe` in the request, standard default kept, per-store
+listing cache, cache invalidation for old luxe entries only). Live: the reported banner re-checked - BOSS is
+found (14 brands, 6,794 products); it still FAILs, now only on "title doesn't match the deal" (not judged).
+**Not done:** results already saved for luxe links in earlier runs are not recomputed - re-run, or use Retry.
+Only the `luxe.` host is handled; other AJIO hosts/stores haven't been looked for.
+
+## Added: a second, manager-oriented UI at `/manager/` (the original is untouched)
+
+**Ask (2026-09-29):** an aesthetically pleasing version of the UI "for a manager", passed as another UI so the
+existing one stays as a fallback.
+
+**Built:** `web/static/manager/index.html` - one self-contained page (no build step, no new dependency), served by
+the existing static mount at `/manager` (redirects to `/manager/`); **no backend change and no restart needed**. It
+calls the same API, so nothing about runs, schedules or alerts differs between the two UIs. Hash routes
+(`#/`, `#/runs`, `#/runs/<id>`, `#/schedules[/new|/<id>[/edit]]`, `#/alerts`) so back/bookmarks work.
+Design: dark sidebar + light/dark content (follows the system, shares the `theme` key with the original), one
+accent, plain-language status wording, a health headline + pass-rate ring + KPI tiles, segmented result bars,
+banner cards with a status pill, a detail sheet (arrow keys / Esc), a New check drawer, schedule pages, a custom
+confirm dialog, responsive down to a 390 px phone. Full feature list in `docs/UI_GUIDE.md` (last section).
+The only change to the original page: a **Manager view** button in its header (styled black with a glowing white
+label and edge, at the user's request).
+
+**Decisions [A]:** overview numbers use the latest *finished* run of each feed; a cancelled/failed run is labelled
+"Stopped early" and its unreached banners aren't counted as "need a look"; hidden banners are excluded from a
+check's counts unless toggled on (the original includes them). Every feature of the original has an equivalent
+(multi-select axes, carousel exclusion, retry/skip, Excel + open folder, cache clear, schedule form incl. start
+date/time, alerts read/remove/clear/test) except "Copy from New run" as a button - replaced by **Repeat
+automatically...** in the New check drawer, which carries the drawer's settings into the new-schedule form.
+
+**Verified (headless Edge, live server, read-only except one throwaway disabled schedule that was deleted):**
+overview, drawer (multi-select math, state search, pincode chips, carousel load), checks list, a finished run
+(filter, sort, sheet, arrow/Esc), schedule create / pause / resume / edit / delete via the UI, both themes, 390 px
+phone with no sideways scroll, 0 console errors. Bugs found and fixed on the way: a CSS class collision
+(`.brand`), an opaque-pill contrast problem on light artwork, form fields stretching full width, a one-column grid
+that let a table push the page wider than a phone, a footer clipped on phones.
+Also verified on a check that was running at the time: the live header, Stop shown / Excel disabled, activity tags,
+and the SSE stream updating the page without a reload (16 -> 17 banners done in 8 s).
+**Not verified live:** starting a check from the drawer, clicking Stop, per-card Retry/Skip (they reuse the
+original's endpoints but weren't clicked through - they'd start or alter real runs);
+sending a test notification; a real alert row's Open check / Mark read / x (no such rows besides the user's own
+test alerts, which were left alone).
+
+## Housekeeping before the first commit of this work (2026-09-29)
+
+- Scanned every uncommitted text file for secrets (values from `.env`, bearer/JWT/API-key patterns): clean, except
+  the two mitmproxy captures `analysis/traffic_capture/recap_2026092{4,5}/session.flow`, which hold live tokens
+  (incl. the `AJIO_THEME_BEARER` value). They, and the phone screenshots `analysis/traffic_capture/screen_*.png`
+  (they show the account's name, email and phone number), are now in `.gitignore` and stay on disk only.
+- README gained a paragraph on the two interfaces; `docs/UI_GUIDE.md`, `docs/API.md` and this file mention the
+  manager view.
+

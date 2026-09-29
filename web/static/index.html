@@ -1,0 +1,2078 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AJIO Feed Verify</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #f0f1f4; --border: #e1e4ea;
+    --text: #1a1d23; --text-dim: #62697a; --accent: #3b5bdb; --accent-text: #ffffff;
+    --pass-bg: #e6f6ea; --pass-border: #2f9e44; --pass-text: #1b7a2e;
+    --fail-bg: #fdecec; --fail-border: #e03131; --fail-text: #c92a2a;
+    --skipped-bg: #e7f5ff; --skipped-border: #339af0; --skipped-text: #1c7ed6;
+    --inconclusive-bg: #fff9db; --inconclusive-border: #f08c00; --inconclusive-text: #966200;
+    --pending-bg: #f1f3f5; --pending-border: #adb5bd; --pending-text: #495057;
+    --processing-bg: #f2effc; --processing-border: #7048e8; --processing-text: #5f3dc4;
+    --shadow: 0 1px 3px rgba(20,22,26,0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #14161a; --surface: #1b1e24; --surface-2: #22252c; --border: #2b2f38;
+      --text: #e8eaed; --text-dim: #9aa1ad; --accent: #7c9eff; --accent-text: #0f1117;
+      --pass-bg: rgba(47,158,68,0.16); --pass-border: #51cf66; --pass-text: #8ce99a;
+      --fail-bg: rgba(224,49,49,0.16); --fail-border: #ff6b6b; --fail-text: #ffa8a8;
+      --skipped-bg: rgba(51,154,240,0.16); --skipped-border: #4dabf7; --skipped-text: #a5d8ff;
+      --inconclusive-bg: rgba(240,140,0,0.16); --inconclusive-border: #ffd43b; --inconclusive-text: #ffe066;
+      --pending-bg: rgba(173,181,189,0.10); --pending-border: #4b5158; --pending-text: #ced4da;
+      --processing-bg: rgba(112,72,232,0.18); --processing-border: #9775fa; --processing-text: #d0bfff;
+      --shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #14161a; --surface: #1b1e24; --surface-2: #22252c; --border: #2b2f38;
+    --text: #e8eaed; --text-dim: #9aa1ad; --accent: #7c9eff; --accent-text: #0f1117;
+    --pass-bg: rgba(47,158,68,0.16); --pass-border: #51cf66; --pass-text: #8ce99a;
+    --fail-bg: rgba(224,49,49,0.16); --fail-border: #ff6b6b; --fail-text: #ffa8a8;
+    --skipped-bg: rgba(51,154,240,0.16); --skipped-border: #4dabf7; --skipped-text: #a5d8ff;
+    --inconclusive-bg: rgba(240,140,0,0.16); --inconclusive-border: #ffd43b; --inconclusive-text: #ffe066;
+    --pending-bg: rgba(173,181,189,0.10); --pending-border: #4b5158; --pending-text: #ced4da;
+    --processing-bg: rgba(112,72,232,0.18); --processing-border: #9775fa; --processing-text: #d0bfff;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
+    flex: none;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--text-dim); font-size: 12px; margin-left: 8px; }
+  .theme-btn {
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px;
+  }
+  .mgr-btn {
+    text-decoration: none; background: #000; color: #fff; font-weight: 600; letter-spacing: .02em;
+    border: 1px solid #fff; border-radius: 8px;
+    text-shadow: 0 0 6px rgba(255,255,255,.95), 0 0 14px rgba(255,255,255,.6);
+    box-shadow: 0 0 6px rgba(255,255,255,.75), 0 0 16px rgba(255,255,255,.35), inset 0 0 6px rgba(255,255,255,.25);
+    transition: box-shadow .2s, text-shadow .2s;
+  }
+  .mgr-btn:hover {
+    text-shadow: 0 0 8px #fff, 0 0 20px #fff;
+    box-shadow: 0 0 10px #fff, 0 0 26px rgba(255,255,255,.6), inset 0 0 10px rgba(255,255,255,.35);
+  }
+  .layout {
+    display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px;
+    align-items: stretch; flex: 1 1 auto; min-height: 0;
+  }
+  .layout > .sidebar, .layout > .main-panel { overflow-y: auto; min-height: 0; }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    body { height: auto; overflow: visible; }
+    .layout, .layout > .sidebar, .layout > .main-panel { overflow: visible; height: auto; }
+  }
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); margin: 0 0 10px; }
+  label { display: block; font-size: 12px; color: var(--text-dim); margin: 10px 0 4px; }
+  label:first-child { margin-top: 0; }
+  select, input[type=number], input[type=text], input[type=date] {
+    width: 100%; padding: 7px 8px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); font-size: 13px;
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .hint { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  button.primary {
+    width: 100%; margin-top: 12px; padding: 9px; border: none; border-radius: 8px;
+    background: var(--accent); color: var(--accent-text); font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  button.secondary {
+    padding: 6px 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    border-radius: 7px; font-size: 12px; cursor: pointer;
+  }
+  button.danger { color: var(--fail-text); }
+  .sched-item {
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: var(--surface-2);
+  }
+  .sched-item .name { font-weight: 600; font-size: 13px; }
+  .sched-item .top { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .sched-item .meta { font-size: 11px; color: var(--text-dim); margin: 2px 0 6px; }
+  .sched-item .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* Scheduler: the sidebar block, and the in-page sub-window that takes over the main panel */
+  .sched-title { cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  .sched-title:hover { color: var(--text); }
+  .alert-badge {
+    background: var(--fail-border); color: #fff; border-radius: 999px; font-size: 10px; font-weight: 700;
+    padding: 1px 7px; text-transform: none; letter-spacing: 0;
+  }
+  .sched-scroll { max-height: 250px; overflow-y: auto; margin-top: 12px; padding-right: 2px; }
+  button.wide { width: 100%; margin-top: 10px; }
+  button.primary.inline { width: auto; margin-top: 0; padding: 6px 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--pending-border); flex: none; }
+  .dot.on { background: var(--pass-border); }
+  .chip { font-size: 10px; padding: 1px 7px; border-radius: 5px; text-transform: uppercase; font-weight: 600; white-space: nowrap; }
+  .main-panel.sched-open > .main-head, .main-panel.sched-open > .filter-row, .main-panel.sched-open > .grid { display: none !important; }
+  #scheduler-view { display: none; }
+  .main-panel.sched-open > #scheduler-view { display: block; }
+  .sv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .sv-title { font-size: 16px; font-weight: 600; margin-right: auto; }
+  .sv-section { margin-bottom: 20px; }
+  .sv-section h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim);
+    margin: 0 0 8px; display: flex; align-items: center; gap: 8px;
+  }
+  .sv-section h3 .right { margin-left: auto; display: flex; gap: 6px; text-transform: none; letter-spacing: 0; }
+  .sv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+  .sv-card { border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); padding: 12px 14px; }
+  .sv-card .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .sv-card .name { font-weight: 600; }
+  .kv { display: grid; grid-template-columns: 118px 1fr; gap: 3px 10px; font-size: 12px; margin: 10px 0; }
+  .kv dt { color: var(--text-dim); }
+  .kv dd { margin: 0; word-break: break-word; }
+  .sv-actions-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .alert-item {
+    border: 1px solid var(--border); border-left: 4px solid var(--fail-border); border-radius: 8px;
+    padding: 8px 10px; background: var(--surface-2); margin-bottom: 6px; font-size: 12px;
+  }
+  .alert-item { position: relative; padding-right: 34px; }
+  .alert-x {
+    position: absolute; top: 4px; right: 6px; border: none; background: none; color: var(--text-dim);
+    font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 5px;
+  }
+  .alert-x:hover { color: var(--fail-text); background: var(--fail-bg); }
+  .alert-item.read { border-left-color: var(--pending-border); opacity: .75; }
+  .alert-item.test { border-left-color: var(--skipped-border); }
+  .alert-item .t { font-weight: 600; }
+  .alert-item .when { color: var(--text-dim); font-size: 11px; }
+  .alert-item pre { margin: 4px 0 0; white-space: pre-wrap; font: inherit; color: var(--text-dim); }
+  .sv-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .sv-table th, .sv-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .sv-table th { color: var(--text-dim); font-weight: 600; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 16px; max-width: 900px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .form-grid > div { margin-bottom: 8px; }
+  .checkline { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 13px; color: var(--text); cursor: pointer; }
+  .chip-list { display: flex; gap: 6px; flex-wrap: wrap; }
+  .x-chip {
+    display: inline-flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12px;
+  }
+  .x-chip button { border: none; background: none; cursor: pointer; color: var(--text-dim); font-size: 14px; line-height: 1; padding: 0 4px; }
+  .car-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px; }
+  .car-row { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border-radius: 6px; font-size: 12px; cursor: pointer; margin: 0; color: var(--text); }
+  .car-row:hover { background: var(--surface-2); }
+  .car-row img { width: 56px; height: 32px; object-fit: cover; border-radius: 4px; background: var(--surface-2); }
+  .car-row .n { margin-left: auto; color: var(--text-dim); white-space: nowrap; }
+  .run-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+  .run-item {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-2);
+    cursor: pointer; font-size: 12px;
+  }
+  .run-item.active { border-color: var(--accent); }
+  .run-item .status { font-size: 10px; padding: 1px 6px; border-radius: 5px; text-transform: uppercase; }
+  .run-item .dismiss {
+    border: none; background: none; color: var(--text-dim); font-size: 14px; line-height: 1;
+    cursor: pointer; padding: 2px 4px; border-radius: 4px; flex-shrink: 0;
+  }
+  .run-item .dismiss:hover { color: var(--fail-text); background: var(--fail-bg); }
+  .status-running { background: var(--skipped-bg); color: var(--skipped-text); }
+  .status-done { background: var(--pass-bg); color: var(--pass-text); }
+  .status-failed { background: var(--fail-bg); color: var(--fail-text); }
+  .status-cancelled { background: var(--pending-bg); color: var(--pending-text); }
+  .status-skipped { background: var(--inconclusive-bg); color: var(--inconclusive-text); }
+  .status-error { background: var(--fail-bg); color: var(--fail-text); }
+  .main-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+  .main-head .counts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .count-chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; font-weight: 600; }
+  .filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filter-hint { font-size: 12px; color: var(--text-dim); }
+  #status-filters .count-chip { cursor: pointer; opacity: .45; border: 2px solid transparent; }
+  #status-filters .count-chip.active { opacity: 1; border-color: currentColor; }
+  #carousel-filter { border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    border-radius: 8px; padding: 4px 8px; font-size: 12px; }
+  .show-hidden-toggle { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+  .show-hidden-toggle input { cursor: pointer; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;
+  }
+  .card {
+    border: 2px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface);
+    display: flex; flex-direction: column; transition: border-color .15s; position: relative;
+  }
+  .corner-tags {
+    position: absolute; top: 6px; right: 6px; z-index: 2; display: flex; gap: 4px;
+  }
+  .corner-tags span {
+    font-size: 10px; font-weight: 700; letter-spacing: .03em; padding: 2px 6px;
+    border-radius: 5px; box-shadow: var(--shadow);
+  }
+  .mu-tag { background: var(--accent); color: var(--accent-text); }
+  .hidden-tag { background: #6b7280; color: #ffffff; }
+  .skip-btn {
+    position: absolute; bottom: 6px; right: 6px; z-index: 3;
+    font-size: 10px; padding: 3px 8px; border-radius: 5px; border: none; cursor: pointer;
+    background: rgba(0,0,0,.65); color: #fff;
+  }
+  .skip-btn:hover { background: rgba(0,0,0,.8); }
+  .skip-btn:disabled { opacity: .6; cursor: default; }
+  /* what a banner in progress is doing right now (one or two words), bottom left of its card */
+  .activity-tag {
+    position: absolute; left: 8px; bottom: 8px; z-index: 3; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600; padding: 3px 10px 3px 8px; border-radius: 999px;
+    background: var(--surface); color: var(--processing-text); border: 1px solid var(--processing-border);
+    box-shadow: var(--shadow);
+  }
+  .activity-tag .dot-live {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--processing-border); animation: activity-blink 1s ease-in-out infinite;
+  }
+  @keyframes activity-blink { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+  .card.PROCESSING .body { padding-bottom: 40px; }
+  .card.skip-requested { opacity: .5; filter: grayscale(85%); }
+  .card.skip-requested .skip-btn { opacity: 1; filter: none; }
+  .carousel-heading {
+    grid-column: 1 / -1; padding: 8px 10px; margin-top: 6px; border-radius: 8px;
+    background: var(--surface-2); border: 1px solid var(--border); font-size: 13px;
+  }
+  .carousel-heading:first-child { margin-top: 0; }
+  .carousel-heading label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .carousel-heading .count { color: var(--text-dim); font-weight: 400; margin-left: auto; }
+  .carousel-heading.unchecked { opacity: .5; }
+  .preview-card .body { padding: 8px; gap: 4px; display: flex; flex-direction: column; }
+  .card.PASS { border-color: var(--pass-border); background: var(--pass-bg); }
+  .card.FAIL { border-color: var(--fail-border); background: var(--fail-bg); }
+  .card.SKIPPED { border-color: var(--skipped-border); background: var(--skipped-bg); }
+  .card.INCONCLUSIVE { border-color: var(--inconclusive-border); background: var(--inconclusive-bg); }
+  .card.PENDING { border-color: var(--pending-border); background: var(--pending-bg); }
+  .card.PROCESSING { border-color: var(--processing-border); background: var(--processing-bg); animation: processing-pulse 1.6s ease-in-out infinite; }
+  @keyframes processing-pulse { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 3px var(--processing-border); } }
+  .card img {
+    width: 100%; height: auto; cursor: zoom-in; display: block; background: var(--surface-2);
+  }
+  .card .body { padding: 8px 10px 10px; flex: 1; }
+  .card .badge-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .carousel-label { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+  .card .result-badge { font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+  .card .result-badge.PASS { color: var(--pass-text); }
+  .card .result-badge.FAIL { color: var(--fail-text); }
+  .card .result-badge.SKIPPED { color: var(--skipped-text); }
+  .card .result-badge.INCONCLUSIVE { color: var(--inconclusive-text); }
+  .card .result-badge.PENDING { color: var(--pending-text); }
+  .card .result-badge.PROCESSING { color: var(--processing-text); }
+  .card .alt { font-size: 12px; margin: 0 0 4px; }
+  .card .dest { font-size: 11px; color: var(--text-dim); word-break: break-all; margin: 0 0 4px; }
+  .card .dest a, #modal-detail dd a, .hotspot-block dd a { color: var(--accent); word-break: break-all; }
+  .card .reason { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
+  .reason-label { font-weight: 700; color: var(--text); }
+  .card .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  .card .retry-btn { margin-top: 8px; width: 100%; font-size: 11px; padding: 5px 8px; }
+  .tag { font-size: 10px; background: var(--surface-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 5px; }
+  .empty { color: var(--text-dim); font-size: 13px; padding: 30px; text-align: center; }
+  #modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; align-items: flex-start;
+    justify-content: center; z-index: 100; padding: 30px; gap: 16px; overflow: auto;
+  }
+  #modal-overlay.open { display: flex; }
+  #modal-main { display: flex; flex-direction: column; gap: 12px; flex: none; margin: auto 0; }
+  #modal-img { max-width: min(78vw, 700px); max-height: 70vh; border-radius: 8px; display: block; }
+  #modal-detail {
+    background: var(--surface); color: var(--text); border-radius: 10px; padding: 14px 16px;
+    max-width: min(78vw, 700px); max-height: 22vh; overflow-y: auto; font-size: 12px;
+  }
+  #modal-detail dt { color: var(--text-dim); margin-top: 6px; }
+  #modal-detail dd { margin: 0 0 2px; }
+  #modal-hotspots {
+    display: flex; flex-direction: column; gap: 10px; max-height: calc(70vh + 22vh + 12px);
+    overflow-y: auto; flex: none; margin: auto 0;
+  }
+  .hotspot-block {
+    background: var(--surface); color: var(--text); border-radius: 10px; padding: 10px 12px;
+    width: 240px; border: 2px solid var(--border);
+  }
+  .hotspot-block.PASS { border-color: var(--pass-border); }
+  .hotspot-block.FAIL { border-color: var(--fail-border); }
+  .hotspot-block.SKIPPED { border-color: var(--skipped-border); }
+  .hotspot-block.INCONCLUSIVE { border-color: var(--inconclusive-border); }
+  .hotspot-block img { max-width: 100%; max-height: 130px; border-radius: 6px; display: block; margin-bottom: 6px; object-fit: cover; }
+  .hotspot-block .hs-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
+  .hotspot-block dt { color: var(--text-dim); font-size: 10px; margin-top: 4px; }
+  .hotspot-block dd { margin: 0 0 2px; font-size: 11px; word-break: break-word; }
+  #modal-close {
+    position: absolute; top: 18px; right: 24px; background: none; border: none; color: #fff;
+    font-size: 26px; cursor: pointer; line-height: 1;
+  }
+
+  /* Multi-select widgets (l1 / l2 toggle buttons, state dropdown with checkmarks, pincode chips) */
+  .tgl-group { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tgl {
+    padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text); font-size: 12px; cursor: pointer;
+  }
+  .tgl:hover { border-color: var(--accent); }
+  .tgl.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .ms { position: relative; }
+  .ms-btn {
+    width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left;
+    padding: 7px 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text); font-size: 13px; cursor: pointer;
+  }
+  .ms-btn .dim { color: var(--text-dim); }
+  .ms-pop {
+    position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 4px); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.28); padding: 8px;
+  }
+  .ms-pop[hidden] { display: none; }
+  .ms-list { max-height: 220px; overflow-y: auto; margin: 6px 0; }
+  .ms-opt { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .ms-opt:hover, .ms-opt.active { background: var(--surface-2); }
+  .ms-opt .ck {
+    width: 16px; height: 16px; border: 1px solid var(--border); border-radius: 4px; flex: none;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; color: transparent;
+  }
+  .ms-opt.sel .ck { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .ms-empty { padding: 8px 6px; font-size: 12px; color: var(--text-dim); }
+  .ms-foot { display: flex; align-items: center; gap: 6px; }
+  .ms-foot .ms-count { margin-right: auto; font-size: 11px; color: var(--text-dim); }
+  .ms-chips { margin-top: 6px; }
+  .tag-input {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 5px 6px; cursor: text;
+    border: 1px solid var(--border); border-radius: 7px; background: var(--surface-2);
+  }
+  .tag-input:focus-within { border-color: var(--accent); }
+  .tag-input input[type=text] { flex: 1 1 120px; width: auto; min-width: 120px; border: none; background: transparent; padding: 3px 2px; outline: none; }
+  .pin-msg { color: var(--fail-text); }
+  .combo-hint { font-size: 12px; margin-top: 8px; color: var(--text-dim); }
+  .combo-hint.over { color: var(--fail-text); font-weight: 600; }
+  #flash { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 200; }
+  .flash-item {
+    background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 8px; font-size: 13px;
+    max-width: 380px; box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  }
+
+  /* Scheduler pages: schedule cards and run cards reuse the banner .card look */
+  .sched-item { cursor: pointer; }
+  .sched-item:hover { border-color: var(--accent); }
+  .sv-cards .card { cursor: pointer; }
+  .sv-cards .card:hover { box-shadow: 0 0 0 2px var(--accent); }
+  .sv-cards .card .name { font-weight: 600; font-size: 14px; }
+  .sv-cards .card .sv-actions-row { margin-top: 10px; }
+  .unread-tag { background: var(--fail-border); color: #fff; }
+  .fchip {
+    font-size: 12px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text); cursor: pointer;
+  }
+  .fchip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .sv-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--text-dim); margin-bottom: 14px; }
+  .sv-summary b { color: var(--text); }
+  details.sv-section > summary { cursor: pointer; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); margin-bottom: 8px; }
+  .fire-heading {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 16px 0 8px; padding: 6px 10px;
+    border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); font-size: 12px;
+  }
+  .fire-heading .n { color: var(--text-dim); margin-left: auto; }
+  .sv-cards + .fire-heading { margin-top: 18px; }
+  .tally { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0; align-items: center; }
+  .tags { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  .sched-card .tags, .run-card .tags { margin-top: 4px; }
+  .start-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .start-row input[type=date] { width: 160px; }
+  .start-row input[type=text] { width: 54px; text-align: center; }
+  .start-row select { width: 72px; }
+  .back-btn { margin-right: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>AJIO Feed Verify <span class="sub">no-emulator banner &rarr; listing check</span></h1></div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <a class="theme-btn mgr-btn" href="/manager/" title="A simpler, presentation-style view of the same data">Manager view</a>
+    <button class="theme-btn" id="theme-toggle">Toggle theme</button>
+  </div>
+</header>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="panel">
+      <h2>New run</h2>
+      <label>l1 segment</label>
+      <div id="run-l1"></div>
+      <label>l2 segment</label>
+      <div id="run-l2"></div>
+
+      <label>State</label>
+      <div id="run-state"></div>
+
+      <label>Pincode</label>
+      <div id="run-pincode"></div>
+      <div class="combo-hint" id="run-combos"></div>
+
+      <label for="scope">Scope</label>
+      <select id="scope">
+        <option value="hero">Hero carousel</option>
+        <option value="all">All banners on the feed</option>
+      </select>
+
+      <div class="row2">
+        <div>
+          <label for="limit">Number of banners</label>
+          <input type="number" id="limit" min="1" placeholder="all">
+        </div>
+        <div>
+          <label for="workers">Banners at a time</label>
+          <input type="number" id="workers" min="1" max="10" value="3">
+        </div>
+      </div>
+      <div class="hint">Blank banner count = verify everything in scope. "Banners at a time" caps how many run in parallel (max 10) — it's load on AJIO's API, not just display. Gemma requests are paced to 6 a minute no matter how many you pick, so extra workers wait their turn.</div>
+
+      <button class="primary" id="load-carousels-btn">Load carousels to choose which to run</button>
+      <div class="hint">Loads every carousel's banners into the panel on the right, grouped under a checkbox heading (checked by default) - uncheck a carousel there to leave it out of the run.</div>
+
+      <div class="row2">
+        <button class="primary" id="clear-cache-btn">Clear cache</button>
+        <button class="primary" id="run-btn">Run now</button>
+      </div>
+    </div>
+
+    <div class="panel" id="scheduler-panel">
+      <h2 class="sched-title" id="sched-open" role="button" tabindex="0" title="Open the scheduler in the main window">
+        Scheduler <span class="alert-badge" id="sched-alert-badge" style="display:none"></span>
+      </h2>
+      <button class="primary" id="sched-make-btn">Make scheduler</button>
+      <div class="sched-scroll" id="sched-list"><div class="empty">None yet</div></div>
+      <button class="primary" id="sched-expand-btn">Expand</button>
+    </div>
+
+    <div class="panel">
+      <h2>Recent runs</h2>
+      <div class="run-list" id="run-list"><div class="empty">None yet</div></div>
+    </div>
+  </div>
+
+  <div class="panel main-panel">
+    <div class="main-head">
+      <button class="secondary back-btn" id="back-sched-btn" style="display:none"></button>
+      <div id="run-title">No run selected</div>
+      <div class="counts" id="run-counts"></div>
+      <button class="secondary" id="export-btn" style="display:none" disabled>Download Excel</button>
+      <button class="secondary danger" id="cancel-btn" style="display:none">Cancel run</button>
+    </div>
+    <div class="filter-row" id="filter-row" style="display:none">
+      <span class="filter-hint">Filter:</span>
+      <div class="counts" id="status-filters"></div>
+      <select id="carousel-filter"><option value="">All carousels</option></select>
+      <button class="secondary" id="clear-filters-btn" style="display:none">Clear filters</button>
+      <label class="show-hidden-toggle">
+        <input type="checkbox" id="show-hidden-toggle">
+        Show hidden / out-of-schedule banners
+      </label>
+    </div>
+    <div class="grid" id="grid"><div class="empty">Start a run, or pick one from the left, to see banners here.</div></div>
+
+    <div id="scheduler-view">
+      <div class="sv-head">
+        <div class="sv-title" id="sv-title">Scheduler</div>
+        <div id="sv-actions" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        <button class="secondary" id="sv-close">Close</button>
+      </div>
+      <div id="sv-body"></div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-overlay">
+  <button id="modal-close">&times;</button>
+  <div id="modal-main">
+    <img id="modal-img" alt="">
+    <dl id="modal-detail"></dl>
+  </div>
+  <div id="modal-hotspots"></div>
+</div>
+
+<script>
+const API = "";
+let meta = null;
+let currentRunId = null;
+let currentBanners = new Map();
+let statusFilter = new Set();   // empty = no status filter (show all)
+let carouselFilter = "";        // "" = no carousel filter (show all)
+let showHidden = false;         // false = banners the CMS marked hidden, or outside their schedule window at fetch time, stay out of the grid
+let evtSource = null;
+// PASS keeps the bare "P" (most common, shortest); PENDING/PROCESSING get 2 letters instead since
+// they'd otherwise collide with it and with each other.
+const STATUS_ABBR = { PASS: "P", FAIL: "F", SKIPPED: "S", INCONCLUSIVE: "I", PROCESSING: "Pr", PENDING: "Pe" };
+// FAIL and INCONCLUSIVE both mean the same thing to a viewer: this one wasn't auto-resolved, a
+// human needs to look. Spelled out wherever the full status is shown (not in the compact sidebar
+// tally, which uses STATUS_ABBR instead).
+const STATUS_LABEL = {
+  FAIL: "FAIL - human verification needed",
+  INCONCLUSIVE: "INCONCLUSIVE - human verification needed",
+};
+function statusLabel(status) { return STATUS_LABEL[status] || status; }
+
+// A banner still cycling through automatic retries is sent over as result="PROCESSING" with
+// try_number/max_tries attached (see web/runner.py's run_view) - show which attempt it's on instead
+// of a bare "PROCESSING" that gives no sense of progress or of the retry_pause gaps between rounds.
+function processingLabel(b) {
+  return b.result === "PROCESSING" && b.max_tries ? `PROCESSING ${b.try_number}/${b.max_tries} TRIES` : statusLabel(b.result);
+}
+
+// ---- theme ----------------------------------------------------------------
+function applyTheme(t) {
+  if (t) document.documentElement.setAttribute("data-theme", t);
+  else document.documentElement.removeAttribute("data-theme");
+}
+(function initTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem("theme"); } catch (e) {}
+  applyTheme(saved);
+})();
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme") ||
+    (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  applyTheme(next);
+  try { localStorage.setItem("theme", next); } catch (e) {}
+});
+
+// ---- helpers ----------------------------------------------------------------
+async function api(path, opts) {
+  const res = await fetch(API + path, opts);
+  if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  return res.status === 204 ? null : res.json();
+}
+function fmtTime(iso) {
+  if (!iso) return "";
+  try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
+}
+
+// ---- multi-select widgets ----------------------------------------------------------------
+// l1 / l2 are toggle buttons, state is a dropdown with checkmarks, pincode is a type-and-Enter chip box.
+// Each takes an element to fill, returns { get, set }, and calls onChange after a user edit. The New run
+// panel and the scheduler form build the same four through makeAxes below.
+function wEsc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function makeToggleGroup(root, options, selected, onChange) {
+  let chosen = [];
+  root.className = "tgl-group";
+  root.setAttribute("role", "group");
+  root.innerHTML = options.map(o => `<button type="button" class="tgl" data-v="${wEsc(o)}">${wEsc(o)}</button>`).join("");
+  const buttons = [...root.querySelectorAll(".tgl")];
+  function paint() {
+    for (const b of buttons) {
+      const on = chosen.includes(b.dataset.v);
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on);
+    }
+  }
+  function set(list) {
+    chosen = options.filter(o => list.includes(o));
+    if (!chosen.length && options.length) chosen = [options[0]];   // never empty: there's no sensible run with no l1/l2
+    paint();
+  }
+  root.addEventListener("click", ev => {
+    const b = ev.target.closest(".tgl");
+    if (!b) return;
+    const v = b.dataset.v;
+    if (chosen.includes(v)) {
+      if (chosen.length === 1) return;                              // keep at least one
+      chosen = chosen.filter(x => x !== v);
+    } else {
+      chosen = options.filter(o => o === v || chosen.includes(o));
+    }
+    paint();
+    if (onChange) onChange();
+  });
+  set(selected);
+  return { get: () => chosen.slice(), set };
+}
+
+const openPickers = new Set();
+document.addEventListener("mousedown", ev => { for (const p of [...openPickers]) if (!p.root.contains(ev.target)) p.close(); });
+
+function makeStatePicker(root, options, selected, onChange, defaultValue) {
+  let chosen = [];
+  let query = "";
+  let active = 0;
+  root.className = "ms";
+  root.innerHTML = `
+    <button type="button" class="ms-btn" aria-haspopup="listbox" aria-expanded="false"><span class="ms-label"></span><span>&#9662;</span></button>
+    <div class="ms-pop" hidden>
+      <input type="text" class="ms-search" placeholder="Type to filter…" autocomplete="off" aria-label="Filter states">
+      <div class="ms-list" role="listbox" aria-multiselectable="true"></div>
+      <div class="ms-foot"><span class="ms-count"></span>
+        <button type="button" class="secondary ms-clear">Clear</button><button type="button" class="secondary ms-done">Done</button></div>
+    </div>
+    <div class="chip-list ms-chips"></div>`;
+  const btn = root.querySelector(".ms-btn"), pop = root.querySelector(".ms-pop"), search = root.querySelector(".ms-search");
+  const list = root.querySelector(".ms-list"), chips = root.querySelector(".ms-chips");
+  const self = { root, close };
+
+  const visible = () => options.filter(o => o.toLowerCase().includes(query));
+  function paint() {
+    const label = root.querySelector(".ms-label");
+    label.innerHTML = chosen.length === 0 ? `<span class="dim">Select states… (blank = ${wEsc(defaultValue)})</span>`
+      : chosen.length === 1 ? wEsc(chosen[0]) : `${chosen.length} states selected`;
+    chips.innerHTML = chosen.map(v => `<span class="x-chip">${wEsc(v)}<button type="button" data-remove="${wEsc(v)}" title="Remove">&times;</button></span>`).join("");
+    root.querySelector(".ms-count").textContent = `${chosen.length} selected`;
+    const rows = visible();
+    if (active >= rows.length) active = Math.max(0, rows.length - 1);
+    list.innerHTML = rows.length ? rows.map((o, i) => `
+      <div class="ms-opt${chosen.includes(o) ? " sel" : ""}${i === active ? " active" : ""}" role="option" aria-selected="${chosen.includes(o)}" data-v="${wEsc(o)}">
+        <span class="ck">&#10003;</span><span>${wEsc(o)}</span></div>`).join("") : '<div class="ms-empty">No state matches.</div>';
+  }
+  function toggle(v) {
+    chosen = chosen.includes(v) ? chosen.filter(x => x !== v) : [...chosen, v];
+    paint();
+    if (onChange) onChange();
+  }
+  function open() {
+    pop.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    openPickers.add(self);
+    query = ""; search.value = ""; active = 0;
+    paint();
+    search.focus();
+  }
+  function close() {
+    pop.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    openPickers.delete(self);
+  }
+  btn.addEventListener("click", () => (pop.hidden ? open() : close()));
+  search.addEventListener("input", () => { query = search.value.trim().toLowerCase(); active = 0; paint(); });
+  search.addEventListener("keydown", ev => {
+    const rows = visible();
+    if (ev.key === "ArrowDown") { ev.preventDefault(); active = Math.min(rows.length - 1, active + 1); paint(); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); active = Math.max(0, active - 1); paint(); }
+    else if (ev.key === "Enter") { ev.preventDefault(); if (rows[active]) toggle(rows[active]); }
+    else if (ev.key === "Escape") { ev.preventDefault(); close(); btn.focus(); }
+    const el = list.querySelector(".ms-opt.active");
+    if (el) el.scrollIntoView({ block: "nearest" });
+  });
+  list.addEventListener("mousedown", ev => ev.preventDefault());        // keep the typing focus in the search box
+  list.addEventListener("click", ev => { const o = ev.target.closest(".ms-opt"); if (o) toggle(o.dataset.v); });
+  root.querySelector(".ms-clear").addEventListener("click", () => { chosen = []; paint(); if (onChange) onChange(); });
+  root.querySelector(".ms-done").addEventListener("click", () => { close(); btn.focus(); });
+  chips.addEventListener("click", ev => {
+    const b = ev.target.closest("[data-remove]");
+    if (b) toggle(b.dataset.remove);
+  });
+  function set(values) { chosen = values.filter(v => options.includes(v)); paint(); }
+  set(selected);
+  return { get: () => chosen.slice(), set };
+}
+
+function makePincodeInput(root, selected, onChange) {
+  let chosen = [];
+  root.innerHTML = `<div class="tag-input"><input type="text" inputmode="numeric" autocomplete="off" placeholder="Type a pincode, press Enter" aria-label="Add a pincode"></div>
+    <div class="hint pin-msg" style="display:none"></div>`;
+  const box = root.querySelector(".tag-input"), input = root.querySelector("input"), msg = root.querySelector(".pin-msg");
+  function paint() {
+    box.querySelectorAll(".x-chip").forEach(c => c.remove());
+    for (const v of chosen) {
+      const chip = document.createElement("span");
+      chip.className = "x-chip";
+      chip.innerHTML = `${wEsc(v)}<button type="button" title="Remove" aria-label="Remove ${wEsc(v)}">&times;</button>`;
+      chip.querySelector("button").addEventListener("click", ev => {
+        ev.stopPropagation();
+        chosen = chosen.filter(x => x !== v);
+        paint();
+        if (onChange) onChange();
+      });
+      box.insertBefore(chip, input);
+    }
+  }
+  function say(text) { msg.textContent = text; msg.style.display = text ? "" : "none"; }
+  // Adds every valid 6-digit token in the box; whatever isn't valid stays in the box with a message.
+  function commit() {
+    const tokens = input.value.split(/[\s,;]+/).filter(Boolean);
+    const bad = [];
+    let added = false;
+    for (const t of tokens) {
+      if (!/^\d{6}$/.test(t)) bad.push(t);
+      else if (!chosen.includes(t)) { chosen.push(t); added = true; }
+    }
+    input.value = bad.join(" ");
+    say(bad.length ? `${bad.map(b => `"${b}"`).join(", ")} ${bad.length === 1 ? "isn't" : "aren't"} a 6-digit pincode.` : "");
+    if (added) { paint(); if (onChange) onChange(); }
+  }
+  input.addEventListener("input", () => { input.value = input.value.replace(/[^\d,;\s]/g, ""); say(""); });
+  input.addEventListener("keydown", ev => {
+    if (ev.key === "Enter" || ev.key === ",") { ev.preventDefault(); commit(); }
+    else if (ev.key === "Backspace" && !input.value && chosen.length) { chosen.pop(); paint(); if (onChange) onChange(); }
+  });
+  box.addEventListener("click", () => input.focus());
+  chosen = [...new Set(selected)];
+  paint();
+  return {
+    get() { commit(); return chosen.slice(); },       // a pincode typed but not Enter-ed yet still counts
+    pending: () => input.value.trim(),                // ...unless it isn't a valid one: that stays in the box
+    set(values) { chosen = [...new Set(values)]; input.value = ""; say(""); paint(); },
+  };
+}
+
+// The four selections together. els = { l1, l2, state, pincode, summary } (elements to fill); initial =
+// { l1s, l2s, states, pincodes }. read() gives the lists to send - an empty state/pincode means the default,
+// exactly as the server treats it - and the summary line says how many runs that adds up to.
+function makeAxes(els, initial, onChange) {
+  const changed = () => { paintSummary(); if (onChange) onChange(); };
+  const l1 = makeToggleGroup(els.l1, meta.l1_options, initial.l1s, changed);
+  const l2 = makeToggleGroup(els.l2, meta.l2_options, initial.l2s, changed);
+  const state = makeStatePicker(els.state, meta.state_options, initial.states, changed, meta.default_state);
+  const pin = makePincodeInput(els.pincode, initial.pincodes, changed);
+  function read() {
+    const s = state.get(), p = pin.get();
+    return { l1s: l1.get(), l2s: l2.get(), states: s.length ? s : [meta.default_state], pincodes: p.length ? p : [meta.default_pincode] };
+  }
+  function count() { const v = read(); return v.l1s.length * v.l2s.length * v.states.length * v.pincodes.length; }
+  function paintSummary() {
+    const v = read(), n = count();
+    const over = n > meta.max_combos;
+    els.summary.className = "combo-hint" + (over ? " over" : "");
+    els.summary.textContent = n === 1 ? "" :
+      `${v.l1s.length} l1 × ${v.l2s.length} l2 × ${v.states.length} state${v.states.length === 1 ? "" : "s"} × ${v.pincodes.length} pincode${v.pincodes.length === 1 ? "" : "s"} = ${n} runs` +
+      (over ? ` - over the limit of ${meta.max_combos}, narrow it down` : ", one after another");
+  }
+  // Something to fix before this can be used: a half-typed pincode left in the box would otherwise be dropped
+  // and the run would quietly use the default pincode instead.
+  function problem() {
+    pin.get();
+    const p = pin.pending();
+    return p ? `"${p}" in the pincode box isn't a 6-digit pincode - fix or clear it first.` : "";
+  }
+  paintSummary();
+  return {
+    read, count, problem, over: () => count() > meta.max_combos,
+    set(v) { l1.set(v.l1s); l2.set(v.l2s); state.set(v.states); pin.set(v.pincodes); paintSummary(); },
+  };
+}
+
+// A small non-blocking notice, bottom right.
+function flash(text, ms = 7000) {
+  let box = document.getElementById("flash");
+  if (!box) { box = document.createElement("div"); box.id = "flash"; document.body.appendChild(box); }
+  const el = document.createElement("div");
+  el.className = "flash-item";
+  el.textContent = text;
+  box.appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
+
+// ---- meta / controls ----------------------------------------------------------------
+let runAxes = null;   // the New run panel's l1 / l2 / state / pincode widgets
+
+function updateRunButton() {
+  document.getElementById("run-btn").disabled = !runAxes || runAxes.over();
+}
+
+async function loadMeta() {
+  meta = await api("/api/meta");
+  runAxes = makeAxes(
+    { l1: document.getElementById("run-l1"), l2: document.getElementById("run-l2"), state: document.getElementById("run-state"),
+      pincode: document.getElementById("run-pincode"), summary: document.getElementById("run-combos") },
+    { l1s: [meta.l1_options[0]], l2s: [meta.l2_options[0]], states: [meta.default_state], pincodes: [meta.default_pincode] },
+    updateRunButton);
+}
+
+// ---- runs ----------------------------------------------------------------
+function currentSettings() {
+  const limitVal = document.getElementById("limit").value;
+  // Carousels unchecked in a loaded preview (see loadCarouselPreview) - by the CMS section's own id, which
+  // stays right across the several l1/l2 feeds a multi-select run covers and when the feed's order shifts.
+  // Empty when no preview is showing, so "Run now" without one still runs everything, as before.
+  const excluded = new Set();
+  document.querySelectorAll("#grid .carousel-check:not(:checked)").forEach(cb => {
+    const row = previewRows.find(r => r.section_index === parseInt(cb.dataset.sectionIndex, 10));
+    if (row && row.section_id) excluded.add(row.section_id);
+  });
+  return {
+    ...runAxes.read(),
+    scope: document.getElementById("scope").value,
+    banner_limit: limitVal ? parseInt(limitVal, 10) : null,
+    workers: Math.max(1, Math.min(meta.max_workers, parseInt(document.getElementById("workers").value || "3", 10))),
+    excluded_sections: [...excluded],
+  };
+}
+
+function previewCardHtml(b) {
+  const isMultiLink = (b.total_links || 0) > 1;
+  const tags = [
+    isMultiLink ? '<span class="mu-tag" title="Multiple links in this banner">MU</span>' : "",
+    b.hidden ? `<span class="hidden-tag" title="${hiddenReasonText(b.hidden_reason).replace(/"/g,'&quot;')}">H</span>` : "",
+  ].join("");
+  return `
+    ${tags ? `<div class="corner-tags">${tags}</div>` : ""}
+    <img src="${b.image_url || ''}" loading="lazy" alt="${(b.alt_text || '').replace(/"/g,'&quot;')}">
+    <div class="body">
+      <p class="alt">${b.alt_text || "(no alt text)"}</p>
+      <p class="dest">${linkHtml(b.destination_raw)}</p>
+    </div>`;
+}
+
+// Loads every banner in scope (no verification, just the feed) and lays them out in the main grid
+// grouped under a checkbox heading per carousel - unchecking one hides its banners immediately (the
+// filter the user asked for) and, separately, excludes that carousel from the run when "Run now" is
+// clicked (see currentSettings). Reuses #grid/#run-title rather than a separate area so this behaves
+// like any other thing shown there - picking a real run from the sidebar naturally replaces it.
+let previewRows = [];   // the last carousel preview's rows - the scheduler form copies exclusions from these
+async function loadCarouselPreview() {
+  const btn = document.getElementById("load-carousels-btn");
+  const settings = currentSettings();
+  // one feed can be previewed at a time: with several l1/l2 selected, the first of each
+  const l1 = settings.l1s[0], l2 = settings.l2s[0], scope = settings.scope;
+  const several = settings.l1s.length > 1 || settings.l2s.length > 1;
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  closeScheduler();
+  try {
+    const rows = await api(`/api/feed-preview?l1=${encodeURIComponent(l1)}&l2=${encodeURIComponent(l2)}&scope=${encodeURIComponent(scope)}`);
+    previewRows = rows;
+    currentRunId = null;
+    setBackButton(null);
+    if (evtSource) { evtSource.close(); evtSource = null; }
+    document.querySelectorAll(".run-item").forEach(el => el.classList.remove("active"));
+    document.getElementById("run-title").textContent = `Preview: ${l1}/${l2}${several ? " (first of your l1/l2 selection)" : ""} · ${scope} — uncheck a carousel to leave it out, then Run now`;
+    document.getElementById("run-counts").textContent = `${rows.length} banner${rows.length === 1 ? "" : "s"}`;
+    document.getElementById("cancel-btn").style.display = "none";
+    document.getElementById("export-btn").style.display = "none";
+    document.getElementById("filter-row").style.display = "none";
+    const grid = document.getElementById("grid");
+    grid.innerHTML = "";
+    if (!rows.length) { grid.innerHTML = '<div class="empty">No banners found for this l1/l2/scope.</div>'; return; }
+    const groups = new Map();
+    for (const b of rows) {
+      if (!groups.has(b.section_index)) groups.set(b.section_index, { label: b.label, items: [] });
+      groups.get(b.section_index).items.push(b);
+    }
+    const frag = document.createDocumentFragment();
+    for (const si of [...groups.keys()].sort((a, c) => a - c)) {
+      const { label, items } = groups.get(si);
+      const heading = document.createElement("div");
+      heading.className = "carousel-heading";
+      heading.innerHTML = `
+        <label>
+          <input type="checkbox" checked class="carousel-check" data-section-index="${si}">
+          <strong>${escapeHtml(label || `Carousel ${si}`)}</strong>
+          <span class="count">${items.length} banner${items.length === 1 ? "" : "s"}</span>
+        </label>`;
+      const cb = heading.querySelector("input");
+      cb.addEventListener("change", () => {
+        grid.querySelectorAll(`.preview-card[data-section-index="${si}"]`).forEach(c => c.style.display = cb.checked ? "" : "none");
+        heading.classList.toggle("unchecked", !cb.checked);
+      });
+      frag.appendChild(heading);
+      for (const b of items) {
+        const card = document.createElement("div");
+        card.className = "card preview-card";
+        card.dataset.sectionIndex = si;
+        card.innerHTML = previewCardHtml(b);
+        frag.appendChild(card);
+      }
+    }
+    grid.appendChild(frag);
+  } catch (e) {
+    alert("Could not load carousels: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Load carousels to choose which to run";
+  }
+}
+document.getElementById("load-carousels-btn").addEventListener("click", loadCarouselPreview);
+
+document.getElementById("clear-cache-btn").addEventListener("click", async () => {
+  if (!confirm("Clear the cross-run banner cache? Every banner will be checked fresh (no reused verdicts) until it rebuilds.")) return;
+  const btn = document.getElementById("clear-cache-btn");
+  btn.disabled = true;
+  try {
+    const { cleared } = await api("/api/cache/clear", { method: "POST" });
+    alert(cleared ? `Cleared ${cleared} cached verdict${cleared === 1 ? "" : "s"}.` : "Cache was already empty.");
+  } catch (e) {
+    alert("Could not clear the cache: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("run-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("run-btn");
+  const problem = runAxes.problem();
+  if (problem) { flash(problem); return; }
+  btn.disabled = true;
+  try {
+    const { run_id, combos, queued } = await api("/api/runs", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(currentSettings()),
+    });
+    if (queued) flash(`Started run 1 of ${combos}. The other ${queued} start one after another as each finishes - they'll appear under Recent runs.`);
+    await loadRuns();
+    selectRun(run_id);
+  } catch (e) {
+    alert("Could not start run: " + errText(e));
+  } finally {
+    updateRunButton();
+  }
+});
+
+document.getElementById("cancel-btn").addEventListener("click", async () => {
+  if (!currentRunId) return;
+  try { await api(`/api/runs/${currentRunId}/cancel`, { method: "POST" }); } catch (e) { alert(e.message); }
+  loadRuns();
+});
+
+// Downloads the .xlsx (images embedded server-side - see qa/export_xlsx.py) and, since this is a
+// local single-user tool running on the same machine as the browser, also asks the server to open
+// the run's folder in Explorer so the file is easy to find without digging through Downloads.
+document.getElementById("export-btn").addEventListener("click", async () => {
+  if (!currentRunId) return;
+  const runId = currentRunId;
+  const a = document.createElement("a");
+  a.href = `/api/runs/${runId}/export.xlsx`;
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  try {
+    await api(`/api/runs/${runId}/open-folder`, { method: "POST" });
+  } catch (e) {
+    // non-fatal - the download itself already happened
+  }
+});
+
+async function loadRuns() {
+  const runs = await api("/api/runs");
+  const list = document.getElementById("run-list");
+  if (!runs.length) { list.innerHTML = '<div class="empty">None yet</div>'; return; }
+  list.innerHTML = "";
+  for (const r of runs) {
+    const el = document.createElement("div");
+    el.className = "run-item" + (r.run_id === currentRunId ? " active" : "");
+    const c = r.counts || {};
+    // Not just the first letter: PASS/PENDING/PROCESSING all start with "P" and would collide.
+    const tally = Object.entries(c).map(([k, v]) => `${STATUS_ABBR[k] || k[0]}${v}`).join(" ");
+    // with several states/pincodes per run, two runs can differ only by location - so say it whenever it isn't the default
+    const loc = (r.state !== meta.default_state || r.pincode !== meta.default_pincode) ? ` · ${r.state} ${r.pincode}` : "";
+    el.innerHTML = `<div>${fmtTime(r.started_at)}<br><span style="color:var(--text-dim)">${r.l1}/${r.l2}${loc} · ${r.scope} · ${tally}</span></div>
+      <span class="status status-${r.status}">${r.status}</span>
+      <button class="dismiss" title="Remove from this list (keeps the run's files on disk)">&times;</button>`;
+    el.addEventListener("click", () => selectRun(r.run_id));
+    el.querySelector(".dismiss").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await api(`/api/runs/${r.run_id}/hide`, { method: "POST" });
+      } catch (err) { alert("Could not remove: " + err.message); return; }
+      if (r.run_id === currentRunId) {
+        currentRunId = null;
+        if (evtSource) { evtSource.close(); evtSource = null; }
+        document.getElementById("run-title").textContent = "No run selected";
+        setBackButton(null);
+        document.getElementById("run-counts").innerHTML = "";
+        document.getElementById("cancel-btn").style.display = "none";
+        document.getElementById("export-btn").style.display = "none";
+        document.getElementById("grid").innerHTML = '<div class="empty">Start a run, or pick one from the left, to see banners here.</div>';
+      }
+      loadRuns();
+    });
+    list.appendChild(el);
+  }
+}
+
+function resultCounts() {
+  const counts = {};
+  for (const b of currentBanners.values()) counts[b.result] = (counts[b.result] || 0) + 1;
+  return counts;
+}
+
+function renderCounts() {
+  const el = document.getElementById("run-counts");
+  const counts = resultCounts();
+  const order = ["PASS", "FAIL", "SKIPPED", "INCONCLUSIVE", "PROCESSING", "PENDING"];
+  el.innerHTML = order.filter(k => counts[k]).map(k =>
+    `<span class="count-chip ${k}" style="background:var(--${k.toLowerCase()}-bg);color:var(--${k.toLowerCase()}-text)">${k} ${counts[k]}</span>`
+  ).join("");
+}
+
+// ---- filtering: by status (clickable chips, multi-select) and by carousel (dropdown) ----------
+
+function renderStatusFilters() {
+  const el = document.getElementById("status-filters");
+  const counts = resultCounts();
+  const order = ["PASS", "FAIL", "SKIPPED", "INCONCLUSIVE", "PROCESSING", "PENDING"];
+  el.innerHTML = order.filter(k => counts[k]).map(k =>
+    `<span class="count-chip ${k}${statusFilter.has(k) ? " active" : ""}" data-status="${k}"
+      style="background:var(--${k.toLowerCase()}-bg);color:var(--${k.toLowerCase()}-text)">${k} ${counts[k]}</span>`
+  ).join("");
+  el.querySelectorAll(".count-chip").forEach(chip => chip.addEventListener("click", () => {
+    const k = chip.dataset.status;
+    statusFilter.has(k) ? statusFilter.delete(k) : statusFilter.add(k);
+    renderStatusFilters();
+    applyFilters();
+  }));
+}
+
+function renderCarouselFilterOptions() {
+  const sel = document.getElementById("carousel-filter");
+  const indices = [...new Set([...currentBanners.values()]
+    .map(b => b.section_index).filter(v => v !== undefined && v !== null))].sort((a, b) => a - b);
+  const keep = carouselFilter;
+  sel.innerHTML = '<option value="">All carousels</option>' +
+    indices.map(i => `<option value="${i}">Carousel ${i}</option>`).join("");
+  sel.value = indices.includes(Number(keep)) || keep === "" ? keep : "";
+  carouselFilter = sel.value;
+}
+
+function cardMatchesFilters(b) {
+  if (!showHidden && b.hidden) return false;
+  if (statusFilter.size && !statusFilter.has(b.result)) return false;
+  if (carouselFilter !== "" && String(b.section_index) !== String(carouselFilter)) return false;
+  return true;
+}
+
+function applyFilters() {
+  const grid = document.getElementById("grid");
+  const cards = grid.querySelectorAll(".card");
+  let visible = 0;
+  cards.forEach(card => {
+    const b = currentBanners.get(card.dataset.id);
+    const show = !!b && cardMatchesFilters(b);
+    card.style.display = show ? "" : "none";
+    if (show) visible++;
+  });
+  let empty = grid.querySelector(".empty.filtered");
+  if (cards.length && visible === 0) {
+    if (!empty) {
+      empty = document.createElement("div");
+      empty.className = "empty filtered";
+      empty.textContent = "No banners match the current filters.";
+      grid.appendChild(empty);
+    }
+  } else if (empty) {
+    empty.remove();
+  }
+  const active = statusFilter.size > 0 || carouselFilter !== "";
+  document.getElementById("clear-filters-btn").style.display = active ? "" : "none";
+}
+
+document.getElementById("carousel-filter").addEventListener("change", (e) => {
+  carouselFilter = e.target.value;
+  applyFilters();
+});
+document.getElementById("clear-filters-btn").addEventListener("click", () => {
+  statusFilter = new Set();
+  carouselFilter = "";
+  document.getElementById("carousel-filter").value = "";
+  renderStatusFilters();
+  applyFilters();
+});
+document.getElementById("show-hidden-toggle").addEventListener("change", (e) => {
+  showHidden = e.target.checked;
+  applyFilters();
+});
+
+const HIDDEN_REASON_LABELS = {
+  block_hidden: "Hidden Block", component_hidden: "Hidden Component", outside_schedule: "Wrong Time",
+  cms_hidden: "Hidden Block",   // legacy token from runs fetched before block/component were told apart
+};
+
+function hiddenReasonText(reason) {
+  return (reason || "").split(", ").filter(Boolean).map(r => HIDDEN_REASON_LABELS[r] || r).join(", ");
+}
+
+function truncatedList(arr, n = 3) {
+  if (!arr || !arr.length) return "";
+  return arr.length > n ? `${arr.slice(0, n).join(", ")}, ...` : arr.join(", ");
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function linkHtml(url) {
+  if (!url) return "";
+  const safe = escapeHtml(url);
+  return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${safe}</a>`;
+}
+
+// Shortens only the extra-brands portion of an already-built reason string (qa/feed_verify.py's
+// _hotspot_reason() always writes it as "extra brands in the listing: [...]", whether it's the
+// banner's own reason or embedded inside a "hotspot N (...): ..." clause) - used for the grid card
+// view only. The modal is the detailed view a person opens specifically to see everything, so it
+// always shows explainReason()'s full text untouched.
+function truncateExtraBrandsInText(text) {
+  return text.replace(/extra brands in the listing: \[([^\]]*)\]/g, (match, inner) => {
+    const items = inner.split(",").map(s => s.trim()).filter(Boolean);
+    return items.length > 3 ? `extra brands in the listing: [${items.slice(0, 3).join(", ")}, ...]` : match;
+  });
+}
+
+function explainReason(b, { truncate = false } = {}) {
+  // Mirrors qa/feed_verify.py's format_summary() "why" synthesis, so FAIL/INCONCLUSIVE cards read the
+  // same way here as in the CLI's printed summary - banner_check's raw fields aren't a sentence on
+  // their own, so build one from whichever conditions actually applied.
+  if (b.reason === "user_skipped") return "Skipped by user";
+  if (b.reason) return truncate ? truncateExtraBrandsInText(b.reason) : b.reason;   // a transient/pipeline error (e.g. image_download_failed) already reads fine as-is
+  const c = b.banner_check || {};
+  const parts = [];
+  if (c.missing_brands && c.missing_brands.length) parts.push(`missing brands ${c.missing_brands.join(", ")}`);
+  if (c.title_matches_deal === false) parts.push(`title "${b.listing_title || ""}" != deal "${c.banner_deal || ""}"`);
+  if (c.gender_matches === false) parts.push(`banner targets "${c.banner_gender || ""}" but listing genders are ${(c.listing_genders || []).join(", ")}`);
+  if (c.gender_matches === "AJIO_BEAUTY") parts.push("AJIO beauty banner - gender check skipped, needs a human look");
+  if (c.gender_matches === "INCONCLUSIVE") parts.push(`banner's gender reading "${c.banner_gender || ""}" isn't a recognized audience`);
+  if (c.extra_brands && c.extra_brands.length) {
+    const list = truncate ? truncatedList(c.extra_brands) : c.extra_brands.join(", ");
+    parts.push(`listing has extra brands not named on the banner: ${list}`);
+  }
+  return parts.join("; ");
+}
+
+function hotspotReason(h) {
+  if (h.reason) return h.reason;
+  const c = h.banner_check || {};
+  const parts = [];
+  if (c.missing_brands && c.missing_brands.length) parts.push(`missing brands ${c.missing_brands.join(", ")}`);
+  if (c.title_matches_deal === false) parts.push("title doesn't match the deal");
+  if (c.gender_matches === false) parts.push("gender mismatch");
+  if (c.extra_brands && c.extra_brands.length) parts.push(`extra brands ${c.extra_brands.join(", ")}`);
+  return parts.join("; ");
+}
+
+function hotspotSummary(b) {
+  // Mirrors qa/feed_verify.py's _hotspot_summary() - one line per hotspot: index, link, verdict, why.
+  return (b.hotspot_checks || []).map(h => {
+    const why = hotspotReason(h);
+    return `${h.hotspot_index}: ${statusLabel(h.result)} - ${h.url}${why ? ` (${why})` : ""}`;
+  }).join("<br>");
+}
+
+function carouselLabel(b) {
+  if (b.section_index === undefined || b.section_index === null) return "";
+  return b.block_index === undefined || b.block_index === null
+    ? `Carousel ${b.section_index}`
+    : `Carousel ${b.section_index} · slide ${b.block_index}`;
+}
+
+function cardHtml(b) {
+  const brands = (b.banner_check && b.banner_check.banner_brands) || [];
+  const deal = (b.banner_check && b.banner_check.banner_deal) || "";
+  const carousel = carouselLabel(b);
+  const reason = (b.result === "FAIL" || b.result === "INCONCLUSIVE") ? explainReason(b, { truncate: true }) : "";
+  const isMultiLink = (b.total_links || 0) > 1;
+  const tags = [
+    isMultiLink ? '<span class="mu-tag" title="Multiple links in this banner">MU</span>' : "",
+    b.hidden ? `<span class="hidden-tag" title="${hiddenReasonText(b.hidden_reason).replace(/"/g,'&quot;')}">H</span>` : "",
+  ].join("");
+  const canSkip = b.result === "PENDING";
+  return `
+    ${tags ? `<div class="corner-tags">${tags}</div>` : ""}
+    ${canSkip ? `<button class="skip-btn" data-id="${escapeHtml(b.banner_id)}">${b.skip_requested ? "Unskip" : "Skip"}</button>` : ""}
+    ${b.result === "PROCESSING" ? `<span class="activity-tag" title="What this banner is doing right now"><i class="dot-live"></i>${escapeHtml(b.activity || "Working")}</span>` : ""}
+    <img src="${b.image_url || ''}" loading="lazy" alt="${(b.alt_text || '').replace(/"/g,'&quot;')}">
+    <div class="body">
+      <div class="badge-row">
+        <span class="result-badge ${b.result}">${processingLabel(b)}</span>
+        ${carousel ? `<span class="carousel-label">${carousel}</span>` : ""}
+      </div>
+      <p class="alt">${b.alt_text || "(no alt text)"}</p>
+      <p class="dest">${linkHtml(b.destination_raw)}</p>
+      ${reason ? `<p class="reason"><span class="reason-label">Reason:</span><br>${reason}</p>` : ""}
+      <div class="tags">
+        ${brands.map(x => `<span class="tag">${x}</span>`).join("")}
+        ${deal ? `<span class="tag">${deal}</span>` : ""}
+      </div>
+      ${b.retries_exhausted ? `<button class="secondary retry-btn" data-id="${escapeHtml(b.banner_id)}">Retry this banner</button>` : ""}
+    </div>`;
+}
+
+function upsertCard(b) {
+  currentBanners.set(b.banner_id, b);
+  const grid = document.getElementById("grid");
+  let card = grid.querySelector(`[data-id="${CSS.escape(b.banner_id)}"]`);
+  if (!card) {
+    card = document.createElement("div");
+    card.dataset.id = b.banner_id;
+    grid.appendChild(card);
+  }
+  card.className = "card " + b.result + (b.skip_requested ? " skip-requested" : "");
+  card.innerHTML = cardHtml(b);
+  card.style.display = cardMatchesFilters(b) ? "" : "none";
+  const img = card.querySelector("img");
+  if (img) img.addEventListener("click", () => openModal(b));
+  const retryBtn = card.querySelector(".retry-btn");
+  if (retryBtn) retryBtn.addEventListener("click", () => retryBanner(b.banner_id, retryBtn));
+  const skipBtn = card.querySelector(".skip-btn");
+  if (skipBtn) skipBtn.addEventListener("click", () => toggleSkip(b.banner_id, skipBtn, b.skip_requested));
+  renderCounts();
+  renderStatusFilters();
+}
+
+async function retryBanner(bannerId, btn) {
+  const runId = currentRunId;
+  const prior = currentBanners.get(bannerId) || {};
+  const startAttempts = prior.attempts || 0;
+  btn.disabled = true;
+  btn.textContent = "Retrying…";
+  try {
+    await api(`/api/runs/${runId}/banners/${encodeURIComponent(bannerId)}/retry`, { method: "POST" });
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Retry this banner";
+    alert("Could not start the retry: " + e.message);
+    return;
+  }
+  // Show the card as a normal in-progress banner (like an automatic retry round) instead of
+  // leaving the old exhausted verdict + a disabled button on screen while the retry subprocess runs.
+  upsertCard({ ...prior, result: "PROCESSING", reason: "", try_number: startAttempts + 1,
+              retries_exhausted: false });
+  let ticks = 0;
+  const poll = setInterval(async () => {
+    ticks++;
+    if (runId !== currentRunId || ticks > 200) {   // ~13 min safety cap, or the user switched runs
+      clearInterval(poll);
+      return;
+    }
+    let rows;
+    try {
+      rows = await api(`/api/runs/${runId}/banners`);
+    } catch (e) {
+      return;   // transient fetch error while polling - just try again next tick
+    }
+    const row = rows.find(r => r.banner_id === bannerId);
+    if (row && (row.attempts || 0) > startAttempts) {
+      clearInterval(poll);
+      if (runId === currentRunId) upsertCard(row);
+    }
+  }, 4000);
+}
+
+// Skip only ever shows on a still-PENDING card (nothing has started for it), so unlike retry this is
+// a plain, instant, reversible toggle - just a shared file this run's worker checks before it ever
+// picks the banner up (see qa/feed_verify.py's skip_requested) - no need to wait/poll for a result.
+async function toggleSkip(bannerId, btn, currentlySkipped) {
+  const runId = currentRunId;
+  const action = currentlySkipped ? "unskip" : "skip";
+  btn.disabled = true;
+  try {
+    await api(`/api/runs/${runId}/banners/${encodeURIComponent(bannerId)}/${action}`, { method: "POST" });
+  } catch (e) {
+    btn.disabled = false;
+    alert(`Could not ${action} this banner: ` + e.message);
+    return;
+  }
+  if (runId === currentRunId) {
+    const prior = currentBanners.get(bannerId) || {};
+    upsertCard({ ...prior, skip_requested: !currentlySkipped });
+  }
+}
+
+function renderGrid(banners) {
+  currentBanners = new Map();
+  statusFilter = new Set();
+  carouselFilter = "";
+  showHidden = false;
+  document.getElementById("show-hidden-toggle").checked = false;
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  document.getElementById("filter-row").style.display = banners.length ? "" : "none";
+  if (!banners.length) { grid.innerHTML = '<div class="empty">No banners in this run yet.</div>'; return; }
+  for (const b of banners) upsertCard(b);
+  renderCarouselFilterOptions();
+  applyFilters();
+}
+
+// The "← <scheduler name>" button above a run's banners: back to that scheduler's runs page.
+function setBackButton(sched) {
+  const b = document.getElementById("back-sched-btn");
+  b.style.display = sched ? "" : "none";
+  if (!sched) return;
+  b.textContent = `← ${sched.name}`;
+  b.title = "Back to this scheduler's runs";
+  b.onclick = () => openScheduler("detail", sched.id);
+}
+
+async function selectRun(runId, origin = null) {
+  closeScheduler();
+  currentRunId = runId;
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  document.querySelectorAll(".run-item").forEach(el => el.classList.remove("active"));
+  const run = await api(`/api/runs/${runId}`);
+  // a run a scheduler made always offers the way back to it, wherever it was opened from
+  setBackButton(origin || (run.schedule_id != null ? scheds.find(s => s.id === run.schedule_id) : null) || null);
+  document.getElementById("run-title").textContent =
+    `${run.l1}/${run.l2} · ${run.state} · pincode ${run.pincode} · ${run.scope}${run.banner_limit ? " · limit " + run.banner_limit : ""} · started ${fmtTime(run.started_at)}`;
+  document.getElementById("cancel-btn").style.display = run.status === "running" ? "" : "none";
+  const exportBtn = document.getElementById("export-btn");
+  exportBtn.style.display = "";
+  exportBtn.disabled = run.status === "running";
+  const banners = await api(`/api/runs/${runId}/banners`);
+  renderGrid(banners);
+  await loadRuns();
+  if (run.status === "running") {
+    evtSource = new EventSource(`/api/runs/${runId}/stream`);
+    evtSource.onmessage = (ev) => upsertCard(JSON.parse(ev.data));
+    evtSource.addEventListener("done", () => {
+      evtSource.close(); evtSource = null;
+      document.getElementById("cancel-btn").style.display = "none";
+      document.getElementById("export-btn").disabled = false;
+      loadRuns();
+    });
+    evtSource.onerror = () => { if (evtSource) { evtSource.close(); evtSource = null; } };
+  }
+}
+
+// ---- modal ----------------------------------------------------------------
+function hotspotImageUrl(h) {
+  if (!h.image_file || !currentRunId) return "";
+  const filename = h.image_file.split(/[\\/]/).pop();
+  return `/api/runs/${currentRunId}/images/${encodeURIComponent(filename)}`;
+}
+
+function hotspotBlockHtml(h) {
+  const c = h.banner_check || {};
+  const src = hotspotImageUrl(h);
+  const rows = [
+    ["Result", statusLabel(h.result)], ["Link", linkHtml(h.url)], ["Reason", hotspotReason(h)],
+    ["Listing title", h.listing_title], ["Banner brands", (c.banner_brands || []).join(", ")],
+    ["Banner deal", c.banner_deal], ["Banner gender", c.banner_gender],
+    ["Listing genders", (c.listing_genders || []).join(", ")],
+    ["Missing brands", (c.missing_brands || []).join(", ")],
+    ["Extra brands", (c.extra_brands || []).join(", ")],
+  ].filter(([, v]) => v !== undefined && v !== null && v !== "");
+  return `
+    <div class="hotspot-block ${h.result || ''}">
+      <div class="hs-title">Hotspot ${h.hotspot_index}</div>
+      ${src ? `<img src="${src}" alt="hotspot ${h.hotspot_index}" loading="lazy">` : ""}
+      <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
+    </div>`;
+}
+
+function openModal(b) {
+  document.getElementById("modal-img").src = b.image_url || "";
+  document.getElementById("modal-img").alt = b.alt_text || "";
+  const c = b.banner_check || {};
+  const rows = [
+    ["Result", processingLabel(b)], ["Reason", explainReason(b)],
+    ["Hidden", b.hidden ? hiddenReasonText(b.hidden_reason) : ""],
+    ["Carousel / slide", carouselLabel(b)], ["Overall position", b.position],
+    ["Destination", linkHtml(b.destination_raw)], ["Listing title", b.listing_title],
+    ["Banner brands", (c.banner_brands || []).join(", ")],
+    ["Banner deal", c.banner_deal], ["Title matches deal?", c.title_matches_deal],
+    ["Banner gender", c.banner_gender], ["Listing genders", (c.listing_genders || []).join(", ")],
+    ["Gender matches?", c.gender_matches],
+    ["Missing brands", (c.missing_brands || []).join(", ")],
+    ["Extra brands", (c.extra_brands || []).join(", ")],
+  ].filter(([, v]) => v !== undefined && v !== null && v !== "");
+  document.getElementById("modal-detail").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  document.getElementById("modal-hotspots").innerHTML = (b.hotspot_checks || []).map(hotspotBlockHtml).join("");
+  document.getElementById("modal-overlay").classList.add("open");
+}
+document.getElementById("modal-close").addEventListener("click", () => document.getElementById("modal-overlay").classList.remove("open"));
+document.getElementById("modal-overlay").addEventListener("click", (e) => { if (e.target.id === "modal-overlay") e.currentTarget.classList.remove("open"); });
+
+// ---- scheduler ----------------------------------------------------------------
+// A sidebar block (Make scheduler / scrolling list with View + Delete / Expand) and an in-page sub-window
+// that takes over the main panel. It drills down like the rest of the app: every scheduler (list) -> one
+// scheduler's runs (detail; a card per run, grouped by the fire that made them) -> a run's banners (the
+// normal listing, with a back button). The create/edit form is the fourth page. Selecting a run, or loading
+// a carousel preview, closes it again.
+const JSON_HEADERS = { "Content-Type": "application/json" };
+const NOTIFY_LABEL = { off: "Off", new_fails: "New FAILs only", any_change: "Any change" };
+let scheds = [];                                  // last GET /api/schedules
+let alertState = { unread: 0, items: [] };        // last GET /api/alerts
+let sv = { mode: "closed", id: null, editing: null };   // mode: closed | list | detail | form
+let schedFilter = "all";                          // the list page's filter chip: all | enabled | disabled | attention
+let formAxes = null;                              // the open form's l1 / l2 / state / pincode widgets
+let formExcluded = new Map();                     // the open form's carousel exclusions: section id -> label
+let formCarousels = null;                         // the form's loaded carousel checklist (null until "Load carousels")
+let renderToken = 0;                              // drops a slow detail fetch that a later navigation has superseded
+let detailTimer = null;                           // refreshes a runs page while one of its runs is still going
+
+function byId(id) { return document.getElementById(id); }
+
+function errText(e) {
+  try { const d = JSON.parse(e.message).detail; if (typeof d === "string") return d; } catch (_) {}
+  return e.message;
+}
+
+function fmtInterval(min) {
+  if (min % 1440 === 0) return `${min / 1440}d`;
+  if (min % 60 === 0) return `${min / 60}h`;
+  return `${min}m`;
+}
+function intervalParts(min) {
+  if (min % 1440 === 0) return { n: min / 1440, unit: 1440 };
+  if (min % 60 === 0) return { n: min / 60, unit: 60 };
+  return { n: min, unit: 1 };
+}
+
+function statusChip(status) {
+  return status ? `<span class="chip status-${escapeHtml(status)}">${escapeHtml(status)}</span>` : "";
+}
+
+function alertSummary(s) {
+  if (s.notify_mode === "off") return "Off";
+  return `${NOTIFY_LABEL[s.notify_mode] || s.notify_mode} · ${s.notify_toast ? "in-app + Windows notification" : "in-app only"}`;
+}
+
+function excludedChips(list) {
+  if (!list.length) return "none";
+  return `<div class="chip-list">${list.map(x =>
+    `<span class="x-chip" style="padding-right:10px">${escapeHtml(x.label || (x.id.slice(0, 10) + "…"))}</span>`).join("")}</div>`;
+}
+
+function kvHtml(rows) {
+  return `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
+}
+
+function fmtWhen(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true });
+  } catch (e) { return iso; }
+}
+
+function tags(values, max = 4) {
+  const shown = values.slice(0, max).map(v => `<span class="tag">${escapeHtml(v)}</span>`).join("");
+  return shown + (values.length > max ? `<span class="tag">+${values.length - max}</span>` : "");
+}
+
+function tallyHtml(counts) {
+  const c = counts || {};
+  return ["PASS", "FAIL", "INCONCLUSIVE", "SKIPPED"].filter(k => c[k]).map(k =>
+    `<span class="count-chip" style="background:var(--${k.toLowerCase()}-bg);color:var(--${k.toLowerCase()}-text)">${STATUS_ABBR[k]}${c[k]}</span>`).join(" ");
+}
+
+function diffHtml(d) {
+  if (!d) return "";
+  if (d.baseline) return `<span class="hint">${escapeHtml(d.summary)}</span>`;
+  return `<span style="${d.counts.newly_failing ? "color:var(--fail-text);font-weight:600" : ""}">${escapeHtml(d.summary)}</span>`;
+}
+
+// A card's border/background colour, borrowed from the banner cards: red = something to look at.
+function runHealth(r) {
+  const c = r.counts || {};
+  if (r.status === "running") return "PROCESSING";
+  if (r.status === "failed") return "FAIL";
+  if (r.status === "cancelled") return "PENDING";
+  return c.FAIL ? "FAIL" : c.INCONCLUSIVE ? "INCONCLUSIVE" : "PASS";
+}
+
+function schedHealth(s) {
+  const r = s.latest_run;
+  if (!s.enabled) return "PENDING";
+  if (["failed", "error"].includes(s.last_status)) return "FAIL";
+  if (r && r.status === "running") return "PROCESSING";
+  if (r && r.status === "done") return runHealth(r);
+  return "PENDING";
+}
+
+function needsAttention(s) {
+  return s.unread_alerts > 0 || ["failed", "error", "skipped"].includes(s.last_status);
+}
+
+function schedRows(s) {
+  return [
+    ["Runs", `every ${fmtInterval(s.interval_minutes)}${s.enabled ? "" : " (disabled)"}`],
+    ["Started", s.start_at ? fmtWhen(s.start_at) : "when it was saved"],
+    ["Next run", s.enabled && s.next_run_at ? fmtWhen(s.next_run_at) : "-"],
+    ["Last run", s.last_run_at ? fmtWhen(s.last_run_at) : "never"],
+    ["Last result", s.last_status ? `${statusChip(s.last_status)} ${escapeHtml(s.last_message || "")}` : "-"],
+    ["l1", `<div class="tags">${tags(s.l1s, 9)}</div>`],
+    ["l2", `<div class="tags">${tags(s.l2s, 9)}</div>`],
+    ["State", `<div class="tags">${tags(s.states, 6)}</div>`],
+    ["Pincode", `<div class="tags">${tags(s.pincodes, 6)}</div>`],
+    ["Runs per fire", s.combo_count === 1 ? "1" : `${s.combo_count}, one after another`],
+    ["Scope", `${escapeHtml(s.scope)}${s.banner_limit ? ` (first ${s.banner_limit})` : ""}, ${s.workers} at a time`],
+    ["Alerts", escapeHtml(alertSummary(s))],
+    ["Carousels left out", excludedChips(s.excluded_sections)],
+  ];
+}
+
+// ---- sidebar block ----
+function updateAlertBadge() {
+  const b = byId("sched-alert-badge");
+  b.style.display = alertState.unread ? "" : "none";
+  b.textContent = alertState.unread;
+  b.title = `${alertState.unread} unread alert${alertState.unread === 1 ? "" : "s"}`;
+}
+
+function renderSidebarSchedules() {
+  const el = byId("sched-list");
+  if (!scheds.length) { el.innerHTML = '<div class="empty">None yet</div>'; return; }
+  el.innerHTML = "";
+  for (const s of scheds) {
+    const div = document.createElement("div");
+    div.className = "sched-item";
+    div.innerHTML = `
+      <div class="top"><div class="name">${escapeHtml(s.name)}</div>
+        <span class="dot ${s.enabled ? "on" : ""}" title="${s.enabled ? "Enabled" : "Disabled"}"></span></div>
+      <div class="meta">every ${fmtInterval(s.interval_minutes)} · ${escapeHtml(s.l1s.join("+"))}/${escapeHtml(s.l2s.join("+"))}${s.combo_count > 1 ? ` · ${s.combo_count} runs` : ""}${s.last_status ? " · " + escapeHtml(s.last_status) : ""}${s.unread_alerts ? ` · ${s.unread_alerts} unread` : ""}</div>
+      <div class="actions">
+        <button class="secondary" data-act="view">View</button>
+        <button class="secondary danger" data-act="delete">Delete</button>
+      </div>`;
+    div.title = "Open this scheduler's runs";
+    div.addEventListener("click", () => openScheduler("detail", s.id));      // the schedule itself opens its runs
+    div.querySelector('[data-act="view"]').addEventListener("click", ev => { ev.stopPropagation(); openScheduler("detail", s.id); });
+    div.querySelector('[data-act="delete"]').addEventListener("click", ev => { ev.stopPropagation(); schedAction("delete", s); });
+    el.appendChild(div);
+  }
+}
+
+async function refreshScheduler() {
+  const [list, al] = await Promise.all([api("/api/schedules"), api("/api/alerts?limit=30")]);
+  scheds = list;
+  alertState = al;
+  renderSidebarSchedules();
+  updateAlertBadge();
+  if (sv.mode === "list" || sv.mode === "detail") renderScheduler();   // never while a form is being filled in
+}
+
+// ---- the sub-window ----
+function openScheduler(mode, id = null, editing = null) {
+  sv = { mode, id, editing };
+  if (mode === "form") {
+    formExcluded = new Map(((editing && editing.excluded_sections) || []).map(x => [x.id, x.label]));
+    formCarousels = null;
+  }
+  const panel = document.querySelector(".main-panel");
+  panel.classList.add("sched-open");
+  panel.scrollTop = 0;
+  renderScheduler();
+}
+
+function closeScheduler() {
+  sv.mode = "closed";
+  renderToken++;
+  clearTimeout(detailTimer);
+  document.querySelector(".main-panel").classList.remove("sched-open");
+}
+
+function setHead(title, buttons) {
+  byId("sv-title").textContent = title;
+  const box = byId("sv-actions");
+  box.innerHTML = buttons.map(b => `<button class="${b.cls || "secondary"}" data-head="${b.id}">${b.label}</button>`).join("");
+  for (const b of buttons) box.querySelector(`[data-head="${b.id}"]`).addEventListener("click", b.onClick);
+}
+
+function renderScheduler() {
+  if (sv.mode === "list") renderSchedList();
+  else if (sv.mode === "detail") renderSchedDetail();
+  else if (sv.mode === "form") renderSchedForm();
+}
+
+async function schedAction(act, s) {
+  try {
+    if (act === "view") openScheduler("detail", s.id);
+    else if (act === "edit") openScheduler("form", s.id, s);
+    else if (act === "toggle") {
+      await api(`/api/schedules/${s.id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ enabled: !s.enabled }) });
+      await refreshScheduler();
+    } else if (act === "run") {
+      const { run_id, combos, queued } = await api(`/api/schedules/${s.id}/run-now`, { method: "POST" });
+      if (queued) flash(`Started run 1 of ${combos} for "${s.name}". The other ${queued} start one after another as each finishes.`);
+      await loadRuns();
+      selectRun(run_id, s);
+    } else if (act === "delete") {
+      if (!confirm(`Delete scheduler "${s.name}"? Its past runs and alerts are kept.`)) return;
+      await api(`/api/schedules/${s.id}`, { method: "DELETE" });
+      if (sv.mode === "detail" && sv.id === s.id) sv = { mode: "list", id: null, editing: null };
+      await refreshScheduler();
+    }
+  } catch (e) { alert(`Could not ${act === "run" ? "start the run" : act}: ${errText(e)}`); }
+}
+
+function actionButtons(s) {
+  return [
+    { id: "view", label: "View" }, { id: "edit", label: "Edit" }, { id: "run", label: "Run now" },
+    { id: "toggle", label: s.enabled ? "Disable" : "Enable" }, { id: "delete", label: "Delete", danger: true },
+  ];
+}
+
+function alertHtml(a) {
+  const cls = ["alert-item", a.is_read ? "read" : "", a.kind === "test" ? "test" : ""].filter(Boolean).join(" ");
+  const delivery = a.delivery ? ` · Windows notification: ${escapeHtml(a.delivery)}` : "";
+  return `<div class="${cls}">
+    <button class="alert-x" data-del-alert="${a.id}" title="Remove this alert" aria-label="Remove this alert">&times;</button>
+    <div class="t">${escapeHtml(a.title)}</div>
+    <div class="when">${fmtTime(a.created_at)}${delivery}</div>
+    ${a.message ? `<pre>${escapeHtml(a.message)}</pre>` : ""}
+    <div class="sv-actions-row" style="margin-top:6px">
+      ${a.run_id ? `<button class="secondary" data-open-run="${escapeHtml(a.run_id)}">Open run</button>` : ""}
+      ${a.is_read ? "" : `<button class="secondary" data-read="${a.id}">Mark read</button>`}
+    </div></div>`;
+}
+
+function wireAlertButtons(root) {
+  root.querySelectorAll("[data-open-run]").forEach(b => b.addEventListener("click", () => selectRun(b.dataset.openRun)));
+  root.querySelectorAll("[data-del-alert]").forEach(b => b.addEventListener("click", async () => {
+    try { await api(`/api/alerts/${b.dataset.delAlert}`, { method: "DELETE" }); await refreshScheduler(); }
+    catch (e) { alert(errText(e)); }
+  }));
+  root.querySelectorAll("[data-read]").forEach(b => b.addEventListener("click", async () => {
+    try { await api(`/api/alerts/${b.dataset.read}/read`, { method: "POST" }); await refreshScheduler(); }
+    catch (e) { alert(errText(e)); }
+  }));
+}
+
+function wireActions(root, lookup) {
+  root.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", ev => {
+    ev.stopPropagation();                        // a button on a card must not also open the card
+    const s = lookup(b);
+    if (s) schedAction(b.dataset.act, s);
+  }));
+}
+
+const SCHED_FILTERS = [["all", "All"], ["enabled", "Enabled"], ["disabled", "Disabled"], ["attention", "Needs attention"]];
+function schedMatchesFilter(s, key = schedFilter) {
+  return key === "all" || (key === "enabled" && s.enabled) || (key === "disabled" && !s.enabled) ||
+    (key === "attention" && needsAttention(s));
+}
+
+// One scheduler as a card, in the banner cards' look: the colour says how its latest run went.
+function schedCardHtml(s) {
+  const health = schedHealth(s);
+  const r = s.latest_run;
+  const word = !s.enabled ? "DISABLED" : s.last_status ? s.last_status.toUpperCase() : "WAITING";
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  return `
+    <div class="card sched-card ${health}" data-id="${s.id}" tabindex="0" role="button" title="Open this scheduler's runs">
+      ${s.unread_alerts ? `<div class="corner-tags"><span class="unread-tag" title="Unread alerts">${plural(s.unread_alerts, "alert")}</span></div>` : ""}
+      <div class="body">
+        <div class="badge-row"><span class="name">${escapeHtml(s.name)}</span><span class="result-badge ${health}">${word}</span></div>
+        <p class="alt">Every ${fmtInterval(s.interval_minutes)}${s.start_at ? `, started ${escapeHtml(fmtWhen(s.start_at))}` : ""}</p>
+        <p class="dest">${s.enabled ? (s.next_run_at ? `Next run ${escapeHtml(fmtWhen(s.next_run_at))}` : "Next run: -") : "Disabled - it won't run on its own"}</p>
+        <div class="tags"><span class="tag">l1</span>${tags(s.l1s)}</div>
+        <div class="tags"><span class="tag">l2</span>${tags(s.l2s)}</div>
+        <div class="tags"><span class="tag">state</span>${tags(s.states, 3)}</div>
+        <div class="tags"><span class="tag">pincode</span>${tags(s.pincodes, 3)}</div>
+        <p class="reason">${plural(s.combo_count, "run")} per fire · ${plural(s.run_count, "run")} so far</p>
+        ${r ? `<div class="tally">${tallyHtml(r.counts)}<span class="carousel-label">latest ${escapeHtml(fmtTime(r.started_at))}</span></div>
+               <div>${diffHtml(r.diff)}</div>`
+            : '<p class="reason">Hasn\'t run yet.</p>'}
+        <div class="sv-actions-row">${actionButtons(s).map(b =>
+          `<button class="secondary${b.danger ? " danger" : ""}" data-act="${b.id}">${b.label}</button>`).join("")}</div>
+      </div>
+    </div>`;
+}
+
+// list mode ("show schedulers"): every scheduler as a card - a click drills into that scheduler's runs
+function renderSchedList() {
+  setHead("Schedulers", [{ id: "new", label: "+ New scheduler", cls: "primary inline", onClick: () => openScheduler("form") }]);
+  const body = byId("sv-body");
+  const unread = alertState.unread;
+  const shown = scheds.filter(s => schedMatchesFilter(s));       // (not .filter(fn): that would pass the index as the key)
+  const perDay = Math.round(scheds.filter(s => s.enabled).reduce((n, s) => n + s.combo_count * 1440 / s.interval_minutes, 0));
+  body.innerHTML = `
+    <div class="sv-summary">
+      <span><b>${scheds.length}</b> scheduler${scheds.length === 1 ? "" : "s"}</span>
+      <span><b>${scheds.filter(s => s.enabled).length}</b> enabled</span>
+      <span><b>${scheds.filter(needsAttention).length}</b> need attention</span>
+      <span><b>${scheds.reduce((n, s) => n + s.run_count, 0)}</b> runs so far</span>
+      <span>about <b>${perDay}</b> run${perDay === 1 ? "" : "s"} a day when they all fire</span>
+    </div>
+    <div class="sv-section">
+      <h3>Alerts ${unread ? `<span class="alert-badge">${unread} unread</span>` : ""}
+        <span class="right">
+          <button class="secondary" id="al-readall" ${unread ? "" : "disabled"}>Mark all read</button>
+          <button class="secondary danger" id="al-clear" ${alertState.items.length ? "" : "disabled"}>Clear all</button>
+          <button class="secondary" id="al-test">Send test notification</button>
+        </span></h3>
+      ${alertState.items.length ? alertState.items.slice(0, 8).map(alertHtml).join("")
+        : '<div class="hint">No alerts yet. A scheduler raises one when a run finds something new to fix (see its Alerts setting).</div>'}
+    </div>
+    <div class="sv-section">
+      <h3>Schedulers <span class="right">${SCHED_FILTERS.map(([k, label]) => {
+        const n = scheds.filter(s => schedMatchesFilter(s, k)).length;
+        return `<button class="fchip${schedFilter === k ? " on" : ""}" data-filter="${k}">${label} ${n}</button>`;
+      }).join("")}</span></h3>
+      ${shown.length ? `<div class="sv-cards">${shown.map(schedCardHtml).join("")}</div>`
+        : scheds.length ? '<div class="empty">No scheduler matches this filter.</div>'
+        : '<div class="empty">No schedulers yet - use "+ New scheduler" to make one.</div>'}
+    </div>`;
+  wireAlertButtons(body);
+  wireActions(body, b => scheds.find(s => s.id === Number(b.closest(".sched-card").dataset.id)));
+  body.querySelectorAll("[data-filter]").forEach(b => b.addEventListener("click", () => { schedFilter = b.dataset.filter; renderSchedList(); }));
+  body.querySelectorAll(".sched-card").forEach(card => {
+    const open = () => openScheduler("detail", Number(card.dataset.id));
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", ev => { if (ev.target === card && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); open(); } });
+  });
+  byId("al-readall").addEventListener("click", async () => {
+    try { await api("/api/alerts/read-all", { method: "POST" }); await refreshScheduler(); } catch (e) { alert(errText(e)); }
+  });
+  byId("al-clear").addEventListener("click", async () => {
+    if (!confirm("Remove every alert from every scheduler? This can't be undone.")) return;
+    try { await api("/api/alerts", { method: "DELETE" }); await refreshScheduler(); } catch (e) { alert(errText(e)); }
+  });
+  byId("al-test").addEventListener("click", async () => {
+    try {
+      const r = await api("/api/notify/test", { method: "POST" });
+      await refreshScheduler();
+      alert(r.delivery === "ok" ? "Test notification sent - you should see a Windows notification now."
+        : `The test alert was recorded in-app, but the Windows notification did not show: ${r.delivery}`);
+    } catch (e) { alert(errText(e)); }
+  });
+}
+
+function fmtDuration(secs) {
+  if (secs >= 3600) return `${Math.floor(secs / 3600)}h ${Math.round(secs % 3600 / 60)}m`;
+  return secs >= 60 ? `${Math.round(secs / 60)} min` : `${secs}s`;
+}
+
+// One run as a card, like a banner card: colour = how it went, a click opens its banners
+function runCardHtml(r) {
+  const health = runHealth(r);
+  const total = Object.values(r.counts || {}).reduce((a, b) => a + b, 0);
+  const took = r.finished_at ? fmtDuration(Math.max(0, Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000))) : "";
+  const left = (r.excluded_sections || []).length;
+  return `
+    <div class="card run-card ${health}" data-run="${escapeHtml(r.run_id)}" tabindex="0" role="button" title="Open this run's banners">
+      <div class="body">
+        <div class="badge-row"><span class="carousel-label">${escapeHtml(fmtTime(r.started_at))}</span>
+          <span class="result-badge ${health}">${escapeHtml(r.status.toUpperCase())}</span></div>
+        <p class="alt"><b>${escapeHtml(r.l1)}</b> / <b>${escapeHtml(r.l2)}</b></p>
+        <p class="dest">${escapeHtml(r.state)} · pincode ${escapeHtml(r.pincode)}</p>
+        <div class="tally">${tallyHtml(r.counts) || '<span class="carousel-label">no results yet</span>'}</div>
+        <div>${diffHtml(r.diff)}</div>
+        <div class="tags"><span class="tag">${total} banner${total === 1 ? "" : "s"}</span>${took ? `<span class="tag">took ${took}</span>` : ""}${left ? `<span class="tag">${left} carousel${left === 1 ? "" : "s"} left out</span>` : ""}</div>
+      </div>
+    </div>`;
+}
+
+// Runs come newest first. The ones made by the same fire (one scheduler tick = one run per combination)
+// share a batch_id and are shown together, in the order they ran; runs from before batches existed stand alone.
+function groupRuns(runs) {
+  const groups = [], byKey = new Map();
+  for (const r of runs) {
+    const key = r.batch_id || r.run_id;
+    if (!byKey.has(key)) { const g = { key, runs: [] }; byKey.set(key, g); groups.push(g); }
+    byKey.get(key).runs.push(r);
+  }
+  for (const g of groups) g.runs.sort((a, b) => (a.started_at < b.started_at ? -1 : 1));
+  return groups;
+}
+
+function fireHeadingHtml(g) {
+  const totals = {};
+  for (const r of g.runs) for (const [k, v] of Object.entries(r.counts || {})) totals[k] = (totals[k] || 0) + v;
+  const running = g.runs.filter(r => r.status === "running").length;
+  return `<div class="fire-heading"><b>${escapeHtml(fmtTime(g.runs[0].started_at))}</b>
+    <span class="tally" style="margin:0">${tallyHtml(totals)}</span>
+    <span class="n">${g.runs.length} runs${running ? `, ${running} still going` : ""}</span></div>`;
+}
+
+function runCardsHtml(runs) {
+  let html = "", loose = [];
+  const flush = () => { if (loose.length) { html += `<div class="sv-cards">${loose.join("")}</div>`; loose = []; } };
+  for (const g of groupRuns(runs)) {
+    if (g.runs.length === 1) { loose.push(runCardHtml(g.runs[0])); continue; }
+    flush();
+    html += fireHeadingHtml(g) + `<div class="sv-cards">${g.runs.map(runCardHtml).join("")}</div>`;
+  }
+  flush();
+  return html;
+}
+
+const detailOpen = { settings: false, alerts: false };    // which <details> the user has open, kept across refreshes
+
+// detail mode: one scheduler's runs (a card each), with its settings and alerts folded underneath
+async function renderSchedDetail() {
+  const token = ++renderToken;
+  clearTimeout(detailTimer);
+  let s, runs;
+  try { [s, runs] = await Promise.all([api(`/api/schedules/${sv.id}`), api(`/api/runs?schedule_id=${sv.id}&limit=120`)]); }
+  catch (e) {
+    if (token === renderToken) { sv = { mode: "list", id: null, editing: null }; renderScheduler(); }
+    return;
+  }
+  if (token !== renderToken || sv.mode !== "detail") return;
+  setHead(s.name, [{ id: "back", label: "&larr; All schedulers", onClick: () => openScheduler("list") },
+    ...actionButtons(s).filter(b => b.id !== "view").map(b => ({
+      id: b.id, label: b.label, cls: "secondary" + (b.danger ? " danger" : ""), onClick: () => schedAction(b.id, s) }))]);
+  const body = byId("sv-body"), panel = document.querySelector(".main-panel");
+  const scroll = panel.scrollTop;                      // a live refresh must not throw the reader back to the top
+  body.innerHTML = `
+    <div class="sv-summary">
+      <span>${s.enabled ? "Runs" : "Disabled - would run"} every <b>${fmtInterval(s.interval_minutes)}</b>${s.start_at ? `, started ${escapeHtml(fmtWhen(s.start_at))}` : ""}</span>
+      ${s.enabled ? `<span>Next run <b>${s.next_run_at ? escapeHtml(fmtWhen(s.next_run_at)) : "-"}</b></span>` : ""}
+      <span><b>${s.combo_count}</b> run${s.combo_count === 1 ? "" : "s"} per fire</span>
+      ${s.last_status ? `<span>${statusChip(s.last_status)} ${escapeHtml(s.last_message || "")}</span>` : ""}
+    </div>
+    <div class="tags" style="margin-bottom:14px"><span class="tag">l1</span>${tags(s.l1s, 9)} <span class="tag">l2</span>${tags(s.l2s, 9)}
+      <span class="tag">state</span>${tags(s.states, 9)} <span class="tag">pincode</span>${tags(s.pincodes, 9)}</div>
+    <div class="sv-section">
+      <h3>Runs (${runs.length}) <span class="right"><span class="hint" style="margin:0">Click a run to see its banners</span></span></h3>
+      ${runs.length ? runCardsHtml(runs) : '<div class="hint">This scheduler hasn\'t run yet. It will at its next run time, or use Run now.</div>'}
+    </div>
+    <details class="sv-section" data-key="settings" ${detailOpen.settings ? "open" : ""}><summary>Settings</summary>${kvHtml(schedRows(s))}</details>
+    <details class="sv-section" data-key="alerts" ${detailOpen.alerts ? "open" : ""}><summary>Alerts (${s.alerts.length}${s.unread_alerts ? `, ${s.unread_alerts} unread` : ""})</summary>
+      ${s.alerts.length ? `<div class="sv-actions-row" style="margin:0 0 8px"><button class="secondary danger" id="al-clear-sched">Clear these</button></div>${s.alerts.map(alertHtml).join("")}`
+        : '<div class="hint">No alerts from this scheduler.</div>'}
+    </details>`;
+  panel.scrollTop = scroll;
+  wireAlertButtons(body);
+  const clearSched = byId("al-clear-sched");
+  if (clearSched) clearSched.addEventListener("click", async () => {
+    if (!confirm(`Remove all alerts from "${s.name}"?`)) return;
+    try { await api(`/api/alerts?schedule_id=${s.id}`, { method: "DELETE" }); await refreshScheduler(); } catch (e) { alert(errText(e)); }
+  });
+  body.querySelectorAll("details[data-key]").forEach(d => d.addEventListener("toggle", () => { detailOpen[d.dataset.key] = d.open; }));
+  body.querySelectorAll(".run-card").forEach(card => {
+    const open = () => selectRun(card.dataset.run, s);
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
+  });
+  if (runs.some(r => r.status === "running")) {
+    detailTimer = setTimeout(() => { if (token === renderToken && sv.mode === "detail") renderSchedDetail(); }, 8000);
+  }
+}
+
+// form mode: create a scheduler, or edit an existing one
+function pad2(n) { return String(n).padStart(2, "0"); }
+
+// Start date + time controls: a calendar date (default today) and an hour:minute with AM/PM. The time is
+// this machine's local time; it goes to the server as an absolute instant (see saveSchedForm).
+function fillStart(d) {
+  byId("sf-date").value = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  byId("sf-hh").value = String(d.getHours() % 12 || 12);
+  byId("sf-mm").value = pad2(d.getMinutes());
+  byId("sf-ampm").value = d.getHours() >= 12 ? "PM" : "AM";
+}
+
+// -> { date } or { error }
+function readStart() {
+  const ds = byId("sf-date").value;
+  const hh = parseInt(byId("sf-hh").value, 10), mm = parseInt(byId("sf-mm").value, 10);
+  if (!ds) return { error: "Pick a start date." };
+  if (!(hh >= 1 && hh <= 12)) return { error: "The hour must be 1 to 12." };
+  if (!(mm >= 0 && mm <= 59)) return { error: "The minutes must be 0 to 59." };
+  const [y, m, d] = ds.split("-").map(Number);
+  return { date: new Date(y, m - 1, d, (hh % 12) + (byId("sf-ampm").value === "PM" ? 12 : 0), mm) };
+}
+
+// "First run: ..." under the start controls - the scheduler's own rule: the start time itself if it's still
+// ahead, otherwise the next slot at start + k x interval.
+function updateFirstRun() {
+  const el = byId("sf-first"), st = readStart();
+  const every = parseInt(byId("sf-every").value, 10) * parseInt(byId("sf-unit").value, 10);
+  if (st.error || !(every >= 1)) { el.textContent = ""; return; }
+  const start = st.date.getTime(), now = Date.now(), step = every * 60000;
+  const first = start > now ? start : start + Math.ceil((now - start) / step) * step;
+  el.textContent = `First run: ${fmtWhen(new Date(first).toISOString())}` +
+    (start > now ? "" : " - the start time has passed, so this is the next slot after it, counting every " + fmtInterval(every) + " from the start.");
+}
+
+function renderSchedForm() {
+  const s = sv.editing;
+  const run = currentSettings();                      // a new scheduler starts from the New run form's settings
+  const v = s ? s : { name: "", interval_minutes: 120, l1s: run.l1s, l2s: run.l2s, states: run.states, pincodes: run.pincodes,
+    scope: run.scope, banner_limit: run.banner_limit, workers: run.workers, enabled: 1,
+    notify_mode: "new_fails", notify_toast: true };
+  const { n, unit } = intervalParts(v.interval_minutes);
+  const opts = (list, cur) => list.map(o => `<option value="${escapeHtml(o)}"${o === cur ? " selected" : ""}>${escapeHtml(o)}</option>`).join("");
+  setHead(s ? `Edit "${s.name}"` : "New scheduler", []);
+  const body = byId("sv-body");
+  body.innerHTML = `
+    <div class="form-grid">
+      <div class="full"><label for="sf-name">Name</label><input type="text" id="sf-name" placeholder="e.g. hourly hero check"></div>
+      <div><label for="sf-every">Runs every</label>
+        <div class="row2"><input type="number" id="sf-every" min="1">
+          <select id="sf-unit"><option value="1">minutes</option><option value="60">hours</option><option value="1440">days</option></select></div></div>
+      <div class="full"><label>Start</label>
+        <div class="start-row">
+          <input type="date" id="sf-date" aria-label="Start date">
+          <span class="hint" style="margin:0">at</span>
+          <input type="text" id="sf-hh" inputmode="numeric" maxlength="2" placeholder="hh" aria-label="Start hour (1-12)">
+          <b>:</b>
+          <input type="text" id="sf-mm" inputmode="numeric" maxlength="2" placeholder="mm" aria-label="Start minutes">
+          <select id="sf-ampm" aria-label="AM or PM"><option>AM</option><option>PM</option></select>
+          <button type="button" class="secondary" id="sf-now" title="Set the start to today, right now">Now</button>
+        </div>
+        <div class="hint" id="sf-first"></div></div>
+      <div class="full"><label>l1 segment</label><div id="sf-l1"></div></div>
+      <div class="full"><label>l2 segment</label><div id="sf-l2"></div></div>
+      <div><label>State</label><div id="sf-state"></div></div>
+      <div><label>Pincode</label><div id="sf-pincode"></div></div>
+      <div class="full"><div id="sf-combos"></div></div>
+      <div><label for="sf-scope">Scope</label><select id="sf-scope">${opts(meta.scopes, v.scope)}</select></div>
+      <div><label for="sf-limit">Number of banners</label><input type="number" id="sf-limit" min="1" placeholder="all"></div>
+      <div><label for="sf-workers">Banners at a time</label><input type="number" id="sf-workers" min="1" max="${meta.max_workers}"></div>
+      <div><label for="sf-notify">Alert me on</label><select id="sf-notify">${meta.notify_modes.map(m =>
+        `<option value="${m}"${m === v.notify_mode ? " selected" : ""}>${NOTIFY_LABEL[m] || m}</option>`).join("")}</select></div>
+      <div class="full"><label class="checkline"><input type="checkbox" id="sf-toast"> Also show a Windows notification</label>
+        <div class="hint">"New FAILs only" alerts when a banner is FAIL now and wasn't in the previous run of this scheduler; "Any change" also covers new INCONCLUSIVEs, recoveries, and banners appearing or leaving. The first run, and the first run after editing settings, only set a baseline.</div></div>
+      <div class="full"><label class="checkline"><input type="checkbox" id="sf-enabled"> Enabled (runs on its interval)</label></div>
+      <div class="full"><label>Carousels to leave out</label>
+        <div class="hint">Saved by each carousel's own id, so the exclusion still applies when the feed's order shifts.</div>
+        <div class="sv-actions-row"><button class="secondary" id="sf-load-car">Load carousels…</button></div>
+        <div id="sf-car" style="margin-top:8px"></div></div>
+    </div>
+    <div class="sv-actions-row" style="margin-top:16px">
+      <button class="primary inline" id="sf-save">${s ? "Save changes" : "Create scheduler"}</button>
+      <button class="secondary" id="sf-cancel">Cancel</button>
+      <button class="secondary" id="sf-copy" title="Fill this form from the New run panel, including the carousels unchecked in a loaded preview">Copy from New run</button>
+    </div>`;
+  byId("sf-name").value = v.name;
+  byId("sf-every").value = n;
+  byId("sf-unit").value = unit;
+  fillStart(s && s.start_at ? new Date(s.start_at) : new Date());           // no start saved yet = today, right now
+  ["sf-date", "sf-hh", "sf-mm", "sf-ampm", "sf-every", "sf-unit"].forEach(id => byId(id).addEventListener("input", updateFirstRun));
+  for (const id of ["sf-hh", "sf-mm"]) {                                    // "5" -> "05" once you leave the box
+    byId(id).addEventListener("input", () => { byId(id).value = byId(id).value.replace(/\D/g, ""); });
+    byId(id).addEventListener("blur", () => { if (byId(id).value !== "") byId(id).value = id === "sf-mm" ? pad2(byId(id).value) : String(parseInt(byId(id).value, 10)); });
+  }
+  byId("sf-now").addEventListener("click", () => { fillStart(new Date()); updateFirstRun(); });
+  updateFirstRun();
+  formAxes = makeAxes({ l1: byId("sf-l1"), l2: byId("sf-l2"), state: byId("sf-state"), pincode: byId("sf-pincode"),
+    summary: byId("sf-combos") }, { l1s: v.l1s, l2s: v.l2s, states: v.states, pincodes: v.pincodes });
+  byId("sf-limit").value = v.banner_limit || "";
+  byId("sf-workers").value = v.workers;
+  byId("sf-toast").checked = !!v.notify_toast;
+  byId("sf-enabled").checked = !!v.enabled;
+  renderFormCarousels();
+  byId("sf-load-car").addEventListener("click", loadFormCarousels);
+  byId("sf-save").addEventListener("click", saveSchedForm);
+  byId("sf-cancel").addEventListener("click", () => s ? openScheduler("detail", s.id) : openScheduler("list"));
+  byId("sf-copy").addEventListener("click", copyFromRunForm);
+}
+
+function renderFormCarousels() {
+  const box = byId("sf-car");
+  const inFeed = new Set((formCarousels || []).map(c => c.id));
+  let html = "";
+  if (formCarousels) {
+    html += `<div class="car-list">${formCarousels.map(c => `
+      <label class="car-row"><input type="checkbox" data-sec="${escapeHtml(c.id)}" ${formExcluded.has(c.id) ? "" : "checked"}>
+        ${c.image ? `<img src="${escapeHtml(c.image)}" loading="lazy" alt="">` : ""}
+        <span>${escapeHtml(c.label)}</span><span class="n">${c.count} banner${c.count === 1 ? "" : "s"}</span></label>`).join("")}</div>
+      <div class="hint">Checked carousels are checked by the scheduler; uncheck one to leave it out.</div>`;
+  }
+  const stale = [...formExcluded].filter(([id]) => !inFeed.has(id));
+  if (stale.length) {
+    html += `<div class="hint">${formCarousels ? "Left out, but not in the current feed:" : "Currently left out:"}</div>
+      <div class="chip-list">${stale.map(([id, label]) => `<span class="x-chip">${escapeHtml(label || (id.slice(0, 10) + "…"))}
+        <button data-remove="${escapeHtml(id)}" title="Stop leaving this one out">&times;</button></span>`).join("")}</div>`;
+  } else if (!formCarousels) {
+    html += '<div class="hint">None left out - every carousel in scope is checked.</div>';
+  }
+  box.innerHTML = html;
+  box.querySelectorAll("[data-sec]").forEach(cb => cb.addEventListener("change", () => {
+    const c = formCarousels.find(x => x.id === cb.dataset.sec);
+    if (cb.checked) formExcluded.delete(c.id); else formExcluded.set(c.id, c.label);
+  }));
+  box.querySelectorAll("[data-remove]").forEach(b => b.addEventListener("click", () => {
+    formExcluded.delete(b.dataset.remove);
+    renderFormCarousels();
+  }));
+}
+
+async function loadFormCarousels() {
+  const btn = byId("sf-load-car");
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  try {
+    // one feed can be previewed at a time: the first l1/l2 selected (a carousel is left out by its own id,
+    // so the choice applies to every combination that has the same carousel)
+    const { l1s, l2s } = formAxes.read();
+    const q = `l1=${encodeURIComponent(l1s[0])}&l2=${encodeURIComponent(l2s[0])}&scope=${encodeURIComponent(byId("sf-scope").value)}`;
+    const rows = await api(`/api/feed-preview?${q}`);
+    const groups = new Map();
+    for (const b of rows) {
+      if (!groups.has(b.section_id)) groups.set(b.section_id, { id: b.section_id, count: 0, image: b.image_url,
+        label: b.label || b.alt_text || `Carousel ${b.section_index}` });
+      groups.get(b.section_id).count++;
+    }
+    formCarousels = [...groups.values()];
+    for (const c of formCarousels) if (formExcluded.has(c.id)) formExcluded.set(c.id, c.label);   // refresh a stored name
+    renderFormCarousels();
+  } catch (e) {
+    alert("Could not load carousels: " + errText(e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Load carousels…";
+  }
+}
+
+function copyFromRunForm() {
+  const c = currentSettings();
+  formAxes.set(c);
+  byId("sf-scope").value = c.scope;
+  byId("sf-limit").value = c.banner_limit || "";
+  byId("sf-workers").value = c.workers;
+  if (document.querySelector("#grid .carousel-check")) {          // a carousel preview is loaded: take its unchecked ones
+    formExcluded = new Map();
+    document.querySelectorAll("#grid .carousel-check:not(:checked)").forEach(cb => {
+      const si = parseInt(cb.dataset.sectionIndex, 10);
+      const row = previewRows.find(r => r.section_index === si);
+      if (row) formExcluded.set(row.section_id, row.label || row.alt_text || `Carousel ${si}`);
+    });
+    formCarousels = null;
+    renderFormCarousels();
+  }
+}
+
+async function saveSchedForm() {
+  const every = parseInt(byId("sf-every").value, 10);
+  if (!(every >= 1)) { alert("Enter how often it should run (1 or more)."); return; }
+  const start = readStart();
+  if (start.error) { alert(start.error); return; }
+  const problem = formAxes.problem();
+  if (problem) { alert(problem); return; }
+  if (formAxes.over()) { alert(`That's ${formAxes.count()} runs per fire; the limit is ${meta.max_combos}. Narrow the selection.`); return; }
+  const limit = byId("sf-limit").value;
+  const body = {
+    name: byId("sf-name").value.trim() || "unnamed schedule",
+    interval_minutes: every * parseInt(byId("sf-unit").value, 10),
+    start_at: start.date.toISOString(),
+    ...formAxes.read(),
+    scope: byId("sf-scope").value,
+    banner_limit: limit ? parseInt(limit, 10) : null,
+    workers: Math.max(1, Math.min(meta.max_workers, parseInt(byId("sf-workers").value || "3", 10))),
+    enabled: byId("sf-enabled").checked,
+    notify_mode: byId("sf-notify").value,
+    notify_toast: byId("sf-toast").checked,
+    excluded_sections: [...formExcluded].map(([id, label]) => ({ id, label })),
+  };
+  const editing = sv.editing;
+  try {
+    const saved = await api(editing ? `/api/schedules/${editing.id}` : "/api/schedules",
+      { method: editing ? "PATCH" : "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+    await refreshScheduler();          // still in form mode here, so this only refreshes the sidebar + badge
+    openScheduler("detail", saved.id);
+  } catch (e) { alert("Could not save the scheduler: " + errText(e)); }
+}
+
+byId("sched-open").addEventListener("click", () => openScheduler("list"));
+byId("sched-open").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openScheduler("list"); } });
+byId("sched-expand-btn").addEventListener("click", () => openScheduler("list"));
+byId("sched-make-btn").addEventListener("click", () => openScheduler("form"));
+byId("sv-close").addEventListener("click", closeScheduler);
+
+// ---- boot ----------------------------------------------------------------
+(async function boot() {
+  await loadMeta();
+  await loadRuns();
+  await refreshScheduler();
+  const runs = await api("/api/runs");
+  if (runs.length) selectRun(runs[0].run_id);
+  setInterval(loadRuns, 15000);
+  setInterval(() => refreshScheduler().catch(() => {}), 30000);
+})();
+</script>
+</body>
+</html>

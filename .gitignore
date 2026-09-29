@@ -13,6 +13,9 @@ inputs/additional-apks/
 runs/
 *.log
 analysis/traffic_capture/*.raw
+# mitmproxy captures hold live bearer tokens / API keys, and the phone screenshots show the account's name, email and phone
+analysis/traffic_capture/**/*.flow
+analysis/traffic_capture/screen_*.png
 
 # Exported banner data (generated from a run; regenerate with qa/export_banners.py)
 data/
@@ -25,3 +28,12 @@ data/
 
 # Unrelated third-party skill plugin, not part of this project
 .claude/skills/jev-skill-suggestion/
+
+# Local web UI runtime DB
+web/app.sqlite3
+
+# Cached guest OAuth token (qa/cohort_client.py) - short-lived credential, not ours to commit
+qa/.cache/
+
+# Server log written by scripts/start_server.ps1
+logs/

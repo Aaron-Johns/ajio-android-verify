@@ -13,6 +13,9 @@ import json
 import logging
 import os
 import re
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from qa.envfile import load_env
@@ -21,6 +24,92 @@ from qa.spotcheck.landing import VisionVerdict, brands_overlap
 log = logging.getLogger("qa.spotcheck.vision")
 
 MODEL = "gemma-4-31b-it"
+TIMEOUT_MS = 180_000  # [A] per-HTTP-call cap (files.upload, interactions.create) - the SDK has no
+                      # default, so a stalled connection (e.g. after a 5xx) would otherwise hang the
+                      # calling worker thread forever instead of raising something _analyze()'s own
+                      # retry loop can catch. 180s (not something shorter) because a normal, healthy
+                      # banner check was measured taking 90-115s on average across real runs, with
+                      # legitimate outliers up to ~250s (image analysis + the listing lookup combined) -
+                      # a tighter cap would cut off working-but-slow calls, not just genuine hangs
+                      # (an actual observed hang ran ~960s/16min, so this still catches that easily)
+
+CALLS_PER_MINUTE = 6   # [A] cap on Gemma requests (every try counts), whatever the worker count. Sized to the account's
+                       # 16K tokens/min: a banner call sends ~2,200 input tokens (image ~1,100 + prompt ~1,060), so ~7 calls a
+                       # minute is the ceiling; 6 leaves headroom. Override with GEMMA_CALLS_PER_MINUTE (0 = no limit).
+
+
+class CallPacer:
+    """Spaces Gemma requests at least 60/calls_per_minute seconds apart (+5% margin), across every worker thread of
+    this process, first come first served. More workers than the limit needs don't send faster - the extra ones
+    just wait their turn - so raising the worker count can never push the account over its per-minute limits.
+    Limits are per process: two run processes at once would each pace themselves."""
+
+    def __init__(self, calls_per_minute: float, clock=time.monotonic, sleep=time.sleep):
+        self.interval = 60.0 / calls_per_minute * 1.05 if calls_per_minute and calls_per_minute > 0 else 0.0
+        self._clock, self._sleep = clock, sleep
+        self._lock = threading.Lock()
+        self._next = 0.0
+
+    def acquire(self, on_wait=None) -> float:
+        """Blocks until this request may go out; returns how long it waited (seconds). `on_wait` is called once,
+        before sleeping, only if there is a wait."""
+        if not self.interval:
+            return 0.0
+        with self._lock:
+            now = self._clock()
+            slot = max(now, self._next)
+            self._next = slot + self.interval
+        delay = slot - now
+        if delay > 0.05:
+            if on_wait:
+                on_wait()
+            self._sleep(delay)
+        return delay
+
+
+_pacer: CallPacer | None = None
+_pacer_lock = threading.Lock()
+
+
+def get_pacer() -> CallPacer:
+    """The process-wide pacer, built on first use from GEMMA_CALLS_PER_MINUTE (default CALLS_PER_MINUTE)."""
+    global _pacer
+    with _pacer_lock:
+        if _pacer is None:
+            load_env()
+            try:
+                per_minute = float(os.environ.get("GEMMA_CALLS_PER_MINUTE", CALLS_PER_MINUTE))
+            except ValueError:
+                per_minute = CALLS_PER_MINUTE
+            _pacer = CallPacer(per_minute)
+        return _pacer
+
+
+_local = threading.local()
+
+
+@contextmanager
+def reporting(note):
+    """Lets a request that has to wait its turn say so through `note` (the UI's "Waiting turn" tag) and then put
+    back the step it was on. Yields `note` wrapped to remember the latest step; use the wrapped one."""
+    last = {"text": None}
+
+    def wrapped(text: str) -> None:
+        last["text"] = text
+        note(text)
+    _local.note, _local.last = note, last
+    try:
+        yield wrapped
+    finally:
+        _local.note = _local.last = None
+
+
+def _wait_for_turn() -> None:
+    note, last = getattr(_local, "note", None), getattr(_local, "last", None)
+    waited = get_pacer().acquire(on_wait=(lambda: note("Waiting turn")) if note else None)
+    if waited > 0.05 and note and last and last["text"]:
+        note(last["text"])
+
 
 PROMPT = """
 Analyze this ecommerce fashion banner carefully.
@@ -58,6 +147,13 @@ A brand counts if:
 - its recognizable graphical logo is visible
 
 Graphical logos count even when they contain no readable text.
+
+A banner can promote more than one brand or label at once. If a short name (one or two words) is
+shown in its own distinct, title- or wordmark-like styling - not as part of a marketing sentence -
+list it as a brand even if you suspect it might instead be a collection or product-line name, and
+even if a different, more prominent logo also appears on the same banner. Do not pick only the most
+prominent name and drop the rest - a downstream check reconciles this list against the actual product
+listing, so it is far worse to omit a real brand than to list an extra candidate.
 
 Do NOT classify generic promotional text as brands.
 
@@ -101,7 +197,34 @@ Do not flag:
 
 If no spelling errors are visible, return an empty list.
 
-5. VERIFICATION
+5. TARGET GENDER
+
+Decide who this banner is promoting products for, using explicit text (e.g. "Men's", "Women's",
+"Boys", "Girls", "Infants") and, failing that, the clothing/models shown.
+
+Return exactly one of:
+- "men" (men's/boys' products only - no women's or girls' items shown or implied)
+- "women" (women's/girls' products only - no men's or boys' items shown or implied)
+- "boys" (specifically boys, not men)
+- "girls" (specifically girls, not women)
+- "infants" (babies/toddlers)
+- "men_and_women" (clearly for both men and women together, e.g. a mixed shot, or a brand/store-wide banner)
+- "girls_and_boys" (clearly for both girls and boys together, a kids-wide banner, with no adult men's/women's products)
+- "unclear" (cannot confidently tell, or it does not cleanly fit any category above)
+
+Do not guess a specific category just to avoid "unclear".
+
+6. OPEN-ENDED BRAND LIST
+
+Check whether the banner's own text says there are more brands beyond the ones named - phrases
+like "& more", "and more", "+ more", "many more brands".
+
+Return true if such a phrase is visible on the banner. Return false if the named brand(s) appear
+to be the complete list, or if no brands are mentioned at all.
+
+Do not guess; only return true if the phrase is actually visible.
+
+7. VERIFICATION
 
 If you cannot confidently determine the brand(s), OR you cannot confidently determine
 the deal offered, verification is required.
@@ -127,6 +250,8 @@ Return EXACTLY this structure:
   "spelling_errors": [
     {"word": "", "correction": ""}
   ],
+  "target_gender": "",
+  "more_brands_than_named": false,
   "verification_required": false,
   "verification": ""
 }
@@ -184,7 +309,7 @@ def get_client():
         from google import genai
     except ImportError as exc:
         raise VisionUnavailable(f"google-genai is not installed: {exc}") from exc
-    return genai.Client(api_key=api_key)
+    return genai.Client(api_key=api_key, http_options={"timeout": TIMEOUT_MS})
 
 
 HERO_EXTRA = ("This is a hero promotional banner. List only the brands the banner is PROMOTING: brands in its "
@@ -198,6 +323,7 @@ def analyze_image(image_path: str | Path, client=None, extra: str = "") -> dict:
     prompt = PROMPT + (f"\n\nAdditional instructions:\n{extra}\n" if extra else "")
     client = client or get_client()
     uploaded = None
+    _wait_for_turn()          # before the upload, so a waiting request holds nothing on Google's side
     try:
         uploaded = client.files.upload(file=str(image_path))
         interaction = client.interactions.create(

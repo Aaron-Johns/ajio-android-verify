@@ -555,3 +555,198 @@ Structure of the real theme bearer (values deliberately not recorded here): `bas
 One record per flat banner section (`hybrid-banner`, `floating-widget`) and one per block for carousel sections (`hybrid-dynamic-banner`, `hybrid-swipe-gallery`). `banner_id` is the section `_id` (flat) or `<section _id>:<block index>` (blocks). The block `__renderKey` is **not** unique within a section (observed repeats), so it cannot be used. Block index is unique but shifts if the CMS reorders blocks. Destination is the first non-empty of `redirectURL`, `redirectImageURL`, `cta_redirect_url` (a block can carry both `redirectURL` and `redirectImageURL`, with one empty). Also captured per record: `hotspot_urls`, `schedule` (cron windows from `predicate`) and `user_type`.
 
 Live home feed on 2026-09-21: 93 sections parsed into 373 records (1 floating-widget, 31 hybrid-banner, 118 hybrid-dynamic-banner, 222 hybrid-swipe-gallery, 1 osmos). 65 have an empty destination (47 of them under the labels "DP mz new" and "top mz new UHP", which look like zone/ad-driven slots), 51 have no image, 79 carry a schedule window, 1 destination is `http://` and 1 is relative.
+
+### 6.10 The real source of `user-groups`: a device-keyed cohort-resolution endpoint (2026-09-25)
+
+**`feed_client.py`'s `AJIO_USER_GROUPS` was never something a client legitimately chooses.** Traffic
+capture (`analysis/traffic_capture/recap_20260925/session.flow`) shows the real app resolves its
+`user-groups` header from a dedicated endpoint, keyed only by device identity - not by any
+client-supplied segment name:
+
+```
+GET https://api.services.ajio.com/service/am/runtime/v2/cohort/getUserSegmentAndCohort/device/<device-id>?client_type=Android&client_version=9.38.1
+Headers: accept, client_type, client_version, ad_id, device-id, user-agent,
+         authorization: Bearer <guest JWT - NOT the static theme bearer, see below>
+(no request body, no l1/l2 parameter anywhere)
+
+Response 200:
+{
+  "status": {"statusCode": 0},
+  "userSegmentIdSet": ["13", "19", "10"],
+  "userCohortValue": {
+    "luxe_v1":     {"genesys": {"cohorts": "<l1>"}, "plp": {"cohorts": "<l1>|<l2 flags>"}, "saas": {...}, "wishlist": {...}, "cms": {...}, "subscription": {...}, "pdp": {...}, "cart": {...}},
+    "shein_v1":    { ...same shape... },
+    "gap_v1":      { ...same shape... },
+    "ajiogram_v1": { ...same shape... },
+    "avantra_v1":  { ...same shape... },
+    "rilfnl_v1":   { ...same shape... }   -- this is AJIO's own storefront (matches "rilfnl" in search-edge's own path)
+  }
+}
+```
+
+**Confirmed by direct comparison in the same capture:** the app's very next request (the theme/home
+call) sent `user-groups: l1:nontransacted|l2:p_null,false,unisex,noasp` - **an exact match** for
+this response's `rilfnl_v1.plp.cohorts` (and, in this capture, every other `rilfnl_v1` context too,
+since they were all identical). The app does not construct this value; it relays whatever the
+cohort endpoint told it. (`genesys` is visibly different from the other seven contexts - `cohorts`
+there is l1-only, no `|l2,...` suffix - so it is clearly not the one being echoed, though which of
+the other seven specifically feeds the header couldn't be distinguished here since they matched.)
+
+**Auth: this endpoint needs the guest JWT from §6.3, not the static `AJIO_THEME_BEARER`.** Measured
+in-capture: the cohort call's `authorization` value was 557 chars (matches a JWT) vs. the theme
+call's 55 chars (the static bearer); they are different tokens. Sending the wrong one was not
+re-tested here but §6.8 already showed the reverse (guest JWT on the theme endpoint) returns 401,
+so treat them as strictly endpoint-specific.
+
+**Both calls work standalone, live-tested, no emulator:**
+```python
+guest = requests.post("https://api.services.ajio.com/uaas/jwt/token/client",
+    headers={"client_type": "Android", "accept": "application/json", "client_version": "9.38.1",
+             "user-agent": "Ajio/9.38000.0 (Android 16)", "x-tenant": "B2C"},
+    data={"grantType": "client_credentials", "clientName": "trusted_client", "clientSecret": "secret"}
+).json()["access_token"]   # 200 OK, no x-acf-sensor-data sent at all - see caveat below
+
+cohort = requests.get(f".../cohort/getUserSegmentAndCohort/device/{device_id}",
+    params={"client_type": "Android", "client_version": "9.38.1"},
+    headers={"accept": "application/json", "client_type": "Android", "client_version": "9.38.1",
+             "user-agent": "Ajio/9.38000.0 (Android 16)", "device-id": device_id,
+             "authorization": f"Bearer {guest}"}
+).json()   # 200 OK
+```
+
+**The critical finding: a brand-new, never-before-seen random device-id resolves to
+`nontransacted|p_null,false,unisex,noasp` too** - tested live with a freshly generated UUID that
+had never touched AJIO's backend before. This is the *same* value as the emulator's real,
+long-lived device-id in the same capture. Two independent devices landing on the identical value is
+weak evidence for random per-device bucketing (roughly 1-in-9 odds by chance, if there are ~9
+plausible l1/l2 combinations) and strong evidence that **`nontransacted/unisex` is simply the
+default baseline cohort for any device with no observed history** - not a random draw, and not
+something a client can request a different value for. Reaching `premium` or a specific gender
+cohort almost certainly requires a device-id with genuine accumulated usage/purchase history behind
+it on AJIO's own backend (the kind a real long-used phone would have) - not something obtainable by
+sending a different string in a header, and not something this tool can fabricate.
+
+**Consequences for `qa/feed_client.py` and the web UI's l1/l2 picker:**
+- The picker's premise - "choose a segment, get that segment's content" - does not hold. Every
+  combination this tool has ever sent besides `nontransacted/unisex` was an unvalidated guess that
+  AJIO's backend never assigned to any identity we control.
+- The one reliable, verifiable value is whatever this cohort endpoint actually returns for a given
+  device-id, fetched live rather than hardcoded - see the `qa/cohort_client.py` addition below.
+- A fresh/random device-id (today's default, since `AJIO_DEVICE_ID` isn't pinned in `.env`) will
+  deterministically resolve to the same baseline every time now that this is understood - it was
+  never the source of the day-to-day variation observed on 2026-09-24 vs. 2026-09-25; a stale
+  session/cache on AJIO's edge, or this being the actual variation between "brand-new" and
+  "previously-touched but still generic" device-ids, remains a more likely explanation and is not
+  fully resolved by this capture alone.
+
+**Open/untested:** whether an *arbitrary* `user-groups` value (not sourced from this cohort
+endpoint) is honored, ignored, or silently falls back to a default by the theme/search-edge
+endpoints themselves - this capture only shows what the *real app* sends, not what happens when a
+client sends something the cohort endpoint never issued. `x-acf-sensor-data` was omitted entirely
+(not just stale) on the guest-token call above and it still succeeded - better result than §6.3's
+already-cautious note, but still only one data point; Akamai's server-side risk scoring for a
+sensor-less caller under sustained/repeated polling remains untested.
+
+**Correction/nuance (same day, user-observed):** `nonpremium/men` and `nonpremium/women` reliably
+produce correct, gender-appropriate content, which the framing above understated. Re-reading the
+theme response's own CMS predicate for the "home" page mapping settles why:
+```json
+"user_groups": {"l1": {"includes": ["SUPERVALUESEC","nontransacted","supervaluesec","classic",
+                                     "supervalue","economy","nonpremium","midpremium_control"]}}
+```
+`nonpremium` is *in* that includes list - a real, CMS-recognized l1 token with actual targeted
+content behind it. `premium` is not. So the accurate statement is narrower than "the picker doesn't
+work": **the theme endpoint does honor whatever `user-groups` value a request sends for content
+matching** (confirmed working, not in question) - what it doesn't do is verify that value against
+what the device would actually be assigned by the cohort-resolution endpoint. A combo works if and
+only if it's a real, CMS-recognized token with live content targeting it; `nonpremium` is one such
+token, `premium` apparently is not (or has no active campaign today). An arbitrary guess is not
+guaranteed to be recognized, but a real one - like `nonpremium` - works exactly as sent. The web
+UI's manual l1/l2 override is therefore still legitimately useful and is left as-is (see
+`qa/feed_client.py`'s `_resolve_user_groups`: an explicit `AJIO_USER_GROUPS` still wins verbatim,
+unchanged by this rework) - only the *unset/default* case now uses a live-resolved value instead of
+a guess.
+
+**Update (same day): real-account support added.** A genuine logged-in AJIO account's cohort
+response (user-supplied, from their own account - not this tool's capture) confirmed `premium` is a
+real, live-assigned value - just tied to a real identity with history, not something the anonymous
+guest flow above can ever reach. `qa/cohort_client.py` now supports `AJIO_ACCOUNT_TOKEN` in `.env`:
+when set, it's used as the cohort call's `authorization` bearer instead of bootstrapping a guest
+token, so `resolve_user_groups()` returns that real account's actual assigned segment. A 401 on the
+account token raises rather than silently falling back to the guest flow - failing loudly instead
+of quietly returning guest-tier baseline results while looking like it used the real account. This
+value is the `authorization` bearer from a real logged-in request (captured the same way
+`AJIO_THEME_BEARER` was, e.g. via mitmproxy against a session logged into that real account) - not
+a cookie, and not the cohort response body itself. Deliberately not recorded here; it identifies a
+real person's account.
+
+**Further correction (2026-09-25, user-observed): l1 has no visible effect - only l2 does.**
+Testing different `l1` values against the manual override with `l2` held constant produced no
+observed content difference; varying `l2` (`men`/`women`/etc.) is what actually changes what the
+feed returns. This narrows §6.10's "the theme endpoint honors whatever value is sent" claim further
+still: the CMS predicate excerpt above shows `l1` *is* matched against a real includes-list (so it's
+not ignored at the parsing layer), but in practice today's live home-page campaign content is
+apparently not segmented by `l1` at all on the banners this tool has checked - only by `l2`
+(gender/audience). So for the purpose of testing gender-targeted banners, the `l1` picker is
+currently a no-op in practice even though the token itself is validated/recognized; `l2` is the
+lever that matters. Not yet re-tested against non-home pages or other campaign windows, so this may
+be specific to whatever's currently live rather than a permanent property of the endpoint.
+
+**Observed run log (`premium` flakiness, user-reported):**
+
+| Timestamp (local) | Settings | Mode | Result | Note |
+|---|---|---|---|---|
+| 2026-09-24 18:10:46 | `premium/women` | hero | S16 P21 F27 I31 | correctly showed premium female banners (square shape) |
+| 2026-09-25 09:47:35 | `premium/women` | hero | F1 S2 P14 I3 | showed non-premium content instead - no `AJIO_USER_GROUPS`/device-id change between runs |
+| 2026-09-25 11:28:20 | `premium/men` | hero | S2 | square premium-styled banners again, but both banners were SKIPPED (not a verified gender/brand PASS - a visual read only) |
+
+Three runs, three different outcomes, on a setting (`premium`) that isn't in the theme endpoint's
+own recognized-`l1`-includes list (see the correction above `nonpremium`/`midpremium_control` etc.
+enumerated, `premium` absent). Consistent with the flakiness being about whether *some* live
+campaign happens to key off the literal string `"premium"` today, not with the tool or the cohort
+resolution being unreliable - `nonpremium` runs have not shown this swing.
+
+**Correction to the above (2026-09-25, later same day): `premium` IS recognized - the bare word just
+isn't enough on its own.** A second capture (`recap_20260925/session.flow`, calls with
+`user-groups` starting `l1:premium|...`) shows a **second, separate CMS predicate block** on the
+same "home" page, schedule live through 2027-07-29:
+```json
+"user":{"user_groups":{"l1":{"includes":["premium","premiumsec","PREMIUMSEC","midpremium_test"]},
+                        "l2":{"includes":[]}},"user_type":"user_group"}
+```
+This block matched and returned genuinely different widget content - not a guess, and not flaky.
+The request that triggered it used the *full, real* captured `l2` value (a long list of real
+segment/campaign codes like `CIRCLEPASS_JAN_ACTIVE_TEMP`, `p_high_value`, `beautyonepurchase`,
+`nonadidascontrol`, ...), not the tool's synthetic `l2:p_null,false,<gender>,noasp` shape - so the
+earlier "premium doesn't seem to reliably work" flakiness (table above) may partly be about the `l2`
+value sent alongside it, not just whether `l1:premium` itself is recognized.
+
+**Confirmed, concrete difference (user-supplied domain rule: "if the user is premium, the banner
+should be larger"):** comparing the two responses directly -
+- `l1:nontransacted` (default): banner images are `1024x672` (landscape, ~1.52:1), asset filenames
+  follow `M-UHP-ST-MB-...` (`ST` = standard).
+- `l1:premium` (matched, full real segment string): banner images are `1024x1000` (near-square,
+  ~1.02:1 - visibly taller/larger), asset filenames follow `M-UHP-PR-MB-...` (`PR` = premium).
+
+Same campaigns (matching redirect URLs/discount copy), two differently-sized art sets selected by
+which `user_groups` predicate matched - AJIO literally encodes this in the filename (`ST` vs `PR`),
+not just the pixel dimensions. This is a reliable, code-checkable signal (image aspect ratio, or a
+substring check on the asset filename) for whether a banner came from the premium-targeted set,
+independent of subjectively judging banner content. Prototyped in `qa/asset_set.py` -
+`detect_asset_set()` pulls the `<SET>` code from `...UHP-<SET>-MB-...`; wired into `feed_verify.py`
+as an extra diagnostic column (`asset_set`), not used to gate PASS/FAIL.
+
+**Device-id ruled out as the cause of `premium` flakiness (2026-09-25, tested with `qa/asset_set.py`
+as the detector).** Called `qa.feed_client.fetch_banners()` directly (no emulator) three times back
+to back with `AJIO_USER_GROUPS=l1:premium|l2:p_null,false,women,noasp` held byte-identical every
+time:
+- With a fresh random device-id each call (the tool's normal behavior): `PR`, `ST`, `ST`.
+- With `AJIO_DEVICE_ID` pinned to the same fixed value all three calls: `ST`, `PR`, `ST`.
+
+Pinning the device-id did not stabilize the result - it flipped even with `l1`, `l2`, and device-id
+all identical across calls. **This rules out device-identity as the source of the flakiness in the
+run-log table above.** The variability is per-request, not per-identity - consistent with a live
+percentage-split experiment/rollout on the CMS content itself, or edge/cache variance across AJIO's
+CDN, rather than anything about the cohort resolution, the device-id, or the `user-groups` value
+sent. Practically: there is currently no known way to force a deterministic premium-vs-standard
+result through this endpoint by controlling any header this tool sends.
