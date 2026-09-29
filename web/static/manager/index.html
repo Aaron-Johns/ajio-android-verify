@@ -1115,7 +1115,13 @@ function carouselLabel(b) {
 }
 const trunc = (arr, n = 3) => arr.length > n ? `${arr.slice(0, n).join(", ")}, …` : arr.join(", ");
 // One human sentence for why a banner didn't pass (mirrors the classic UI's wording, minus the jargon)
+// What the reference CSV (config/reference.csv) says about this banner, if it has a row: see qa/reference_check.py.
+const referenceMismatch = b => (b.reference_check && b.reference_check.status === "MISMATCH" ? b.reference_check.reason : "");
 function reasonText(b, short = false) {
+  const base = reasonTextBase(b, short), ref = referenceMismatch(b);
+  return ref && !base.includes(ref) ? (base ? `${base}. ${ref}` : ref) : base;
+}
+function reasonTextBase(b, short = false) {
   if (b.reason === "user_skipped") return "Skipped by you";
   if (b.reason) return short ? b.reason.replace(/extra brands in the listing: \[([^\]]*)\]/g, (m, inner) => { const it = inner.split(",").map(s => s.trim()).filter(Boolean); return it.length > 3 ? `extra brands in the listing: [${it.slice(0, 3).join(", ")}, …]` : m; }) : b.reason;
   const c = b.banner_check || {}, p = [];
@@ -1340,6 +1346,10 @@ function paintSheet() {
           ${row("Audience matches", yn(c.gender_matches), c.gender_matches === false ? "bad" : c.gender_matches === true ? "good" : "")}
           ${row("Missing on page", esc((c.missing_brands || []).join(", ")), "bad")}
           ${row("Extra on page", esc((c.extra_brands || []).join(", ")))}
+          ${b.reference_check ? row("Reference", b.reference_check.status === "MATCH" ? "Matches what the reference says it should lead to"
+            : b.reference_check.status === "MISMATCH" ? esc(b.reference_check.reason || "Doesn't match the reference")
+            : `Couldn't be checked: ${esc((b.reference_check.unchecked || []).join("; "))}`,
+            b.reference_check.status === "MISMATCH" ? "bad" : b.reference_check.status === "MATCH" ? "good" : "") : ""}
           ${b.hidden ? row("Hidden because", esc(hiddenText(b.hidden_reason))) : ""}
         </div>
         ${hs ? `<div class="section-title" style="margin-top:22px">Hotspots in this banner</div>${hs}` : ""}

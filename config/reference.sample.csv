@@ -1,6 +1,7 @@
-# PLACEHOLDER reference rows derived from the live home feed on 2026-09-21 (see PROGRESS.md Phase 4).
-# They restate what the feed itself declared, so they prove the pipeline works but verify nothing real.
-# Replace with real rows from the user. banner_id = section _id, or "<section _id>:<block index>" for carousel blocks.
+# FORMAT EXAMPLE ONLY - not real reference data, and not read by any check (the tool reads config/reference.csv).
+# These 3 rows restate what the live home feed declared on 2026-09-21, so they verify nothing; the banner ids are from that day's feed.
+# To make the real file, run:  python -m qa.reference_template   (it lists the banners of your latest run with the expected_* columns
+# blank for you to fill in - see docs/UI_GUIDE.md, "Reference data"). banner_id = section _id, or "<section _id>:<block index>".
 banner_id,expected_brand,expected_category,expected_deeplink_type,notes
 6a980a6f203fa05428096a91,,,PLP,PLACEHOLDER floating widget NEW30 -> /s/new30-166553
 6a9579bb72d046fc1cba9031,,,PLP,PLACEHOLDER hero banner "rush" -> /s/4hoursdelivery-160865

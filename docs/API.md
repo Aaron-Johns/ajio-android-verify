@@ -229,6 +229,10 @@ every field a UI needs to render a full result lives here. `404` if `run_id` is 
   `Retry queued` (cooldown over, waiting for a free worker), or `Working` when nothing more specific is
   known (a run started before this existed). A banner that has reported any activity counts as
   `PROCESSING` even before its image is on disk. Read from the run folder's `activity.jsonl`.
+- `reference_check` — present only for a banner that has a row with expectations in `config/reference.csv`:
+  `{"status": "MATCH" | "MISMATCH" | "UNCHECKED", "problems": [...], "unchecked": [...], "expected": {...}, "reason": "reference: ..."}`.
+  A `MISMATCH` makes `result` `FAIL` (its `reason` text is in `reference_check.reason`; a banner that already failed keeps its own
+  `reason`). `UNCHECKED` means an expectation couldn't be tested and never changes `result`. See `docs/UI_GUIDE.md`, "Reference data".
 - `retries_exhausted` — `true` once a banner has used all its automatic tries and is still failing on
   a transient-looking error (or the run itself died before it could finish retrying). A `FAIL` banner whose
   hotspot never got checked can be `retries_exhausted` too; it stays `FAIL` and its `hotspot_checks[]` entry for

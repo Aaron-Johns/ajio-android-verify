@@ -1160,7 +1160,20 @@ function truncateExtraBrandsInText(text) {
   });
 }
 
-function explainReason(b, { truncate = false } = {}) {
+// What the reference CSV (config/reference.csv) says about this banner, if it has a row: see qa/reference_check.py.
+function referenceMismatch(b) { const r = b.reference_check; return r && r.status === "MISMATCH" ? r.reason : ""; }
+function referenceText(b) {
+  const r = b.reference_check;
+  if (!r) return "";
+  if (r.status === "MATCH") return "Matches what the reference says it should lead to";
+  if (r.status === "MISMATCH") return escapeHtml(r.reason || "Doesn't match the reference");
+  return `Couldn't be checked against the reference: ${escapeHtml((r.unchecked || []).join("; "))}`;
+}
+function explainReason(b, opts = {}) {
+  const base = explainReasonBase(b, opts), ref = referenceMismatch(b);
+  return ref && !base.includes(ref) ? (base ? `${base}; ${escapeHtml(ref)}` : escapeHtml(ref)) : base;    // the reference text holds brand / title strings: escaped
+}
+function explainReasonBase(b, { truncate = false } = {}) {
   // Mirrors qa/feed_verify.py's format_summary() "why" synthesis, so FAIL/INCONCLUSIVE cards read the
   // same way here as in the CLI's printed summary - banner_check's raw fields aren't a sentence on
   // their own, so build one from whichever conditions actually applied.
@@ -1439,7 +1452,7 @@ function openModal(b) {
   document.getElementById("modal-img").alt = b.alt_text || "";
   const c = b.banner_check || {};
   const rows = [
-    ["Result", processingLabel(b)], ["Reason", explainReason(b)],
+    ["Result", processingLabel(b)], ["Reason", explainReason(b)], ["Reference", referenceText(b)],
     ["Hidden", b.hidden ? hiddenReasonText(b.hidden_reason) : ""],
     ["Carousel / slide", carouselLabel(b)], ["Overall position", b.position],
     ["Destination", linkHtml(b.destination_raw)], ["Listing title", b.listing_title],

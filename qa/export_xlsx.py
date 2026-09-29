@@ -68,7 +68,10 @@ def _load_raw(run_dir: Path) -> list[dict]:
 def _cell(r: dict, col: str):
     c = r.get("banner_check") or {}
     if col == "reason":
-        return r.get("reason") or _fail_reason(r, c)
+        from qa.reference_check import note
+        base = r.get("reason") or _fail_reason(r, c)
+        ref = note(r)
+        return f"{base}; {ref}" if base and ref and ref not in base else (base or ref)
     if col == "hotspot_results":
         from qa.feed_verify import _hotspot_summary
         return " | ".join(_hotspot_summary(h) for h in r.get("hotspot_checks", []))

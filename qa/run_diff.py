@@ -16,11 +16,16 @@ def _short(text: str | None, n: int = _REASON_MAX) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+def _reference_note(result: dict | None) -> str:
+    chk = (result or {}).get("reference_check") or {}
+    return chk.get("reason", "") if chk.get("status") == "MISMATCH" else ""
+
+
 def _entry(banner_id: str, prev: dict | None, cur: dict | None) -> dict:
     src = cur or prev or {}
     return {"banner_id": banner_id, "alt_text": src.get("alt_text") or "", "destination_raw": src.get("destination_raw") or "",
             "image_url": src.get("image_url"), "was": (prev or {}).get("result"), "now": (cur or {}).get("result"),
-            "reason": _short((cur or {}).get("reason"))}
+            "reason": _short((cur or {}).get("reason") or _reference_note(cur))}
 
 
 def diff_runs(previous: dict[str, dict], current: dict[str, dict]) -> dict:

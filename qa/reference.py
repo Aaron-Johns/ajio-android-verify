@@ -33,7 +33,7 @@ def _clean(value: str | None) -> str | None:
 
 
 def load_reference(path: str | Path) -> dict[str, ReferenceRow]:
-    with open(path, "r", encoding="utf-8", newline="") as f:
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:      # a BOM (Excel, qa/reference_template.py) must not hide the first # line
         lines = [line for line in f if line.strip() and not line.lstrip().startswith("#")]
     rows: dict[str, ReferenceRow] = {}
     for record in csv.DictReader(lines):

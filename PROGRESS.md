@@ -1380,3 +1380,48 @@ The checks list is now painted by `paintRuns()` so a date change only repaints t
 throwaway schedulers and 5 temporary runs (all removed; the user's own schedulers untouched): 24/25, the one miss being the
 test's expectation of lowercase for an uppercase heading; 0 console errors.
 
+## Rewrote CLAUDE.md to match the project as built (2026-09-29)
+
+**Ask:** "fix the reference data and claude.md". `CLAUDE.md` was still the day-one build brief: it described a `worker.py`,
+`scheduler.py` and `config/settings.yaml` that were never built, six phases as future work, "open" questions that had long
+been answered, and none of the rules and user decisions made since. Rewritten (180 -> 149 lines) as a standing brief:
+what the tool does and its five statuses; the real layout (qa/, web/, both UIs, scripts, tests); how it runs and when a
+server restart is needed; the limits; the decided behaviour (gender table, hidden banners, retry semantics, UNAVAILABLE,
+colours, logos, token tracking declined, l1:premium variance accepted); the Phase 4 resolver rules kept verbatim in
+substance ([!] resolver untouched, ambiguity fixed at the status layer, 22 aliases, 3 colliding pairs, fixtures against the
+ORIGINAL list); working rules (commit/push only when asked, no Claude co-author line, secrets and captures never committed,
+test data with a ZZ prefix); the open questions with their real answers; and current risks. Every concrete claim was checked
+against the code (env var names, limits, module paths). **Reference data:** section 6 now states the truth - `qa/reference.py`
+and the placeholder CSV feed only the Phase 4 comparison and the optional emulator spot-check, the web tool does not use
+them, real rows were never provided. Whether to go further is the user's call (see the conversation).
+
+## Reference data made real: template + a check wired into every run (2026-09-29)
+
+**Ask:** "fix the reference data and claude.md". The reference data was a stub used only by the Phase 4 URL comparison and the
+emulator spot-check; the web tool ignored it and no real rows existed (only 3 placeholder rows from 2026-09-21). The user chose
+"template + wire it in". Real rows can only come from the user, so this builds the machinery, not the data.
+- `qa/reference_check.py`: judges a banner's own destination against its row on the *listing the link opens* (most banner links
+  are opaque `/s/<campaign>` slugs, so the old URL-text comparison could say nothing about brands): link type (PLP family),
+  all `expected_brand`s in the listing's Brands filter (alias-aware via `AliasMap`), `expected_category` contained in / containing
+  the listing title. Result `MATCH | MISMATCH | UNCHECKED` (+ problems, unchecked, expected, reason). [A] all listed brands are
+  required (the first is only "dominant"); category is a title match because the listing's Category values aren't kept.
+- `qa/feed_verify.py`: `run_feed_verify(reference=)`, `_apply_reference()` after `verify_banner` (so after the cache: an edited
+  expectation applies at once; hidden / user-skipped banners untouched; a retryable transient failure isn't converted). A MISMATCH
+  turns PASS / INCONCLUSIVE / SKIPPED into FAIL; an existing FAIL keeps its reasons. CLI `--reference`, `--no-reference`; default
+  `config/reference.csv` if it exists (web runs and Retry pick it up with no web change). The CLI summary, Excel "Reason" and alert
+  text show the finding; the activity tag can read "Reference check".
+- `qa/reference_template.py` (`python -m qa.reference_template [--run] [--scope] [--out]`): writes `config/reference.csv` from a
+  run (visible banners, blank expectations, read-only context columns), only appends new banners on later runs, never overwrites
+  or edits filled rows. The CSV is written with a BOM for Excel; `qa/reference.py` now reads `utf-8-sig` (a BOM used to hide the first
+  `#` line).
+- UI: classic (reason text, popup "Reference" row) and manager (card reason, sheet "Reference" row); reference text is escaped.
+- `config/reference.sample.csv` relabelled a format example. `CLAUDE.md` section 6 rewritten to match; README, UI_GUIDE ("Reference
+  data") and API.md (`reference_check` field) updated.
+**Tests:** 624 pass (24 new: every rule, alias, category, link type, no-link, unchecked cases, loading incl. a broken/BOM file, inside a
+run incl. cache and hidden banners, Excel/alert text, the template's create / top-up / never-touch-filled-rows / no-context-columns /
+latest-run logic). **Live:** the template command on a scratch copy of a real run (74 rows), then three real one-banner checks
+(CLI, `--only-banner --no-cache --reference`) with a wrong brand (MISMATCH), the right brand (MATCH) and a wrong link type
+(MISMATCH); the UIs' rendering exercised in headless Edge on fake banner objects (9/9, escaped, 0 console errors).
+**Not verified live:** a PASS -> FAIL conversion (that banner already failed on its own; covered by unit tests); the web UI showing a
+real reference finding end to end (needs a `config/reference.csv` with real rows; none was created in the repo).
+

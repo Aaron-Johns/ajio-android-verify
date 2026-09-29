@@ -88,6 +88,10 @@ headline, the banners that need a look, checks, schedules and alerts). Switch wi
 view** button in the original's header, or **Classic view** at the bottom of the manager's sidebar. A run started
 in one shows up in the other.
 
+Optionally you can tell the tool what each banner is *supposed* to lead to: `python -m qa.reference_template` writes a fill-in
+`config/reference.csv` from your latest run, and every later check compares the banners you filled in against it (see
+"Reference data" in `docs/UI_GUIDE.md`).
+
 That's enough to get a result. For everything else — what each status actually means, the carousel
 picker, Skip/Retry, scheduling, the cache, and a list of things worth knowing before you trust what
 it tells you — see **[`docs/UI_GUIDE.md`](docs/UI_GUIDE.md)**.

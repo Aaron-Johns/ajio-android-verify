@@ -358,6 +358,41 @@ gets adjusted) and you want old verdicts recomputed under the new rules rather t
   picker when you know upfront you don't care about a whole section; reach for Skip when you're
   already watching a run and spot one specific banner you don't need checked.
 
+## Reference data (optional): what each banner is *supposed* to lead to
+
+The normal check asks "does the banner's artwork match the page its link opens?". **Reference data** adds a second,
+independent question: "is that the page a human says this banner should open?". It is a small CSV you fill in for the
+banners you care about; banners without a row are checked exactly as before.
+
+1. **Create the file.** Run `.venv\Scripts\python.exe -m qa.reference_template` (add `--run runs\<folder>` for a specific run,
+   `--scope all` for every banner instead of the hero carousels). It writes `config/reference.csv` from your newest finished
+   run: one row per visible banner, with `expected_deeplink_type`, `expected_brand`, `expected_category` and `notes` blank,
+   followed by read-only context (carousel label, alt text, the banner's link and what type it is, what the artwork says, the
+   listing's title, the tool's own verdict) to help you decide what to write. Run it again after a new feed pull and it only
+   **adds** rows for banners it hasn't seen; rows you have filled in are never touched, and it never overwrites the file.
+2. **Fill in what you know.** Blank means "no opinion". A row with all three expectation columns blank is ignored.
+   - `expected_deeplink_type`: `PLP`, `CATEGORY`, `BRAND`, `CAMPAIGN` or `EXTERNAL`. `PLP` accepts any listing page (`/s/`, `/c/`, brand pages).
+   - `expected_brand`: one brand, or several separated by `|` (`Nike|Adidas`). **Every** brand named must appear in the listing's
+     Brands filter; spelling variants count as the same brand (LEVI'S = LEVIS).
+   - `expected_category`: for example `Clearance Store`. The listing's own title has to contain it, or be contained in it (case and
+     punctuation ignored).
+3. **Nothing to switch on.** Every check (web UI, schedules, per-banner Retry) reads `config/reference.csv` when it exists and
+   has at least one expectation. `python -m qa.feed_verify --reference some.csv` uses another file, `--no-reference` ignores it.
+
+**How it is judged.** Against the listing the link really opens (fetched from AJIO's listing API), not against the link's text,
+because most banner links are opaque campaign names. A **mismatch makes the banner FAIL**, even if its artwork and page agree
+with each other; a banner that already FAILs keeps its own reasons and gets the reference finding next to them ("...; reference:
+expected brand not on the listing: Puma"). The finding is in the card's reason, in a **Reference** row of the banner's detail
+popup / sheet, in the Excel "Reason" column and in scheduler alert text. Things that can't be tested (the listing didn't load, the
+link isn't a listing page, the listing has no brand list) are recorded as *couldn't be checked* and are neither a pass nor a
+failure; a listing that didn't load is retried as usual. The check runs after the saved-results cache, so editing the CSV takes
+effect on the very next check, and a hidden or skipped banner is never judged. Only the banner's own link is compared, not its
+hotspots.
+
+**Limits.** Saved rows are matched by banner id (the feed's section `_id`, or `<_id>:<slide number>`), so a carousel slide that
+moves position loses its row; and no real expectations exist until you write them: `config/reference.sample.csv` is a format
+example, not data.
+
 ## The manager view (`/manager/`)
 
 A second face for the same tool, built for someone who wants to know *is the feed OK, what needs a look, when is the

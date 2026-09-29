@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from qa import asset_set, listing_client as lc
+from qa import asset_set, listing_client as lc, reference_check
 from qa.banner_cache import BannerCache, dhash
 from qa.compare import AliasMap
 from qa.export_banners import fetch_image
@@ -180,6 +180,35 @@ def _verify_image(image_path: Path, destination_raw: str | None, analyzer: Calla
     return {"result": check["result"], "reason": "", "listing_kind": kind, "slug": slug, "listing_title": listing.title,
             "total_results": listing.total_results, "brands_in_filter": len(listing.brands), "banner_check": check,
             **({"listing_store": store} if store else {})}
+
+
+def _apply_reference(result: dict, banner: Banner, row, listings: "ListingCache", aliases: AliasMap) -> dict:
+    """Judge the banner against its reference row (qa/reference_check.py) and record the outcome as `reference_check`.
+    A MISMATCH is a concrete finding: a banner that would have PASSed (or was INCONCLUSIVE/SKIPPED) becomes FAIL, and one
+    that already FAILs keeps its own reasons - the reference finding is shown next to them. Runs after (and independently
+    of) the cross-run cache, so an edited expectation applies to the very next check. A banner that was never checked
+    (hidden, user-skipped) is left alone."""
+    if row is None or (result["result"] == "SKIPPED" and (result.get("reason", "").startswith("hidden") or result.get("reason") == "user_skipped")):
+        return result
+    target = lc.listing_target(banner.destination_raw)
+
+    def get_listing():
+        kind, slug = target
+        return listings.get(kind, slug, lc.listing_store(banner.destination_raw))
+
+    try:
+        chk = reference_check.check(row, banner.destination_raw, get_listing, aliases)
+    except Exception as exc:                        # a broken row must never lose the banner's own result
+        log.warning("reference check for %s failed: %s: %s", banner.banner_id, type(exc).__name__, exc)
+        return result
+    if chk is None:
+        return result
+    result = {**result, "reference_check": chk}
+    if chk["status"] == reference_check.MISMATCH and result["result"] != "FAIL":
+        # a transient error on the banner's own check is still retried first: it may not be checkable yet
+        if not is_retryable(result):
+            result = {**result, "result": "FAIL", "reason": chk["reason"] if not result.get("reason") else f"{result['reason']}; {chk['reason']}"}
+    return result
 
 
 def _crop_hotspot(image_path: Path, banner: Banner, hs, out_dir: Path, index: int) -> Path | None:
@@ -502,7 +531,8 @@ def run_feed_verify(banners: list[Banner], out_dir: Path, analyzer: Callable | N
                     on_activity: Callable[..., None] | None = None,
                     cache: BannerCache | bool | None = True, only: set[str] | None = None,
                     excluded_carousels: set[int] | None = None,
-                    excluded_sections: set[str] | None = None) -> list[dict]:
+                    excluded_sections: set[str] | None = None,
+                    reference: dict | None = None) -> list[dict]:
     """Verify every chosen banner; ones that fail on a temporary error go straight back in the queue and are
     retried by the next free worker (after `retry_pause` seconds), ahead of banners not yet tried.
 
@@ -527,6 +557,9 @@ def run_feed_verify(banners: list[Banner], out_dir: Path, analyzer: Callable | N
     `excluded_sections` (CMS section _id set): the same opt-out, keyed on the section's stable _id instead
     of this pull's positional section_index - what a saved schedule uses, since the index shifts whenever
     the feed gains or loses a section (see section_id).
+
+    `reference` (banner_id -> qa.reference.ReferenceRow): the human's expectation of what a banner should lead to. Each
+    banner with a row is also judged against it (qa/reference_check.py); a mismatch makes it FAIL.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     aliases = aliases or AliasMap.from_file()
@@ -555,6 +588,9 @@ def run_feed_verify(banners: list[Banner], out_dir: Path, analyzer: Callable | N
                                   prior=prior)
             if skip_requested(out_dir, b.banner_id):
                 r = _result(_banner_base(b), "SKIPPED", "user_skipped")
+            elif reference:
+                note("Reference check")
+                r = _apply_reference(r, b, reference.get(b.banner_id), listings, aliases)
         attempts[b.banner_id] = r["attempts"] = attempts.get(b.banner_id, 0) + 1
         if retries_so_far and not is_retryable(r):
             r["recovered_in_retry_round"] = retries_so_far
@@ -677,6 +713,9 @@ def format_summary(results: list[dict]) -> str:
             f"banner's gender reading {c.get('banner_gender')!r} isn't a recognized audience"
             if c.get("gender_matches") == "INCONCLUSIVE" else "",
             f"listing has extra brands not named on the banner: {_truncated(c['extra_brands'])}" if c.get("extra_brands") else ""]))
+        ref = reference_check.note(r)             # what the reference CSV says, beside whichever reasons the banner already has
+        if ref and ref not in why:
+            why = f"{why}; {ref}" if why else ref
         lines.append(f"{shown_result(r):12} {r.get('alt_text', '')[:38]!r:40} {r.get('destination_raw')} | {why}")
     return "\n".join(lines)
 
@@ -701,6 +740,10 @@ def main() -> None:
                     help="verify every banner fresh, ignoring qa/.cache/banner_image_cache.json - a repeat banner "
                          "(same image, same link) normally reuses its earlier vision+listing verdict instead of "
                          "redoing it (see qa/banner_cache.py)")
+    ap.add_argument("--reference", type=Path, metavar="CSV",
+                    help="reference CSV of what banners should lead to (qa/reference.py); default config/reference.csv when it "
+                         "exists. Every banner with a row is also judged against it - see qa/reference_check.py")
+    ap.add_argument("--no-reference", action="store_true", help="ignore the reference CSV for this run")
     ap.add_argument("--only-banner", action="append", metavar="BANNER_ID",
                     help="requires --resume-from: redo just this banner_id (repeatable) instead of every banner "
                         "that's missing or temporarily failed - every other banner's saved result is left as-is")
@@ -750,8 +793,11 @@ def main() -> None:
         out_dir.mkdir(parents=True, exist_ok=True)
         save_banners(out_dir, banners)
         previous = None
+    reference, ref_path = ({}, None) if args.no_reference else reference_check.load_default(args.reference)
+    if ref_path:
+        print(f"reference: {len(reference)} banner rows with expectations from {ref_path}")
     started = time.time()
-    results = run_feed_verify(banners, out_dir, workers=args.workers, limit=args.limit, scope=args.scope,
+    results = run_feed_verify(banners, out_dir, workers=args.workers, reference=reference or None, limit=args.limit, scope=args.scope,
                               retry_rounds=args.retry_rounds, retry_pause=args.retry_pause, previous=previous,
                               on_result=PartialLog(out_dir / "partial.jsonl"),
                               on_activity=ActivityLog(out_dir / "activity.jsonl"), cache=not args.no_cache,
