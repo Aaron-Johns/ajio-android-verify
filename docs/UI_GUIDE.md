@@ -9,7 +9,10 @@ in the first place, see the main `README.md`.
 > same API and the same data, so a run started in one shows up in the other, and the original is never replaced.
 
 The page has two halves: a **left sidebar** (start/schedule runs, recent run history) and a **main
-panel** on the right (the currently selected run's banner grid).
+panel** on the right. When you open the page the main panel shows **every run as a card to choose from** (blue =
+finished, purple = running, red = the run itself crashed, grey = cancelled; its PASS/FAIL tally is on the card) instead of opening the last run's banners; click a card, or a run under
+*Recent runs*, to see its banners. **&larr; All runs** at the top of the panel brings the list back, and it also
+returns after you remove the run you were viewing.
 
 ## Starting a run
 
@@ -196,9 +199,9 @@ block in the left sidebar has three things:
 
 Everything opens *inside the main window* and drills down the same way the rest of the app does:
 
-1. **All schedulers** ("Expand"). Every scheduler is a card in the banner cards' colour scheme — green
-   if its latest run had no FAILs, amber if it only had INCONCLUSIVEs, red if it had FAILs (or the
-   last run failed), purple while a run is going, grey if disabled. Each card shows its interval,
+1. **All schedulers** ("Expand"). Every scheduler is a card in the banner cards' colour scheme — blue
+   once its latest run has finished (the tally on the card says how it went), red if the last run
+   itself failed to run, purple while a run is going, grey if disabled. Each card shows its interval,
    start, next run, its l1/l2/state/pincode selections, how many runs it makes per fire and so far,
    the latest run's PASS/FAIL tally and what changed since the run before, plus
    **View / Edit / Run now / Disable / Delete**. Above the cards: a

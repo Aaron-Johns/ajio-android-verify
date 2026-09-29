@@ -1223,3 +1223,35 @@ test alerts, which were left alone).
 - README gained a paragraph on the two interfaces; `docs/UI_GUIDE.md`, `docs/API.md` and this file mention the
   manager view.
 
+## Changed: the classic UI opens on a list of runs, not on the last run's banners
+
+**Ask (2026-09-29):** on load the classic page showed the last run's banner list; replace it with a list of runs to
+choose from.
+
+`web/static/index.html` only (no restart): boot no longer calls `selectRun(runs[0])`. `showRunPicker()` fills the
+main panel with the same run cards the scheduler's runs page uses (refreshed with the 15 s run-list poll), the
+title reads "Choose a run to see its banners", and the banner filters / Excel / Cancel stay hidden. Opening a run
+(from a card, Recent runs, an alert or a scheduler) shows a **&larr; All runs** button that returns to the list;
+removing the open run (the x in Recent runs) also returns to it. The manager view is unchanged (it never
+auto-opened a run).
+Verified in headless Edge: 28 run cards and no banner cards on load, open, back, and a sidebar pick; 0 console
+errors. Not committed.
+
+## Changed: finished runs are blue (classic UI)
+
+**Ask (2026-09-29):** finished runs showed red (when they had FAILs); make them the blue of the main buttons.
+`runHealth()` in `web/static/index.html` now returns `DONE` for any finished run, styled with new `--done-*`
+variables (light: #3b5bdb family; dark: #7c9eff family). Red is now only for a run that itself failed to run;
+running stays purple, cancelled grey. This also colours a scheduler's card by its latest run (blue when finished,
+red when the last run failed to run) - it no longer turns green / amber / red with the banner tally, which is on
+the card as before. The small `done` chip in *Recent runs* is unchanged (still green). The manager view is unchanged.
+
+## Added: logos for both UIs
+
+**Ask (2026-09-29):** manager view = a white A in a black square with a white border; classic = the exact opposite.
+Manager: the sidebar mark (`.brand-mark`) is now black with a 2 px white border, white A (it was a purple gradient
+tile), and the same mark is its tab icon. Classic: a new `.logo-mark` left of the title - black A on white with a
+2 px black border - and the same as its tab icon (it had none, which is what caused the `/favicon.ico` 404).
+The two tab icons are inline SVG data URIs, so no extra files. Checked in headless Edge, light and dark; 0 console
+errors. Not committed.
+
