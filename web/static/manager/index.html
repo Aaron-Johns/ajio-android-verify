@@ -458,6 +458,7 @@
   .car-row img { width: 64px; height: 36px; object-fit: cover; border-radius: 6px; background: var(--surface-3); }
   .car-row input { accent-color: var(--brand); width: 16px; height: 16px; }
   .car-row .n { margin-left: auto; color: var(--ink-3); white-space: nowrap; }
+  .cp-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 13px; }
 
   /* ---------- drawers / sheets / dialogs ---------- */
   .scrim { position: fixed; inset: 0; background: rgba(9,12,22,.55); backdrop-filter: blur(2px); z-index: 80; opacity: 0; pointer-events: none; transition: opacity .18s; }
@@ -852,6 +853,8 @@ function makeCarouselPicker(root, getFeed, initialExcluded) {
     const inFeed = new Set((loaded || []).map(c => c.id));
     let html = "";
     if (loaded) {
+      html += `<div class="cp-bar"><span class="muted">${plural(loaded.length, "carousel")}</span>
+        <span><button type="button" class="btn sm" data-cp="all">Select all</button> <button type="button" class="btn sm" data-cp="none">Deselect all</button></span></div>`;
       html += `<div class="car-list">${loaded.map(c => `<label class="car-row"><input type="checkbox" data-sec="${esc(c.id)}" ${excluded.has(c.id) ? "" : "checked"}>
         ${c.image ? `<img src="${esc(c.image)}" loading="lazy" alt="">` : ""}<span>${esc(c.label)}</span><span class="n">${plural(c.count, "banner")}</span></label>`).join("")}</div>
         <div class="hint">Ticked carousels are checked; untick one to leave it out.</div>`;
@@ -866,6 +869,10 @@ function makeCarouselPicker(root, getFeed, initialExcluded) {
       if (cb.checked) excluded.delete(c.id); else excluded.set(c.id, c.label);
     }));
     $$("[data-remove]", root).forEach(b => b.addEventListener("click", () => { excluded.delete(b.dataset.remove); paint(); }));
+    $$("[data-cp]", root).forEach(b => b.addEventListener("click", () => {
+      for (const c of loaded) { if (b.dataset.cp === "all") excluded.delete(c.id); else excluded.set(c.id, c.label); }
+      paint();
+    }));
   }
   root.innerHTML = `<button type="button" class="btn sm cp-load">${ico("layers", "sm")} Choose carousels…</button><div class="cp-body" style="margin-top:10px"></div>`;
   $(".cp-load", root).addEventListener("click", async ev => {
@@ -885,7 +892,8 @@ function makeCarouselPicker(root, getFeed, initialExcluded) {
     finally { btn.disabled = false; }
   });
   paint();
-  return { excluded: () => [...excluded].map(([id, label]) => ({ id, label })), ids: () => [...excluded.keys()], set(m) { excluded = new Map(m); if (loaded) paint(); else paint(); } };
+  return { excluded: () => [...excluded].map(([id, label]) => ({ id, label })), ids: () => [...excluded.keys()],
+    allLeftOut: () => !!(loaded && loaded.length && loaded.every(c => excluded.has(c.id))), set(m) { excluded = new Map(m); if (loaded) paint(); else paint(); } };
 }
 
 // ============================================================================================
@@ -1392,6 +1400,7 @@ function openDrawer() {
   byId("dr-sched").onclick = () => { pendingSchedDraft = { ...settings(), excluded: drawerCars.excluded() }; closeDrawer(); location.hash = "#/schedules/new"; };
   byId("dr-run").onclick = async ev => {
     const problem = drawerAxes.problem(); if (problem) return toast(problem, true);
+    if (drawerCars.allLeftOut()) return toast("Every carousel is unticked, so there would be nothing to check. Tick at least one.", true);
     const btn = ev.currentTarget; btn.disabled = true;
     try {
       const { run_id, combos, queued } = await api("/api/runs", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(settings()) });
@@ -1622,6 +1631,7 @@ async function viewSchedForm(route, view, stale) {
     if (!(every >= 1)) return toast("Enter how often it should run (1 or more).", true);
     const start = readStart(); if (start.error) return toast(start.error, true);
     const problem = axes.problem(); if (problem) return toast(problem, true);
+    if (cars.allLeftOut()) return toast("Every carousel is left out, so this schedule would have nothing to check. Tick at least one.", true);
     if (axes.over()) return toast(`That's ${axes.count()} checks each time; the limit is ${meta.max_combos}. Please narrow it down.`, true);
     const limit = byId("sf-limit").value;
     const body = { name: byId("sf-name").value.trim() || "Unnamed schedule", interval_minutes: every * parseInt(byId("sf-unit").value, 10), start_at: start.date.toISOString(),

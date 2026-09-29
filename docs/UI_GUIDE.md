@@ -83,6 +83,11 @@ unchecking one hides its banners from view immediately and, if you then click Ru
 entire carousel from the run (no image download, no vision call, no listing fetch for anything in it —
 not even a placeholder in the results).
 
+A bar above the carousels has **Select all** and **Deselect all**, so to check just a few you can untick everything
+in one click and tick the ones you want. The same two buttons are on the carousel list in the scheduler form (and in
+the manager view's New check drawer and schedule form). Run now, Start check and Save all refuse when every carousel is
+unticked, since that would be a run with nothing in it.
+
 **When this is worth using:** you know a particular carousel is noisy, irrelevant to what you're
 checking today, or you just want to keep a run fast by narrowing scope without hand-picking individual
 banners. **What it's not:** a way to preview verdicts — nothing in the preview has been checked yet,
@@ -216,6 +221,11 @@ A **scheduler** is a saved set of run settings that fires on its own every so of
 something *changed* since its last run, and keeps every run it makes in one place. The **Scheduler**
 block in the left sidebar has three things:
 
+- **A search box** beside the "Scheduler" heading filters the list as you type. Every word you type has to appear
+  somewhere in the scheduler's name, its l1 / l2, state, pincode, interval (`2h`, `1d`), last result (`done`,
+  `failed`...) or `enabled` / `disabled`, in any order and ignoring case - so `premium assam` finds the schedulers
+  that cover both. Esc clears it; the filter survives the list's automatic refresh. It only filters the sidebar list
+  (the expanded page has its own All / Enabled / Disabled / Needs attention chips).
 - **Make scheduler** — opens the create form in the main window.
 - **A scrolling list** of your schedulers. Click one (or its **View**) to open its runs; **Delete**
   removes it (its past runs and alerts are kept). A green dot means enabled. A count of unread alerts
@@ -240,6 +250,16 @@ Everything opens *inside the main window* and drills down the same way the rest 
    Runs made by the same fire are grouped under one heading with a combined tally. The page refreshes
    itself every few seconds while a run is still going. **Settings** and **Alerts** are folded
    underneath.
+   - **Date range.** Above the runs, **From** and **to** date pickers show only the runs that *started*
+     between those two calendar days, both days included (this PC's local time). Fill in one or both: a single
+     "From" means "from then on", a single "to" means "up to then", the same date twice means that one day,
+     and dates entered the wrong way round are swapped rather than showing nothing. The heading shows how many
+     of the runs are in view ("3 of 5"), **Clear dates** brings them all back, and the range is kept while the
+     page refreshes itself. It looks at the latest 120 runs of the scheduler (the page says so when it hits that).
+   - **Download Excel** sits at the bottom of every *completed* run's card (status done - not a cancelled or
+     failed one, which have no card button; open those and use the normal button). It downloads that run's
+     spreadsheet without opening the run; the ordinary Download Excel on a run's own page also opens its folder,
+     this one only downloads.
 3. **A run's banners** (click a run card). The normal listing page, exactly as for any run — with a
    **← scheduler name** button above it to go back to that scheduler's runs. (Any run a scheduler made
    shows that button, wherever you opened it from, including Recent runs.)

@@ -1235,7 +1235,7 @@ title reads "Choose a run to see its banners", and the banner filters / Excel / 
 removing the open run (the x in Recent runs) also returns to it. The manager view is unchanged (it never
 auto-opened a run).
 Verified in headless Edge: 28 run cards and no banner cards on load, open, back, and a sidebar pick; 0 console
-errors. Not committed.
+errors.
 
 ## Changed: finished runs are blue (classic UI)
 
@@ -1253,7 +1253,7 @@ Manager: the sidebar mark (`.brand-mark`) is now black with a 2 px white border,
 tile), and the same mark is its tab icon. Classic: a new `.logo-mark` left of the title - black A on white with a
 2 px black border - and the same as its tab icon (it had none, which is what caused the `/favicon.ico` 404).
 The two tab icons are inline SVG data URIs, so no extra files. Checked in headless Edge, light and dark; 0 console
-errors. Not committed.
+errors.
 
 ## Added: UNAVAILABLE status, retry of AJIO's flaky 400, Gemma pacing shared across runs
 
@@ -1289,7 +1289,7 @@ the clock *before* waiting for the lock, so a contended lock could let two proce
 **Tests:** 584 pass (new: shown_result cases, run view / summary / diff / export handling, 400 retry + give-up +
 other-400, shared pacer with two pacers, corrupt file, unusable folder, far-future booking, 3 real processes).
 **Live:** server restarted (the running check was adopted, untouched); both UIs checked in headless Edge on the
-real run above (9/9), 0 console errors. Not committed.
+real run above (9/9), 0 console errors.
 
 ## Changed: Retry on FAIL / INCONCLUSIVE too, always without the cache; hotspots get UNAVAILABLE + retry
 
@@ -1320,4 +1320,45 @@ the web button launches: attempts 1 -> 2, not from the cache, results.json untou
 overlay. Both UIs checked in headless Edge on a real finished run: Retry on 24/24 FAIL and 26/26 INCONCLUSIVE cards,
 none on PASS, popup/sheet buttons present, 0 console errors. Server restarted. **Not done live:** clicking the button
 in the UI on a real run (it would change your run history); the per-hotspot Gemma-500 case is covered by tests only.
+
+## Added: Select all / Deselect all for the carousel pickers
+
+**Ask (2026-09-29):** deselect every carousel in one go in the load-carousels section.
+Classic: a bar above the "Load carousels" panel's headings (it fires each heading's own change handler, so the banners
+hide / show as before) and the same two buttons on the scheduler form's carousel list. Manager: the same in its
+carousel picker (used by the New check drawer and the schedule form). Because unticking everything would make an empty
+run, Run now / Start check / saving a scheduler now refuse in that case with a message (only when a carousel list has
+been loaded; not loading one still means "everything"). Verified in headless Edge on the live feed (9 carousels): all
+three places, the refusals, and that no run or scheduler was created (runs 30 -> 30); 0 console errors.
+
+## Added: search box for the scheduler list (classic sidebar)
+
+**Ask (2026-09-29):** a text box beside the Scheduler heading that filters the existing scheduler list as you type.
+`web/static/index.html`: a rounded input in the panel's heading row (`#sched-search`); `schedMatchesQuery()` needs every
+word typed to appear in name / l1 / l2 / state / pincode / interval (`fmtInterval`, e.g. `1d`) / last status /
+enabled|disabled, case-insensitive; a "No scheduler matches ..." line when nothing does; Esc clears; the query lives
+in `schedQuery`, so the 30 s refresh (which re-renders the list) keeps it. Only the sidebar list is filtered - the
+expanded page keeps its own filter chips, and the manager view (not asked) has none. Verified in headless Edge with 4
+throwaway disabled schedulers (all deleted afterwards): name, state, pincode, two-word AND, interval, status word,
+no-match, Esc, refresh; 11/12 checks, the one miss was my test not expecting the user's own "TEst" scheduler
+(also on pincode 560029) to match. 0 console errors.
+
+## Added: date-range filter and per-run Excel button on a scheduler's runs page (classic)
+
+**Ask (2026-09-29):** on a scheduler's details, another filter - runs from date 1 to date 2 - and a Download Excel
+button under every completed run.
+`web/static/index.html`: `From` / `to` date inputs above the run cards (`detailRange`, kept per scheduler, so the 8 s
+live refresh, which rebuilds the page, keeps it; the refresh waits while a date box has focus). `runInRange()`
+compares `started_at` with local-day boundaries (both days inclusive; one-sided ranges allowed; reversed dates are
+swapped). Only `#sd-runs-body` is repainted on a change, so typing in a date field never loses focus; the heading shows
+"(n of total)" and a Clear dates button appears while a range is set. `runCardHtml(r, {excel: true})` adds a
+**Download Excel** button to cards with status `done` (link to `/api/runs/<id>/export.xlsx`, no `open-folder` call,
+click doesn't open the run). The card's Enter/Space handler now only fires for the card itself (it used to also swallow
+a keyboard press on a button inside it). Only the latest 120 runs are loaded (a note appears when that limit is hit).
+**Decisions [A]:** "completed" = status done (cancelled/failed runs get no button); the range filters runs by start
+time, not banners; the manager view was not touched (not asked).
+Verified in headless Edge with 5 temporary runs on 5 dates (1 cancelled) attached to a throwaway scheduler, all removed
+afterwards: full list, 4 buttons (none on the cancelled one), 12-20 Sep -> 3, one-sided both ways, a single day, reversed
+dates, an empty range, survives re-render, a real click saved a 1.4 MB .xlsx and stayed on the page, Clear dates; 12/13
+(the one miss was the test's expectation of lowercase text). 0 console errors.
 

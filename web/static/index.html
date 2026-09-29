@@ -124,6 +124,9 @@
   .sched-item .actions { display: flex; gap: 6px; flex-wrap: wrap; }
   /* Scheduler: the sidebar block, and the in-page sub-window that takes over the main panel */
   .sched-title { cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  .sched-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .sched-head h2 { margin: 0; white-space: nowrap; }
+  #sched-search { flex: 1 1 0; min-width: 0; max-width: 150px; width: auto; padding: 4px 9px; border-radius: 999px; font-size: 12px; }
   .sched-title:hover { color: var(--text); }
   .alert-badge {
     background: var(--fail-border); color: #fff; border-radius: 999px; font-size: 10px; font-weight: 700;
@@ -141,6 +144,9 @@
   .sv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
   .sv-title { font-size: 16px; font-weight: 600; margin-right: auto; }
   .sv-section { margin-bottom: 20px; }
+  .range-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; font-size: 12px; color: var(--text-dim); }
+  .range-row input[type=date] { width: 150px; }
+  .range-row label { margin: 0; }
   .sv-section h3 {
     font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim);
     margin: 0 0 8px; display: flex; align-items: center; gap: 8px;
@@ -261,6 +267,8 @@
   .carousel-heading:first-child { margin-top: 0; }
   .carousel-heading label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .carousel-heading .count { color: var(--text-dim); font-weight: 400; margin-left: auto; }
+  .carousel-bar { display: flex; align-items: center; gap: 8px; }
+  .carousel-bar-btns { margin-left: auto; display: flex; gap: 6px; }
   .carousel-heading.unchecked { opacity: .5; }
   .preview-card .body { padding: 8px; gap: 4px; display: flex; flex-direction: column; }
   .card.PASS { border-color: var(--pass-border); background: var(--pass-bg); }
@@ -463,9 +471,13 @@
     </div>
 
     <div class="panel" id="scheduler-panel">
-      <h2 class="sched-title" id="sched-open" role="button" tabindex="0" title="Open the scheduler in the main window">
-        Scheduler <span class="alert-badge" id="sched-alert-badge" style="display:none"></span>
-      </h2>
+      <div class="sched-head">
+        <h2 class="sched-title" id="sched-open" role="button" tabindex="0" title="Open the scheduler in the main window">
+          Scheduler <span class="alert-badge" id="sched-alert-badge" style="display:none"></span>
+        </h2>
+        <input type="text" id="sched-search" placeholder="Search…" autocomplete="off" spellcheck="false"
+               aria-label="Search schedulers" title="Filter the list by name, l1/l2, state, pincode or status">
+      </div>
       <button class="primary" id="sched-make-btn">Make scheduler</button>
       <div class="sched-scroll" id="sched-list"><div class="empty">None yet</div></div>
       <button class="primary" id="sched-expand-btn">Expand</button>
@@ -882,6 +894,18 @@ async function loadCarouselPreview() {
       groups.get(b.section_index).items.push(b);
     }
     const frag = document.createDocumentFragment();
+    const bar = document.createElement("div");
+    bar.className = "carousel-heading carousel-bar";
+    bar.innerHTML = `<strong>${groups.size} carousel${groups.size === 1 ? "" : "s"}</strong>
+      <span class="carousel-bar-btns"><button type="button" class="secondary" data-all="1">Select all</button>
+      <button type="button" class="secondary" data-all="0">Deselect all</button></span>`;
+    bar.querySelectorAll("[data-all]").forEach(b => b.addEventListener("click", () => {
+      grid.querySelectorAll(".carousel-check").forEach(cb => {
+        const want = b.dataset.all === "1";
+        if (cb.checked !== want) { cb.checked = want; cb.dispatchEvent(new Event("change")); }    // the heading's own handler hides / shows its banners
+      });
+    }));
+    frag.appendChild(bar);
     for (const si of [...groups.keys()].sort((a, c) => a - c)) {
       const { label, items } = groups.get(si);
       const heading = document.createElement("div");
@@ -934,6 +958,8 @@ document.getElementById("run-btn").addEventListener("click", async () => {
   const btn = document.getElementById("run-btn");
   const problem = runAxes.problem();
   if (problem) { flash(problem); return; }
+  const boxes = document.querySelectorAll("#grid .carousel-check");
+  if (boxes.length && ![...boxes].some(cb => cb.checked)) { flash("Every carousel is unticked, so there would be nothing to check. Tick at least one."); return; }
   btn.disabled = true;
   try {
     const { run_id, combos, queued } = await api("/api/runs", {
@@ -1565,11 +1591,27 @@ function updateAlertBadge() {
   b.title = `${alertState.unread} unread alert${alertState.unread === 1 ? "" : "s"}`;
 }
 
+// Search box beside the "Scheduler" heading: every word typed has to appear somewhere in the scheduler's name, l1 / l2,
+// state, pincode, interval ("2h"), last result or enabled / disabled. Case doesn't matter, order doesn't matter.
+let schedQuery = "";
+function schedSearchText(s) {
+  return [s.name, ...s.l1s, ...s.l2s, ...s.states, ...s.pincodes, fmtInterval(s.interval_minutes), s.last_status || "",
+    s.enabled ? "enabled" : "disabled"].join(" ").toLowerCase();
+}
+function schedMatchesQuery(s, query = schedQuery) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const text = schedSearchText(s);
+  return words.every(w => text.includes(w));
+}
+
 function renderSidebarSchedules() {
   const el = byId("sched-list");
   if (!scheds.length) { el.innerHTML = '<div class="empty">None yet</div>'; return; }
+  const shown = scheds.filter(s => schedMatchesQuery(s));       // (not .filter(fn): that would pass the index as `query`)
+  if (!shown.length) { el.innerHTML = `<div class="empty">No scheduler matches &ldquo;${escapeHtml(schedQuery.trim())}&rdquo;</div>`; return; }
   el.innerHTML = "";
-  for (const s of scheds) {
+  for (const s of shown) {
     const div = document.createElement("div");
     div.className = "sched-item";
     div.innerHTML = `
@@ -1790,7 +1832,7 @@ function fmtDuration(secs) {
 }
 
 // One run as a card, like a banner card: colour = how it went, a click opens its banners
-function runCardHtml(r) {
+function runCardHtml(r, opts = {}) {
   const health = runHealth(r);
   const total = Object.values(r.counts || {}).reduce((a, b) => a + b, 0);
   const took = r.finished_at ? fmtDuration(Math.max(0, Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000))) : "";
@@ -1805,6 +1847,7 @@ function runCardHtml(r) {
         <div class="tally">${tallyHtml(r.counts) || '<span class="carousel-label">no results yet</span>'}</div>
         <div>${diffHtml(r.diff)}</div>
         <div class="tags"><span class="tag">${total} banner${total === 1 ? "" : "s"}</span>${took ? `<span class="tag">took ${took}</span>` : ""}${left ? `<span class="tag">${left} carousel${left === 1 ? "" : "s"} left out</span>` : ""}</div>
+        ${opts.excel && r.status === "done" ? `<div class="sv-actions-row"><button type="button" class="secondary" data-xlsx="${escapeHtml(r.run_id)}" title="Download this run's results as an Excel file">Download Excel</button></div>` : ""}
       </div>
     </div>`;
 }
@@ -1831,13 +1874,14 @@ function fireHeadingHtml(g) {
     <span class="n">${g.runs.length} runs${running ? `, ${running} still going` : ""}</span></div>`;
 }
 
-function runCardsHtml(runs) {
+function runCardsHtml(runs, opts = {}) {
+  const card = r => runCardHtml(r, opts);
   let html = "", loose = [];
   const flush = () => { if (loose.length) { html += `<div class="sv-cards">${loose.join("")}</div>`; loose = []; } };
   for (const g of groupRuns(runs)) {
-    if (g.runs.length === 1) { loose.push(runCardHtml(g.runs[0])); continue; }
+    if (g.runs.length === 1) { loose.push(card(g.runs[0])); continue; }
     flush();
-    html += fireHeadingHtml(g) + `<div class="sv-cards">${g.runs.map(runCardHtml).join("")}</div>`;
+    html += fireHeadingHtml(g) + `<div class="sv-cards">${g.runs.map(card).join("")}</div>`;
   }
   flush();
   return html;
@@ -1845,17 +1889,55 @@ function runCardsHtml(runs) {
 
 const detailOpen = { settings: false, alerts: false };    // which <details> the user has open, kept across refreshes
 
+// The runs page's date filter: only runs that started between two calendar dates (both days included, this machine's
+// local time). Kept per scheduler so the page's live refresh (and coming back to it) doesn't lose it.
+let detailRange = { id: null, from: "", to: "" };
+function runInRange(r, from, to) {
+  if (from && to && from > to) [from, to] = [to, from];               // "2026-09-20" > "2026-09-05" compares fine as text
+  if (!from && !to) return true;
+  const t = new Date(r.started_at).getTime();
+  return t >= (from ? new Date(from + "T00:00:00").getTime() : -Infinity) && t <= (to ? new Date(to + "T23:59:59.999").getTime() : Infinity);
+}
+const RUNS_LOADED = 120;
+
+// Paints the run cards for the current range into #sd-runs-body (the date inputs above stay put, keeping their focus).
+function paintDetailRuns(s, allRuns) {
+  const { from, to } = detailRange, filtering = !!(from || to);
+  const shown = allRuns.filter(r => runInRange(r, from, to));
+  byId("sd-count").textContent = filtering ? `(${shown.length} of ${allRuns.length})` : `(${allRuns.length})`;
+  byId("sd-clear-range").style.display = filtering ? "" : "none";
+  byId("sd-runs-body").innerHTML = !allRuns.length ? '<div class="hint">This scheduler hasn\'t run yet. It will at its next run time, or use Run now.</div>'
+    : !shown.length ? '<div class="empty">No runs started in this date range.</div>'
+    : runCardsHtml(shown, { excel: true }) + (allRuns.length >= RUNS_LOADED ? `<div class="hint">Only the latest ${RUNS_LOADED} runs are loaded.</div>` : "");
+  const box = byId("sd-runs-body");
+  box.querySelectorAll(".run-card").forEach(card => {
+    const open = () => selectRun(card.dataset.run, s);
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", ev => { if (ev.target === card && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); open(); } });
+  });
+  box.querySelectorAll("[data-xlsx]").forEach(b => b.addEventListener("click", ev => {
+    ev.stopPropagation();                                              // the button is on a card that opens the run
+    const a = document.createElement("a");
+    a.href = `/api/runs/${encodeURIComponent(b.dataset.xlsx)}/export.xlsx`;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }));
+}
+
 // detail mode: one scheduler's runs (a card each), with its settings and alerts folded underneath
 async function renderSchedDetail() {
   const token = ++renderToken;
   clearTimeout(detailTimer);
   let s, runs;
-  try { [s, runs] = await Promise.all([api(`/api/schedules/${sv.id}`), api(`/api/runs?schedule_id=${sv.id}&limit=120`)]); }
+  try { [s, runs] = await Promise.all([api(`/api/schedules/${sv.id}`), api(`/api/runs?schedule_id=${sv.id}&limit=${RUNS_LOADED}`)]); }
   catch (e) {
     if (token === renderToken) { sv = { mode: "list", id: null, editing: null }; renderScheduler(); }
     return;
   }
   if (token !== renderToken || sv.mode !== "detail") return;
+  if (detailRange.id !== sv.id) detailRange = { id: sv.id, from: "", to: "" };          // a different scheduler: start unfiltered
   setHead(s.name, [{ id: "back", label: "&larr; All schedulers", onClick: () => openScheduler("list") },
     ...actionButtons(s).filter(b => b.id !== "view").map(b => ({
       id: b.id, label: b.label, cls: "secondary" + (b.danger ? " danger" : ""), onClick: () => schedAction(b.id, s) }))]);
@@ -1871,8 +1953,13 @@ async function renderSchedDetail() {
     <div class="tags" style="margin-bottom:14px"><span class="tag">l1</span>${tags(s.l1s, 9)} <span class="tag">l2</span>${tags(s.l2s, 9)}
       <span class="tag">state</span>${tags(s.states, 9)} <span class="tag">pincode</span>${tags(s.pincodes, 9)}</div>
     <div class="sv-section">
-      <h3>Runs (${runs.length}) <span class="right"><span class="hint" style="margin:0">Click a run to see its banners</span></span></h3>
-      ${runs.length ? runCardsHtml(runs) : '<div class="hint">This scheduler hasn\'t run yet. It will at its next run time, or use Run now.</div>'}
+      <h3>Runs <span id="sd-count"></span> <span class="right"><span class="hint" style="margin:0">Click a run to see its banners</span></span></h3>
+      <div class="range-row" id="sd-range">
+        <label for="sd-from">From</label><input type="date" id="sd-from" value="${escapeHtml(detailRange.from)}" aria-label="Show runs from this date">
+        <label for="sd-to">to</label><input type="date" id="sd-to" value="${escapeHtml(detailRange.to)}" aria-label="Show runs up to this date">
+        <button type="button" class="secondary" id="sd-clear-range" style="display:none">Clear dates</button>
+      </div>
+      <div id="sd-runs-body"></div>
     </div>
     <details class="sv-section" data-key="settings" ${detailOpen.settings ? "open" : ""}><summary>Settings</summary>${kvHtml(schedRows(s))}</details>
     <details class="sv-section" data-key="alerts" ${detailOpen.alerts ? "open" : ""}><summary>Alerts (${s.alerts.length}${s.unread_alerts ? `, ${s.unread_alerts} unread` : ""})</summary>
@@ -1887,13 +1974,24 @@ async function renderSchedDetail() {
     try { await api(`/api/alerts?schedule_id=${s.id}`, { method: "DELETE" }); await refreshScheduler(); } catch (e) { alert(errText(e)); }
   });
   body.querySelectorAll("details[data-key]").forEach(d => d.addEventListener("toggle", () => { detailOpen[d.dataset.key] = d.open; }));
-  body.querySelectorAll(".run-card").forEach(card => {
-    const open = () => selectRun(card.dataset.run, s);
-    card.addEventListener("click", open);
-    card.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
-  });
+  const fromEl = byId("sd-from"), toEl = byId("sd-to");
+  const onRange = () => {
+    detailRange = { id: s.id, from: fromEl.value, to: toEl.value };
+    fromEl.max = toEl.value || ""; toEl.min = fromEl.value || "";                 // the pickers steer away from an upside-down range
+    paintDetailRuns(s, runs);
+  };
+  fromEl.addEventListener("input", onRange);
+  toEl.addEventListener("input", onRange);
+  byId("sd-clear-range").addEventListener("click", () => { fromEl.value = ""; toEl.value = ""; onRange(); });
+  onRange();
   if (runs.some(r => r.status === "running")) {
-    detailTimer = setTimeout(() => { if (token === renderToken && sv.mode === "detail") renderSchedDetail(); }, 8000);
+    const again = () => {
+      if (token !== renderToken || sv.mode !== "detail") return;
+      // don't rebuild the page under someone who is in the middle of picking a date
+      if (document.activeElement && document.activeElement.closest && document.activeElement.closest("#sd-range")) { detailTimer = setTimeout(again, 4000); return; }
+      renderSchedDetail();
+    };
+    detailTimer = setTimeout(again, 8000);
   }
 }
 
@@ -2011,6 +2109,8 @@ function renderFormCarousels() {
   const inFeed = new Set((formCarousels || []).map(c => c.id));
   let html = "";
   if (formCarousels) {
+    html += `<div class="sv-actions-row" style="margin:0 0 6px"><button type="button" class="secondary" id="sf-car-all">Select all</button>
+      <button type="button" class="secondary" id="sf-car-none">Deselect all</button></div>`;
     html += `<div class="car-list">${formCarousels.map(c => `
       <label class="car-row"><input type="checkbox" data-sec="${escapeHtml(c.id)}" ${formExcluded.has(c.id) ? "" : "checked"}>
         ${c.image ? `<img src="${escapeHtml(c.image)}" loading="lazy" alt="">` : ""}
@@ -2030,6 +2130,9 @@ function renderFormCarousels() {
     const c = formCarousels.find(x => x.id === cb.dataset.sec);
     if (cb.checked) formExcluded.delete(c.id); else formExcluded.set(c.id, c.label);
   }));
+  const setAll = on => { for (const c of formCarousels) { if (on) formExcluded.delete(c.id); else formExcluded.set(c.id, c.label); } renderFormCarousels(); };
+  if (byId("sf-car-all")) byId("sf-car-all").addEventListener("click", () => setAll(true));
+  if (byId("sf-car-none")) byId("sf-car-none").addEventListener("click", () => setAll(false));
   box.querySelectorAll("[data-remove]").forEach(b => b.addEventListener("click", () => {
     formExcluded.delete(b.dataset.remove);
     renderFormCarousels();
@@ -2088,6 +2191,9 @@ async function saveSchedForm() {
   if (start.error) { alert(start.error); return; }
   const problem = formAxes.problem();
   if (problem) { alert(problem); return; }
+  if (formCarousels && formCarousels.length && formCarousels.every(c => formExcluded.has(c.id))) {
+    alert("Every carousel is left out, so this scheduler would have nothing to check. Tick at least one."); return;
+  }
   if (formAxes.over()) { alert(`That's ${formAxes.count()} runs per fire; the limit is ${meta.max_combos}. Narrow the selection.`); return; }
   const limit = byId("sf-limit").value;
   const body = {
@@ -2112,6 +2218,10 @@ async function saveSchedForm() {
   } catch (e) { alert("Could not save the scheduler: " + errText(e)); }
 }
 
+byId("sched-search").addEventListener("input", e => { schedQuery = e.target.value; renderSidebarSchedules(); });
+byId("sched-search").addEventListener("keydown", e => {
+  if (e.key === "Escape" && e.target.value) { e.target.value = ""; schedQuery = ""; renderSidebarSchedules(); }
+});
 byId("sched-open").addEventListener("click", () => openScheduler("list"));
 byId("sched-open").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openScheduler("list"); } });
 byId("sched-expand-btn").addEventListener("click", () => openScheduler("list"));
