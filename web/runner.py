@@ -428,7 +428,8 @@ def retry_banner(run_id: str, banner_id: str) -> bool:
         _retrying.add(key)
     out_dir = row["out_dir"]
     env = {**os.environ, "AJIO_PINCODE": row["pincode"]}
-    cmd = [sys.executable, "-m", "qa.feed_verify", "--resume-from", out_dir, "--only-banner", banner_id, "--workers", "1"]
+    # --no-cache: a retry is "look at this banner again", so it never reuses an earlier verdict for the same artwork + link
+    cmd = [sys.executable, "-m", "qa.feed_verify", "--resume-from", out_dir, "--only-banner", banner_id, "--workers", "1", "--no-cache"]
     proc = subprocess.Popen(cmd, cwd=REPO_ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     threading.Thread(target=_watch_retry, args=(key, proc), daemon=True).start()
     return True
@@ -489,7 +490,7 @@ def unrequest_skip(run_id: str, banner_id: str) -> None:
 # ---- reading a run's output (pure reads; safe to do in-process) ---------------------------
 
 from qa.feed_verify import (RETRY_ROUNDS, UNAVAILABLE, _safe, exclude_banners, is_retryable, load_activity,  # noqa: E402
-                            load_banners, select_banners, shown_result)
+                            load_banners, load_final_results, select_banners, shown_hotspot_result, shown_result)
 
 # 1 initial attempt + RETRY_ROUNDS retries - matches every web-triggered run exactly, since start_run()
 # never passes --retry-rounds (always the qa/feed_verify.py CLI default). A banner still INCONCLUSIVE
@@ -532,23 +533,8 @@ def load_shown_results(out_dir: Path, is_live: bool = False) -> dict[str, dict]:
 
 
 def load_results(out_dir: Path) -> dict[str, dict]:
-    """banner_id -> latest known result, from results.json once finished, else partial.jsonl."""
-    results_file = out_dir / "results.json"
-    if results_file.exists():
-        return {r["banner_id"]: r for r in json.loads(results_file.read_text(encoding="utf-8"))}
-    partial = out_dir / "partial.jsonl"
-    latest: dict[str, dict] = {}
-    if partial.exists():
-        for line in partial.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                r = json.loads(line)
-            except ValueError:
-                continue
-            latest[r["banner_id"]] = r
-    return latest
+    """banner_id -> latest known result: results.json once finished (plus any later per-banner retry), else partial.jsonl."""
+    return load_final_results(out_dir)
 
 
 def run_view(out_dir: Path, scope: str, banner_limit: int | None, is_live: bool = True,
@@ -605,11 +591,23 @@ def run_view(out_dir: Path, scope: str, banner_limit: int | None, is_live: bool 
             else:
                 exhausted = is_retryable(r) and (attempts >= MAX_TRIES or not is_live)
                 note = f"gave up after {attempts} tries" if attempts >= MAX_TRIES else "run stopped before this banner finished retrying"
-                reason = f"{note}: {r['reason']}" if exhausted and r.get("reason") else (note if exhausted else r.get("reason", ""))
+                if exhausted and r["result"] == "INCONCLUSIVE":
+                    reason = f"{note}: {r['reason']}" if r.get("reason") else note
+                elif exhausted:          # a FAIL (a real finding) whose hotspot(s) never got checked: keep the finding, add the caveat
+                    n = sum(1 for h in r.get("hotspot_checks", []) if shown_hotspot_result(h) == UNAVAILABLE)
+                    caveat = f"{n} hotspot{'s' if n != 1 else ''} couldn't be checked ({note})"
+                    reason = f"{r['reason']}; {caveat}" if r.get("reason") else caveat
+                else:
+                    reason = r.get("reason", "")
                 r = {**r, "try_number": attempts, "max_tries": MAX_TRIES, "retries_exhausted": exhausted, "reason": reason,
-                     **({"result": UNAVAILABLE} if exhausted else {})}
+                     **({"result": UNAVAILABLE} if exhausted and r["result"] == "INCONCLUSIVE" else {})}
+                if r.get("hotspot_checks"):      # each hotspot's own status: a temporary error on one link is UNAVAILABLE, not a finding
+                    r["hotspot_checks"] = [{**h, "result": shown_hotspot_result(h)} for h in r["hotspot_checks"]]
         if r["result"] == "PROCESSING":
             r = {**r, "activity": current_activity(activity.get(b.banner_id))}
+        # Retry is offered on a FAIL / INCONCLUSIVE / UNAVAILABLE banner. While the run is still going only when its automatic
+        # tries are spent: a retry writes next to the live run, whose own final write would otherwise overwrite it.
+        r = {**r, "can_retry": r["result"] in ("FAIL", "INCONCLUSIVE", UNAVAILABLE) and (bool(r.get("retries_exhausted")) or not is_live)}
         # always overlaid from banners.json (not just when missing) so this shows up even for
         # results saved by an older run, from before feed_verify.py started including it itself
         total_links = (1 if b.destination_raw else 0) + len(b.hotspots)

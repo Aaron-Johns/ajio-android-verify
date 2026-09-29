@@ -245,9 +245,13 @@ def skip_requested(out_dir: Path, banner_id: str) -> bool:
 
 def verify_banner(banner: Banner, out_dir: Path, analyzer: Callable, listings: ListingCache, aliases: AliasMap,
                   image_fetcher: Callable = fetch_image, cache: BannerCache | None = None, run_id: str = "",
-                  note: Callable[[str], None] = lambda text: None) -> dict:
+                  note: Callable[[str], None] = lambda text: None, prior: dict | None = None) -> dict:
     """`note(text)` is told, in one or two words, what this banner is doing as it moves through the steps - the
-    web UI shows it live on the card (see ActivityLog)."""
+    web UI shows it live on the card (see ActivityLog).
+
+    `prior` (the previous try's result for this banner): on a retry, every hotspot that was checked properly last time
+    is kept as it is - only a hotspot that hit a temporary error is redone, so a 6-link banner with one glitched link
+    costs one vision call, not six."""
     base = _banner_base(banner)
     if banner.hidden:
         return _result(base, "SKIPPED", f"hidden: {banner.hidden_reason}" if banner.hidden_reason else "hidden")
@@ -306,8 +310,11 @@ def verify_banner(banner: Banner, out_dir: Path, analyzer: Callable, listings: L
         # its own crop; only the brand/deal stay specific to that hotspot's own cropped area. Reuse
         # own_check's already-computed reading when there is one, rather than paying for a second
         # vision call on the same full image.
+        kept = {c["hotspot_index"]: c for c in (prior or {}).get("hotspot_checks", [])
+                if "hotspot_index" in c and not _is_transient_check(c)}
+        redo = [i for i, hs in enumerate(banner.hotspots) if kept.get(i, {}).get("url") != hs.url]
         main_gender = None
-        if banner.hotspots:
+        if redo:                     # the main image's audience reading is only needed for a hotspot that gets (re)checked
             if own_check and own_check.get("banner_check"):
                 main_gender = own_check["banner_check"].get("banner_gender")
             else:
@@ -319,6 +326,9 @@ def verify_banner(banner: Banner, out_dir: Path, analyzer: Callable, listings: L
 
         hotspot_checks = []
         for i, hs in enumerate(banner.hotspots):
+            if i not in redo:
+                hotspot_checks.append(copy.deepcopy(kept[i]))
+                continue
             crop = _crop_hotspot(image, banner, hs, out_dir, i)
             if crop is None:
                 hotspot_checks.append({"hotspot_index": i, "url": hs.url,
@@ -368,11 +378,14 @@ def is_retryable(result: dict) -> bool:
     is worth trying again. Checks the combined reason text and, separately, every hotspot's own reason -
     with multiple hotspots the top-level reason only surfaces the ones matching the overall result, so a
     transient failure on a hotspot that didn't end up "winning" the aggregation could otherwise be missed."""
+    hotspots_transient = any(_is_transient_check(h) for h in result.get("hotspot_checks", []))
+    if result["result"] == "FAIL":
+        # A finding stays a finding, but if one of its hotspots never got checked (Gemma 5xx, network) the banner is
+        # not fully verified: worth another try, which redoes only that hotspot (see verify_banner's `prior`).
+        return hotspots_transient
     if result["result"] != "INCONCLUSIVE":
         return False
-    if any(t in result.get("reason", "") for t in _TRANSIENT):
-        return True
-    return any(any(t in h.get("reason", "") for t in _TRANSIENT) for h in result.get("hotspot_checks", []))
+    return any(t in result.get("reason", "") for t in _TRANSIENT) or hotspots_transient
 
 
 UNAVAILABLE = "UNAVAILABLE"    # shown status: AJIO / Google / the network didn't answer - says nothing about the banner
@@ -385,7 +398,15 @@ def shown_result(result: dict, live: bool = False, max_tries: int = RETRY_ROUNDS
     Retry instead. While a live run still has tries left for it, it's PROCESSING. Everything else is its own result."""
     if not is_retryable(result):
         return result["result"]
-    return "PROCESSING" if live and result.get("attempts", 1) < max_tries else UNAVAILABLE
+    if live and result.get("attempts", 1) < max_tries:
+        return "PROCESSING"
+    return UNAVAILABLE if result["result"] == "INCONCLUSIVE" else result["result"]     # a FAIL with an unchecked hotspot is still a FAIL
+
+
+def shown_hotspot_result(check: dict) -> str:
+    """The same idea for one hotspot's own check: INCONCLUSIVE because AJIO / Google / the network didn't answer is
+    UNAVAILABLE (not a finding about that link)."""
+    return UNAVAILABLE if check.get("result") == "INCONCLUSIVE" and _is_transient_check(check) else check.get("result")
 
 
 class PartialLog:
@@ -440,6 +461,24 @@ def load_partial(out_dir: Path) -> dict[str, dict]:
                 continue
             latest[r["banner_id"]] = r
     return latest
+
+
+def load_final_results(out_dir: Path) -> dict[str, dict]:
+    """banner_id -> the latest known result of a run folder: results.json once the run finished (its order kept), with any
+    later try from partial.jsonl laid over it. A per-banner Retry only appends to partial.jsonl - it must never rewrite a
+    finished run's results.json (the parent may still be alive) - so without this overlay a retry on a finished run would
+    be invisible. `attempts` only ever goes up, so "more attempts" means "newer"."""
+    final: dict[str, dict] = {}
+    results_file = out_dir / "results.json"
+    if results_file.exists():
+        final = {r["banner_id"]: r for r in json.loads(results_file.read_text(encoding="utf-8"))}
+    for bid, r in load_partial(out_dir).items():
+        if bid not in final:
+            if not results_file.exists():
+                final[bid] = r
+        elif r.get("attempts", 1) > final[bid].get("attempts", 1):
+            final[bid] = r
+    return final
 
 
 def save_banners(out_dir: Path, banners: list[Banner]) -> None:
@@ -502,7 +541,7 @@ def run_feed_verify(banners: list[Banner], out_dir: Path, analyzer: Callable | N
     previous = previous or {}
     attempts = {bid: r.get("attempts", 1) for bid, r in previous.items()}
 
-    def verify_one(b: Banner, retries_so_far: int = 0) -> dict:
+    def verify_one(b: Banner, retries_so_far: int = 0, prior: dict | None = None) -> dict:
         # Checked twice: before, so a banner still queued (no work started) is never sent at all; and
         # after, so a skip that arrives while this banner's own worker is mid-call (image/listing/vision)
         # discards that work instead of recording it - the call itself can't be safely interrupted once
@@ -512,7 +551,8 @@ def run_feed_verify(banners: list[Banner], out_dir: Path, analyzer: Callable | N
         else:
             note = (lambda text: on_activity(b.banner_id, text)) if on_activity else (lambda text: None)
             with vision.reporting(note) as note:      # so a Gemma request waiting its turn shows "Waiting turn" on the card
-                r = verify_banner(b, out_dir, analyzer, listings, aliases, image_fetcher, cache=cache, run_id=out_dir.name, note=note)
+                r = verify_banner(b, out_dir, analyzer, listings, aliases, image_fetcher, cache=cache, run_id=out_dir.name, note=note,
+                                  prior=prior)
             if skip_requested(out_dir, b.banner_id):
                 r = _result(_banner_base(b), "SKIPPED", "user_skipped")
         attempts[b.banner_id] = r["attempts"] = attempts.get(b.banner_id, 0) + 1
@@ -523,7 +563,9 @@ def run_feed_verify(banners: list[Banner], out_dir: Path, analyzer: Callable | N
         return r
 
     def _wanted(i: int, r: dict | None) -> bool:
-        return (r is None or is_retryable(r)) and (only is None or chosen[i].banner_id in only)
+        if only is not None:               # an explicit per-banner retry: redo it whatever its result was (a FAIL, an INCONCLUSIVE...)
+            return chosen[i].banner_id in only
+        return r is None or is_retryable(r)
 
     results: list[dict | None] = [previous.get(b.banner_id) for b in chosen]
     todo = [i for i, r in enumerate(results) if _wanted(i, r)]
@@ -565,8 +607,11 @@ def run_feed_verify(banners: list[Banner], out_dir: Path, analyzer: Callable | N
             requeue = False
             try:
                 tries[i] = tries.get(i, 0) + 1
-                r = results[i] = verify_one(chosen[i], tries[i] - 1)
-                requeue = _wanted(i, r) and tries[i] <= retry_rounds
+                # results[i] = the previous try, if any. Its properly-checked hotspots are kept when a run resumes or a temporary
+                # error is retried - but an explicit per-banner retry (`only`) starts from scratch on its first try
+                prior = None if (only is not None and tries[i] == 1) else results[i]
+                r = results[i] = verify_one(chosen[i], tries[i] - 1, prior)
+                requeue = is_retryable(r) and tries[i] <= retry_rounds and (only is None or chosen[i].banner_id in only)
                 if requeue:
                     log.warning("banner %s failed on a temporary error (try %d of %d); back in the queue",
                                 chosen[i].banner_id, tries[i], retry_rounds + 1)
@@ -587,7 +632,7 @@ def run_feed_verify(banners: list[Banner], out_dir: Path, analyzer: Callable | N
 
 def _hotspot_summary(h: dict) -> str:
     why = _hotspot_reason(h)
-    return f"{h['hotspot_index']}:{h['url']}:{h['result']}" + (f" ({why})" if why else "")
+    return f"{h['hotspot_index']}:{h['url']}:{shown_hotspot_result(h)}" + (f" ({why})" if why else "")
 
 
 def _flat(r: dict) -> dict:

@@ -1291,3 +1291,33 @@ other-400, shared pacer with two pacers, corrupt file, unusable folder, far-futu
 **Live:** server restarted (the running check was adopted, untouched); both UIs checked in headless Edge on the
 real run above (9/9), 0 console errors. Not committed.
 
+## Changed: Retry on FAIL / INCONCLUSIVE too, always without the cache; hotspots get UNAVAILABLE + retry
+
+**Ask (2026-09-29):** (a) hotspot banners should get the UNAVAILABLE / retry treatment too; (b) a Retry button on
+FAIL and INCONCLUSIVE cards as well; (c) a retry must never use the cache.
+
+**Hotspots.** A real live example prompted it: a banner FAIL on one hotspot whose other hotspot hit a Gemma 500 -
+being FAIL overall it was never retried and nothing marked the unchecked link. Now:
+`is_retryable()` is also true for a FAIL with a transient hotspot (so the retry queue and resume redo it);
+`shown_result()` keeps such a banner FAIL (only an INCONCLUSIVE one becomes UNAVAILABLE); each hotspot gets its own
+shown status (`shown_hotspot_result`) in `run_view`, the CSV/Excel hotspot column and both detail views; the reason
+of an exhausted FAIL gets "N hotspots couldn't be checked (gave up after 5 tries)" appended. `verify_banner(prior=)`:
+on a retry after a temporary error, hotspots already checked properly are kept and only the failed ones redone (the
+main-image audience read is skipped when nothing needs redoing).
+
+**Retry everywhere, from scratch.** `run_view` rows get `can_retry` (FAIL / INCONCLUSIVE / UNAVAILABLE, and the run is
+not running or the banner used up its tries); both UIs use it for the card button, and the classic popup / manager
+sheet get a Retry button too. `--only-banner` now means "redo this one whatever its result" (it used to redo only
+temporary errors, which is why the button was limited), is a single try for a real FAIL, and its first try ignores
+`prior` (nothing carried over). `runner.retry_banner` adds `--no-cache`.
+**Bug found on the way:** a per-banner retry only appends to `partial.jsonl` and never rewrites a finished run's
+`results.json`, while readers preferred `results.json` - so a retry on a *finished* run would have been invisible (no
+run had hit it because Retry was only offered on exhausted banners, mostly in cancelled runs). New
+`feed_verify.load_final_results()` = results.json + any later try (higher `attempts`) from partial.jsonl; used by the
+web layer (`runner.load_results`, hence the run view, counts and diff) and the Excel export.
+**Tests:** 600 pass. **Live:** a real retry (1 banner, 60 s) on a *copy* of a finished run through the same CLI
+the web button launches: attempts 1 -> 2, not from the cache, results.json untouched, new result visible through the
+overlay. Both UIs checked in headless Edge on a real finished run: Retry on 24/24 FAIL and 26/26 INCONCLUSIVE cards,
+none on PASS, popup/sheet buttons present, 0 console errors. Server restarted. **Not done live:** clicking the button
+in the UI on a real run (it would change your run history); the per-hotspot Gemma-500 case is covered by tests only.
+

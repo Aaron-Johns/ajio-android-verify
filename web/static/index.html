@@ -1208,7 +1208,7 @@ function cardHtml(b) {
         ${brands.map(x => `<span class="tag">${x}</span>`).join("")}
         ${deal ? `<span class="tag">${deal}</span>` : ""}
       </div>
-      ${b.retries_exhausted ? `<button class="secondary retry-btn" data-id="${escapeHtml(b.banner_id)}">Retry this banner</button>` : ""}
+      ${b.can_retry ? `<button class="secondary retry-btn" data-id="${escapeHtml(b.banner_id)}" title="Check this banner again from scratch (no saved results are reused)">Retry this banner</button>` : ""}
     </div>`;
 }
 
@@ -1251,7 +1251,7 @@ async function retryBanner(bannerId, btn) {
   // Show the card as a normal in-progress banner (like an automatic retry round) instead of
   // leaving the old exhausted verdict + a disabled button on screen while the retry subprocess runs.
   upsertCard({ ...prior, result: "PROCESSING", reason: "", try_number: startAttempts + 1,
-              retries_exhausted: false });
+              retries_exhausted: false, can_retry: false });
   let ticks = 0;
   const poll = setInterval(async () => {
     ticks++;
@@ -1424,7 +1424,14 @@ function openModal(b) {
     ["Missing brands", (c.missing_brands || []).join(", ")],
     ["Extra brands", (c.extra_brands || []).join(", ")],
   ].filter(([, v]) => v !== undefined && v !== null && v !== "");
-  document.getElementById("modal-detail").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  document.getElementById("modal-detail").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("") +
+    (b.can_retry ? `<button class="secondary" id="modal-retry" style="margin-top:10px">Retry this banner</button>` : "");
+  const modalRetry = document.getElementById("modal-retry");
+  if (modalRetry) modalRetry.addEventListener("click", () => {
+    document.getElementById("modal-overlay").classList.remove("open");
+    const cardBtn = document.querySelector(`#grid [data-id="${CSS.escape(b.banner_id)}"] .retry-btn`) || modalRetry;
+    retryBanner(b.banner_id, cardBtn);
+  });
   document.getElementById("modal-hotspots").innerHTML = (b.hotspot_checks || []).map(hotspotBlockHtml).join("");
   document.getElementById("modal-overlay").classList.add("open");
 }

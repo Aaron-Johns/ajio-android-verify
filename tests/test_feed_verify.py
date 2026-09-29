@@ -771,7 +771,9 @@ def test_is_retryable_catches_a_transient_failure_on_a_non_winning_hotspot():
              "hotspot_checks": [{"hotspot_index": 0, "result": "FAIL", "reason": ""},
                                 {"hotspot_index": 1, "result": "INCONCLUSIVE", "reason": "listing_fetch_failed: boom"}]}
     assert fv.is_retryable({**result, "result": "INCONCLUSIVE"}) is True
-    assert fv.is_retryable(result) is False   # only retried when the *overall* result is INCONCLUSIVE
+    assert fv.is_retryable(result) is True    # a FAIL whose other hotspot never got checked is retried too
+    clean = {"result": "FAIL", "reason": "x", "hotspot_checks": [{"hotspot_index": 0, "result": "FAIL", "reason": "missing brands"}]}
+    assert fv.is_retryable(clean) is False    # a FAIL with every hotspot properly checked is final
 
 
 def test_a_banner_skipped_before_it_starts_never_downloads_or_fetches_a_listing(tmp_path):
@@ -920,3 +922,148 @@ def test_in_a_live_run_it_is_still_processing_while_tries_remain():
 def test_the_cli_summary_counts_unavailable_separately():
     text = fv.format_summary([{"banner_id": "a", "result": "PASS"}, _inc("listing_fetch_failed: x", alt_text="t")])
     assert "PASS=1" in text and "UNAVAILABLE=1" in text and "INCONCLUSIVE" not in text.split("\n")[0]
+
+
+# ---- multi-link (hotspot) banners: an unchecked hotspot is UNAVAILABLE and retryable, and a retry only redoes it ----
+
+def test_a_fail_with_an_unchecked_hotspot_stays_a_fail_but_that_hotspot_is_unavailable():
+    r = {"banner_id": "a", "result": "FAIL", "reason": "hotspot 0: missing brands", "attempts": fv.RETRY_ROUNDS + 1,
+         "hotspot_checks": [{"hotspot_index": 0, "result": "FAIL", "reason": ""},
+                            {"hotspot_index": 1, "result": "INCONCLUSIVE", "reason": "vision_failed: InternalServerError: 500"}]}
+    assert fv.shown_result(r) == "FAIL"                                     # the finding is never hidden
+    assert [fv.shown_hotspot_result(h) for h in r["hotspot_checks"]] == ["FAIL", "UNAVAILABLE"]
+    assert fv.shown_result(r, live=True) == "FAIL"                           # tries used up
+    assert fv.shown_result({**r, "attempts": 1}, live=True) == "PROCESSING"   # still retrying in a live run
+
+
+def test_shown_hotspot_result_leaves_other_inconclusive_hotspots_alone():
+    assert fv.shown_hotspot_result({"result": "INCONCLUSIVE", "reason": "empty_bounding_box_after_scaling"}) == "INCONCLUSIVE"
+    assert fv.shown_hotspot_result({"result": "PASS"}) == "PASS"
+
+
+def test_a_retry_redoes_only_the_hotspot_that_hit_a_temporary_error(tmp_path):
+    b = banner("hs", "https://ajio.com/s/a-1",
+               hotspots=[hotspot("https://ajio.com/s/b-2"), hotspot("https://ajio.com/s/c-3", x=60), hotspot("https://ajio.com/s/d-4", x=120)],
+               image_width=300, image_height=100)
+    fetcher = Fetcher({"a-1": listing(), "b-2": listing(), "c-3": listing(), "d-4": listing()})
+    calls, broken = [], {"on": True}
+
+    def analyzer(path):
+        calls.append(path.name)
+        if broken["on"] and "__hs1" in path.name:
+            raise RuntimeError("Gemma 500")
+        return INFO
+
+    first = fv.verify_banner(b, tmp_path, analyzer, fv.ListingCache(fetcher), ALIASES, real_image)
+    assert [h["result"] for h in first["hotspot_checks"]] == ["PASS", "INCONCLUSIVE", "PASS"]
+    assert fv.is_retryable(first) and first["result"] == "INCONCLUSIVE"
+    calls.clear(); broken["on"] = False
+    second = fv.verify_banner(b, tmp_path, analyzer, fv.ListingCache(fetcher), ALIASES, real_image, prior=first)
+    assert second["result"] == "PASS" and [h["result"] for h in second["hotspot_checks"]] == ["PASS", "PASS", "PASS"]
+    assert sum("__hs" in c for c in calls) == 1 and any("__hs1" in c for c in calls)   # only hotspot 1 was read again
+    assert second["hotspot_checks"][0]["image_file"] == first["hotspot_checks"][0]["image_file"]   # the kept ones keep their crop
+
+
+def test_a_retry_with_nothing_to_redo_for_the_hotspots_does_not_read_the_main_image_for_them(tmp_path):
+    b = banner("hs", None, hotspots=[hotspot("https://ajio.com/s/b-2")], image_width=200, image_height=100)
+    fetcher = Fetcher({"b-2": listing()})
+    calls = []
+
+    def analyzer(path):
+        calls.append(path.name)
+        return INFO
+
+    first = fv.verify_banner(b, tmp_path, analyzer, fv.ListingCache(fetcher), ALIASES, real_image)
+    calls.clear()
+    fv.verify_banner(b, tmp_path, analyzer, fv.ListingCache(fetcher), ALIASES, real_image, prior=first)
+    assert calls == []                                                      # the good hotspot is kept: no vision call at all
+
+
+def test_the_retry_queue_retries_a_fail_banner_whose_hotspot_was_unchecked_and_keeps_the_fail(tmp_path):
+    b = banner("hs", "https://ajio.com/s/a-1", hotspots=[hotspot("https://ajio.com/s/b-2"), hotspot("https://ajio.com/s/c-3", x=60)],
+               image_width=200, image_height=100)
+    fetcher = Fetcher({"a-1": listing(), "b-2": listing(brands={"NEW BALANCE": 5}), "c-3": listing()})   # b-2 lacks Under Armour
+    calls = {"c": 0}
+
+    def analyzer(path):
+        if "__hs1" in path.name:
+            calls["c"] += 1
+            if calls["c"] <= 3:                  # hero._analyze itself tries a vision call 3 times before giving up
+                raise RuntimeError("Gemma 500")
+        return INFO
+
+    got = run([b], tmp_path, fetcher, analyzer=analyzer, image_fetcher=real_image, retry_rounds=2)[0]
+    assert got["result"] == "FAIL" and got["attempts"] == 2                  # retried once, hotspot 1 now fine, the FAIL stands
+    assert [h["result"] for h in got["hotspot_checks"]] == ["FAIL", "PASS"]
+
+
+# ---- a manual (per-banner) retry: works on any result, starts from scratch, never uses the cross-run cache ----
+
+def _fail_listing_fetcher():
+    return Fetcher({"a-1": listing(brands={"NEW BALANCE": 5})})     # lacks Under Armour, which INFO names -> FAIL
+
+
+def test_only_banner_redoes_a_fail_that_the_automatic_retry_would_have_left_alone(tmp_path):
+    b = banner("a", "https://ajio.com/s/a-1")
+    first = run([b], tmp_path, _fail_listing_fetcher())[0]
+    assert first["result"] == "FAIL" and not fv.is_retryable(first)
+    fetcher = Fetcher({"a-1": listing()})                             # the listing has since been fixed
+    plain = run([b], tmp_path, fetcher, previous={"a": first})[0]      # a normal resume leaves a settled FAIL as it is
+    assert plain["result"] == "FAIL" and fetcher.calls == []
+    forced = run([b], tmp_path, fetcher, previous={"a": first}, only={"a"})[0]
+    assert forced["result"] == "PASS" and forced["attempts"] == 2      # redone, and counted as another try
+
+
+def test_a_forced_retry_of_a_fail_is_one_try_not_five(tmp_path):
+    b = banner("a", "https://ajio.com/s/a-1")
+    fetcher = _fail_listing_fetcher()
+    first = run([b], tmp_path, fetcher)[0]
+    fetcher.calls.clear()
+    got = run([b], tmp_path, fetcher, previous={"a": first}, only={"a"}, retry_rounds=4)[0]
+    assert got["result"] == "FAIL" and len(fetcher.calls) == 1        # a real FAIL is not a temporary error: no automatic re-tries
+
+
+def test_a_forced_retry_starts_from_scratch_but_a_follow_up_after_a_temporary_error_may_reuse_good_hotspots(tmp_path):
+    b = banner("hs", None, hotspots=[hotspot("https://ajio.com/s/b-2"), hotspot("https://ajio.com/s/c-3", x=60)],
+               image_width=200, image_height=100)
+    fetcher = Fetcher({"b-2": listing(), "c-3": listing()})
+    calls = []
+
+    def analyzer(path):
+        calls.append(path.name)
+        return INFO
+
+    first = run([b], tmp_path, fetcher, analyzer=analyzer, image_fetcher=real_image)[0]
+    calls.clear()
+    run([b], tmp_path, fetcher, analyzer=analyzer, image_fetcher=real_image, previous={"hs": first}, only={"hs"})
+    assert sum("__hs" in c for c in calls) == 2                       # both hotspots read again, none carried over
+
+
+def test_the_cross_run_cache_is_bypassed_when_it_is_switched_off(tmp_path):
+    cache = BannerCache(path=tmp_path / "cache.json")
+    b = banner("a", "https://ajio.com/s/a-1")
+    fetcher = Fetcher({"a-1": listing()})
+    fv.run_feed_verify([b], tmp_path / "r1", analyzer=lambda p: INFO, aliases=ALIASES, listing_fetcher=fetcher, image_fetcher=real_image,
+                       workers=1, retry_rounds=0, retry_pause=0, cache=cache)
+    n = len(fetcher.calls)
+    fv.run_feed_verify([b], tmp_path / "r2", analyzer=lambda p: INFO, aliases=ALIASES, listing_fetcher=fetcher, image_fetcher=real_image,
+                       workers=1, retry_rounds=0, retry_pause=0, cache=cache)
+    assert len(fetcher.calls) == n                                    # a repeat banner is served from the cache...
+    fv.run_feed_verify([b], tmp_path / "r3", analyzer=lambda p: INFO, aliases=ALIASES, listing_fetcher=fetcher, image_fetcher=real_image,
+                       workers=1, retry_rounds=0, retry_pause=0, cache=False)
+    assert len(fetcher.calls) == n + 1                                # ...and cache=False (--no-cache) checks it for real
+
+
+def test_load_final_results_lays_a_later_retry_over_a_finished_runs_results_json(tmp_path):
+    (tmp_path / "results.json").write_text(json.dumps([
+        {"banner_id": "a", "result": "FAIL", "attempts": 1}, {"banner_id": "b", "result": "PASS", "attempts": 1}]), encoding="utf-8")
+    (tmp_path / "partial.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        {"banner_id": "a", "result": "FAIL", "attempts": 1}, {"banner_id": "b", "result": "PASS", "attempts": 1},
+        {"banner_id": "a", "result": "PASS", "attempts": 2}]) + "\n", encoding="utf-8")
+    got = fv.load_final_results(tmp_path)
+    assert list(got) == ["a", "b"] and got["a"]["result"] == "PASS" and got["b"]["result"] == "PASS"
+
+
+def test_load_final_results_without_results_json_is_just_the_partial_log(tmp_path):
+    (tmp_path / "partial.jsonl").write_text(json.dumps({"banner_id": "a", "result": "PASS", "attempts": 1}) + "\n", encoding="utf-8")
+    assert fv.load_final_results(tmp_path) == {"a": {"banner_id": "a", "result": "PASS", "attempts": 1}}

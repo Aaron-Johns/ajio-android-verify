@@ -230,8 +230,12 @@ every field a UI needs to render a full result lives here. `404` if `run_id` is 
   known (a run started before this existed). A banner that has reported any activity counts as
   `PROCESSING` even before its image is on disk. Read from the run folder's `activity.jsonl`.
 - `retries_exhausted` — `true` once a banner has used all its automatic tries and is still failing on
-  a transient-looking error (or the run itself died before it could finish retrying) — this is the
-  flag a UI should use to decide whether to show a manual retry action.
+  a transient-looking error (or the run itself died before it could finish retrying). A `FAIL` banner whose
+  hotspot never got checked can be `retries_exhausted` too; it stays `FAIL` and its `hotspot_checks[]` entry for
+  that link has `result: "UNAVAILABLE"`.
+- `can_retry` — `true` when the UI should offer **Retry**: the banner's result is `FAIL`, `INCONCLUSIVE` or
+  `UNAVAILABLE`, and either its run is no longer running or the banner has used up its automatic tries. Use this,
+  not `retries_exhausted`, to decide whether to show the button.
 - `image_file` — a local filesystem path (only meaningful to the server itself); to actually display
   the image, either use `image_url` directly (a public CDN link) or, for a locally-saved crop that has
   no public URL, fetch it via `GET /api/runs/{run_id}/images/{filename}` using `image_file`'s basename.
@@ -314,8 +318,12 @@ UI-only bookkeeping — the run's folder on disk is never touched. Returns `{"hi
 ### `POST /api/runs/{run_id}/banners/{banner_id}/retry`
 
 Redoes just this one banner in place, without touching anything else in the run. Intended for a
-banner where `retries_exhausted == true` on its `/banners` row, though nothing stops you calling it
-on any banner_id. Fire-and-forget: returns `{"started": true}` immediately, the actual recheck runs in
+banner where `can_retry == true` on its `/banners` row, though nothing stops you calling it on any banner_id.
+It is a **fresh check**: the subprocess runs with `--no-cache` (no cross-run cached verdict is reused), redoes the
+banner whatever its previous result was (FAIL and non-temporary INCONCLUSIVE included) and re-checks every hotspot
+rather than reusing the earlier ones. It counts as one more attempt and is one try, not five. The new result is
+appended to `partial.jsonl` and overlays the run's `results.json` when read (`results.json` itself is not
+rewritten). Fire-and-forget: returns `{"started": true}` immediately, the actual recheck runs in
 the background — poll `GET /api/runs/{run_id}/banners` afterward and watch for that banner's
 `attempts` field to increase to know when it's done. `409` if a retry for this exact banner is already
 in flight (a double-click guard, not a hard limit — try again once the first one finishes).

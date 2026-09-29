@@ -175,12 +175,24 @@ way to "cancel" it instantly). Clicking Skip greys the card out and marks it SKI
 turn would otherwise come up — genuinely never sent, no image download, no API calls. Click the same
 button (now labeled Unskip) to undo, as long as it hasn't already been processed in the meantime.
 
-**Retry this banner** — only appears once a banner has burned through all 5 of its automatic attempts
-and is still stuck on a transient-looking error (it then shows as **UNAVAILABLE**). Redoes just that one banner in place; nothing else in
-the run is touched. Consider *why* it failed 5 times before retrying blindly — a genuinely transient
-AJIO-side hiccup (a 5xx, a one-off backend error) is worth retrying and will often resolve; a
-consistently-reproducing error (the same listing 400ing every single time) probably won't be fixed by
-a 6th attempt and is worth investigating directly instead (check the reason text in the card detail).
+**Retry this banner** — on every **FAIL**, **INCONCLUSIVE** and **UNAVAILABLE** card (and in the card's
+detail popup). It checks that one banner again **from scratch**: the image and its links are looked at
+again, nothing is taken from the saved-results cache (it runs with the cache off) and nothing from the previous try
+is carried over. The rest of the run is untouched, the retry counts as one more try, and its result replaces the old
+one on the card, in the run's tally and in the Excel export. It is one check, not five: a FAIL that comes back FAIL
+stays FAIL. While a run is still going, Retry is only offered on a banner that has used up its automatic tries (a
+retry writes next to the live run, whose own final write would overwrite it); once the run has finished every FAIL /
+INCONCLUSIVE / UNAVAILABLE card has it. For UNAVAILABLE, consider *why* it failed 5 times first — a genuinely
+transient AJIO-side hiccup is worth retrying and will often resolve; a consistently-reproducing error probably
+won't be fixed by another try (check the reason text in the card detail).
+
+**Multi-link (hotspot) banners.** Each hotspot has its own status in the detail popup, and a hotspot whose link
+could not be checked because of a temporary server/network error shows **UNAVAILABLE** on its own block, not
+INCONCLUSIVE. If another hotspot of the same banner genuinely FAILs, the banner stays **FAIL** (a finding is never
+hidden) and its reason ends with "N hotspots couldn't be checked"; the banner is still retried automatically and
+offers Retry. An *automatic* re-try of a temporary error redoes only the hotspots that hit the error and keeps the
+ones already checked properly (so one glitched link on a six-link banner costs one vision call, not six); a manual
+**Retry this banner** redoes everything.
 
 **Cancel run** — stops the run immediately. Whatever's already been checked stays exactly as it is;
 nothing gets discarded. There's no "resume" button in the UI currently — a cancelled run's remaining
@@ -299,7 +311,8 @@ again in a later run. **Clear cache** wipes that saved history so the next run c
 everything fresh. You'll rarely need this: a one-off transient failure is never cached in the first
 place (only a clean, complete verdict is saved), so this button doesn't fix "one banner had a weird
 error" — it's for when the *matching logic itself* changes (a brand alias gets added, a gender rule
-gets adjusted) and you want old verdicts recomputed under the new rules rather than reused stale.
+gets adjusted) and you want old verdicts recomputed under the new rules rather than reused stale. A per-banner
+**Retry** never reads this cache, so it doesn't need clearing first.
 
 ## Things to consider when using it
 

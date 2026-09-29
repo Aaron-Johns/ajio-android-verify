@@ -1248,7 +1248,7 @@ function bannerCardHtml(b) {
       ${why ? `<div class="why">${esc(why)}</div>` : ""}
       ${(brands.length || deal) ? `<div class="tags">${brands.slice(0, 4).map(x => `<span class="tag brand">${esc(x)}</span>`).join("")}${brands.length > 4 ? `<span class="tag">+${brands.length - 4}</span>` : ""}${deal ? `<span class="tag">${esc(deal)}</span>` : ""}</div>` : ""}
       <div class="foot"><span class="link" title="${esc(b.destination_raw || "")}">${b.destination_raw ? `<a href="${esc(b.destination_raw)}" target="_blank" rel="noopener noreferrer">${esc(shortLink(b.destination_raw))}</a>` : "No link"}</span>
-        ${b.retries_exhausted ? `<button class="btn sm" data-retry>${ico("refresh", "sm")} Retry</button>` : ""}
+        ${b.can_retry ? `<button class="btn sm" data-retry title="Check this banner again from scratch (no saved results are reused)">${ico("refresh", "sm")} Retry</button>` : ""}
         ${b.result === "PENDING" ? `<button class="btn sm" data-skip>${b.skip_requested ? "Unskip" : "Skip"}</button>` : ""}</div>
     </div></article>`;
 }
@@ -1257,7 +1257,7 @@ async function retryBanner(id, btn) {
   btn.disabled = true; btn.textContent = "Retrying…";
   try { await api(`/api/runs/${runId}/banners/${encodeURIComponent(id)}/retry`, { method: "POST" }); }
   catch (e) { btn.disabled = false; btn.textContent = "Retry"; toast("Couldn't retry: " + errText(e), true); return; }
-  R.banners.set(id, { ...(R.banners.get(id) || {}), result: "PROCESSING", reason: "", try_number: startAttempts + 1, retries_exhausted: false }); paintRun();
+  R.banners.set(id, { ...(R.banners.get(id) || {}), result: "PROCESSING", reason: "", try_number: startAttempts + 1, retries_exhausted: false, can_retry: false }); paintRun();
   let ticks = 0;
   const poll = setInterval(async () => {
     if (runId !== R.id || ++ticks > 200) return clearInterval(poll);
@@ -1314,6 +1314,8 @@ function paintSheet() {
       <div>
         <div class="verdict ${cls}"><div class="vi">${ico(b.result === "PASS" ? "check" : b.result === "FAIL" || b.result === "INCONCLUSIVE" ? "alert" : "info")}</div>
           <div><b>${esc(headline)}</b>${reason ? `<p>${esc(reason)}</p>` : b.result === "PASS" ? `<p>Brands, deal and audience on the banner all match the page it links to.</p>` : ""}</div></div>
+        ${b.can_retry && b._run === R.id ? `<div style="margin-top:12px"><button class="btn" id="sh-retry">${ico("refresh", "sm")} Retry this banner</button>
+          <span class="hint" style="margin-left:8px">checks it again from scratch</span></div>` : ""}
         <div class="card dl-card">
           ${row("Location", esc(carouselLabel(b)))}
           ${row("Position in feed", b.position != null ? esc(b.position) : "")}
@@ -1333,6 +1335,7 @@ function paintSheet() {
       </div>
     </div>`;
   byId("sh-close").onclick = closeSheet;
+  if (byId("sh-retry")) byId("sh-retry").onclick = () => { closeSheet(); const card = $(`.bcard[data-id="${CSS.escape(b.banner_id)}"] [data-retry]`); retryBanner(b.banner_id, card || byId("sh-retry")); };
   byId("sh-prev").onclick = () => { if (sheetIdx > 0) { sheetIdx--; paintSheet(); } };
   byId("sh-next").onclick = () => { if (sheetIdx < sheetList.length - 1) { sheetIdx++; paintSheet(); } };
   $(".sb", sh).scrollTop = 0;

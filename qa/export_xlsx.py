@@ -46,7 +46,8 @@ def _shown(r: dict) -> dict:
 def _load_raw(run_dir: Path) -> list[dict]:
     results_path = run_dir / "results.json"
     if results_path.exists():
-        return json.loads(results_path.read_text(encoding="utf-8"))
+        from qa.feed_verify import load_final_results       # results.json plus any later per-banner retry
+        return list(load_final_results(run_dir).values())
     partial_path = run_dir / "partial.jsonl"
     if not partial_path.exists():
         return []

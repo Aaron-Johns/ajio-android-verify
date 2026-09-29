@@ -114,3 +114,52 @@ def test_load_shown_results_relabels_without_touching_the_raw_records(tmp_path):
     assert (shown["a"]["result"], shown["b"]["result"]) == ("UNAVAILABLE", "FAIL")
     assert runner.load_results(tmp_path)["a"]["result"] == "INCONCLUSIVE"        # the retry logic still reads the raw one
     assert runner.load_shown_results(tmp_path, is_live=True)["a"]["result"] == "UNAVAILABLE"   # 5 tries = spent, even live
+
+
+# ---- can_retry: Retry is offered on FAIL / INCONCLUSIVE / UNAVAILABLE ----
+
+def test_a_finished_runs_fail_and_inconclusive_banners_can_be_retried_but_a_pass_cannot(tmp_path):
+    run_dir(tmp_path)
+    write_results(tmp_path, res("a", "FAIL", "missing brands"), res("b", "INCONCLUSIVE", "ambiguous gender"), res("c", "PASS"))
+    got = {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=False)}
+    assert (got["a"]["can_retry"], got["b"]["can_retry"], got["c"]["can_retry"]) == (True, True, False)
+
+
+def test_while_a_run_is_going_only_a_banner_that_used_up_its_tries_can_be_retried(tmp_path):
+    run_dir(tmp_path)
+    write_results(tmp_path, res("a", "FAIL", "missing brands"),
+                  res("b", "INCONCLUSIVE", "listing_fetch_failed: x", attempts=runner.MAX_TRIES))
+    got = {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=True)}
+    assert got["a"]["can_retry"] is False          # a retry would be overwritten by the live run's own final write
+    assert got["b"]["result"] == "UNAVAILABLE" and got["b"]["can_retry"] is True
+
+
+def test_a_retry_of_a_finished_runs_banner_shows_up_without_rewriting_results_json(tmp_path):
+    run_dir(tmp_path)
+    write_results(tmp_path, res("a", "FAIL", "missing brands", attempts=1))
+    (tmp_path / "partial.jsonl").write_text(json.dumps(res("a", "FAIL", "missing brands", attempts=1)) + "\n"
+                                            + json.dumps(res("a", "PASS", attempts=2)) + "\n", encoding="utf-8")
+    got = {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=False)}
+    assert got["a"]["result"] == "PASS"
+
+
+def test_the_hotspot_of_a_fail_that_was_never_checked_is_shown_unavailable_with_a_caveat_on_the_reason(tmp_path):
+    run_dir(tmp_path)
+    hs = [{"hotspot_index": 0, "url": "u0", "result": "FAIL", "reason": ""},
+          {"hotspot_index": 1, "url": "u1", "result": "INCONCLUSIVE", "reason": "vision_failed: InternalServerError: 500"}]
+    write_results(tmp_path, res("a", "FAIL", "hotspot 0 (u0): missing brands", attempts=runner.MAX_TRIES, hotspot_checks=hs))
+    row = {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=False)}["a"]
+    assert row["result"] == "FAIL"                                     # the finding is never hidden
+    assert [h["result"] for h in row["hotspot_checks"]] == ["FAIL", "UNAVAILABLE"]
+    assert "1 hotspot couldn't be checked" in row["reason"] and "missing brands" in row["reason"]
+    assert row["retries_exhausted"] is True and row["can_retry"] is True
+
+
+def test_the_web_retry_launches_the_check_with_no_cache(tmp_path, monkeypatch):
+    import types
+    seen = {}
+    monkeypatch.setattr(runner.db, "get_run", lambda rid: {"out_dir": str(tmp_path), "pincode": "560029"})
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda cmd, **kw: seen.setdefault("cmd", cmd) and types.SimpleNamespace(communicate=lambda: ("", "")))
+    monkeypatch.setattr(runner, "_retrying", set())
+    assert runner.retry_banner("r", "b1") is True
+    assert "--no-cache" in seen["cmd"] and "--only-banner" in seen["cmd"] and "--resume-from" in seen["cmd"]
