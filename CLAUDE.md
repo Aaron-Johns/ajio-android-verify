@@ -95,7 +95,9 @@ that must pass exactly), `image_segmentation_2.py` (origin of the Gemma prompt/p
   (`query=:prce-asc | :prce-desc`): "UNDER Rs x" (and "UP TO Rs x", a price cap): dearest item <= x+1; "STARTING AT Rs x": cheapest item **exactly** x. **Discounts** use the listing's
   "Discount Ranges" filter (cumulative counts, "30% and above" = N products; steps are multiples of 10): "MIN x%" / "x-y%" (the top of a range is never checked)
   has a floor of x-10, rounded DOWN to a step (45 -> 35 -> the 30% step); every lower step must hold the **same number** of products as the floor's step; a lower
-  step holding more means those extra products are under the floor -> mismatch [the user's rule, 2026-09-30]. [A] products under the lowest step (under 10%) are
+  step holding more means those extra products are under the floor -> mismatch [the user's rule, 2026-09-30]; **and the step just above the floor step must
+  hold strictly fewer products** (some product must sit between the floor and the next step; user, 2026-09-30, chosen knowing it fails a listing whose minimum is
+  exactly x, e.g. "Min 70" with 60% and 70% both 9,309). [A] products under the lowest step (under 10%) are
   in no step and are not seen. A mismatch makes the banner FAIL (not over the beauty / unrecognised-audience INCONCLUSIVE); a bare "UP TO x%" discount (user, 2026-09-30), "UP TO Rs x OFF" (an amount off), "FLAT x%" and anything else
   have no rule; a listing that can't be sorted or has no discount filter is UNCHECKED, never a failure. There is no `:discount-asc` on the app API and no paging
   to the last page (deep pages are refused): counts only. Stored as `banner_check.sort_check` (with a one-line `summary`); the reason reaches the UI through the normal reason field.

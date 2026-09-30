@@ -160,7 +160,8 @@ status.
 *Prices:* the listing is sorted by price: "UNDER ₹799" (or "UP TO ₹799", also a price cap) needs the dearest item to be at most ₹800; "STARTING AT ₹399" needs the cheapest item to be exactly ₹399.
 *Discounts:* the listing's own "Discount Ranges" filter ("30% and above", "40% and above" ... each with a product count) is used. "MIN. 45% OFF" (or "20-70%":
 only the low end counts) has a floor of 35%, which is rounded down to the 30% step; every lower step must hold the same number of products as the 30% step. If a
-lower step holds more, those extra products are discounted less than the floor, which is a FAIL and the reason says how many. (Products discounted under
+lower step holds more, those extra products are discounted less than the floor, which is a FAIL and the reason says how many. The step just above the
+floor step must also hold *fewer* products than it (some product has to sit between the floor and the next step); if it holds the same number, that is a FAIL too. (Products discounted under
 10% are in no step, so they aren't seen.) A bare "UP TO x%" discount, "UP TO ₹x OFF" (an amount off), "FLAT x%" and other wording are not checked this way, and a listing that can't be sorted or has no
 discount filter is simply not checked (never a failure): the banner keeps the PASS or FAIL its other checks gave it.
 

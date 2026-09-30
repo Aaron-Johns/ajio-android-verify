@@ -10,7 +10,9 @@ Discounts (the listing's own "Discount Ranges" filter, which comes back with the
       The filter steps are multiples of 10, so the floor is rounded DOWN to the step at or under it (35 -> "30% and above").
       The filter is cumulative, so every lower step holds at least as many products as the floor's step. If a lower step holds MORE,
       those extra products are discounted less than the floor -> mismatch; if every lower step holds the same number, nothing is
-      below the floor -> correct. [A] products under the lowest step (under 10%) are in no step at all and are not seen.
+      below the floor -> correct. And the step just ABOVE the floor step must hold strictly FEWER products than it (some product has
+      to sit between the floor and the next step; user, 2026-09-30). [A] products under the lowest step (under 10%) are in no
+      step at all and are not seen.
 
 Anything else a banner says ("UP TO 60%" - user: a bare up-to discount is never checked - or "FLAT 50%") has no rule; a listing that can't be sorted, or has no discount filter, is
 UNCHECKED, never a failure: the banner keeps the verdict its other checks gave it.
@@ -82,6 +84,13 @@ def _discount_floor(x: int, ranges: dict[int, int]) -> tuple[str, dict, str]:
         observed.update(lower_step=s, lower_count=ranges[s])
         return "MISMATCH", observed, (f"{ranges[s] - ranges[step]} products on the listing are discounted less than {step}% "
                                       f"(the {s}% and above filter holds {ranges[s]}, the {step}% and above filter only {ranges[step]}); "
+                                      f"banner promises at least {x}% (allowed down to {floor}%)")
+    above = min((s for s in ranges if s > step), default=None)
+    if above is not None and ranges[above] >= ranges[step]:
+        # the step above the floor must hold FEWER products: some product has to sit between the floor and the next step
+        observed.update(above_step=above, above_count=ranges[above])
+        return "MISMATCH", observed, (f"no products on the listing are discounted between {step}% and {above}% (the {above}% and above filter "
+                                      f"holds {ranges[above]}, the same as the {step}% and above filter); "
                                       f"banner promises at least {x}% (allowed down to {floor}%)")
     return "MATCH", observed, ""
 

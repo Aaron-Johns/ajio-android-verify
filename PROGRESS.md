@@ -1592,3 +1592,10 @@ followed by "OFF") as a price cap, the same rule as "UNDER Rs x" (dearest item <
 User: for "deal works" just put true, no elaborate explanation. `deal_sort_check.summary` is now `True` / `False` / `Couldn't check` (the reason for a False is in the
 banner's Reason row, the observed numbers are still in `banner_check.sort_check`). The server re-works the value from the saved check when a run is read, so
 results saved with the longer sentences show the short one after a restart. Tests updated.
+
+### Discount rule: the step above the floor must be smaller (2026-09-30)
+User: for "minimum x%", the range below it should have the same number, and the range above it should be smaller. "It" = the floor step (x-10 rounded down). Added:
+the next step up must hold strictly fewer products than the floor step, else MISMATCH ("no products on the listing are discounted between 30% and 40% ..."); a floor on the
+top step has nothing above and skips it; the lower-steps check still comes first. Asked which reading (floor step / banner's own step / smaller-or-equal): user chose the floor
+step, strictly smaller, after being told it fails a listing whose minimum is exactly x. Live on the three prem kids listings: "Min 50" True, "50-80" True, "Min 70" (60% and 70%
+both 9,309) now False. Tests: 683 pass (5 new / changed).
