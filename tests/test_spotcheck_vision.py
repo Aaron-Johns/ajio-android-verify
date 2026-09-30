@@ -189,13 +189,6 @@ def test_failed_cleanup_does_not_mask_the_result(tmp_path):
 
 # ---- banner vs landing comparison ----
 
-def test_compare_banner_to_landing():
-    aliases = AliasMap([["LEVI'S", "LEVIS"]])
-    assert vision.compare_banner_to_landing({"brands_mentioned": ["LEVIS"]}, {"brands_mentioned": ["LEVI'S"]}, aliases).verdict == "MATCH"
-    assert vision.compare_banner_to_landing({"brands_mentioned": ["Nike"]}, {"brands_mentioned": ["Puma"]}).verdict == "DIFFERENT"
-    assert vision.compare_banner_to_landing({"brands_mentioned": []}, {"brands_mentioned": ["Puma"]}) is None
-    assert vision.compare_banner_to_landing({}, {}) is None
-
 
 def test_extra_instructions_are_appended_without_changing_the_ported_prompt():
     seen = []

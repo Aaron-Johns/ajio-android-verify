@@ -6,22 +6,7 @@ import pytest
 from qa.compare import AliasMap
 from qa.spotcheck import filters
 
-FIX = Path(__file__).resolve().parent / "fixtures"
-BRANDS_SRC = (FIX / "ui_brand_filter.xml").read_text(encoding="utf-8")
-PLP_SRC = (FIX / "ui_plp.xml").read_text(encoding="utf-8")
 ALIASES = AliasMap([["LEVI'S", "LEVIS"]])
-
-
-def test_brand_rows_are_read_with_counts():
-    rows = filters.brand_rows(BRANDS_SRC)
-    assert ("YOUSTA", 8130) in rows and ("Altheory by AZORTE", 441) in rows and ("AABTA", 5) in rows
-    assert ("AVAASA MIX N' MATCH", 427) in rows
-
-
-def test_buttons_are_found():
-    assert filters.filter_button(PLP_SRC) is not None
-    assert filters.facet_tab(BRANDS_SRC, "Brands") == (0, 653 - 0, 309, 696) or filters.facet_tab(BRANDS_SRC, "Brands") is not None
-    assert filters.facet_tab(BRANDS_SRC, "Nonexistent") is None
 
 
 @pytest.mark.parametrize("deal,title,expected", [
@@ -49,63 +34,10 @@ def test_brand_comparison_is_alias_and_punctuation_tolerant():
     assert not filters.same_brand("Dune", "Dune London")
 
 
-class FakeDevice:
-    """Serves the listing, then a brand filter whose rows narrow to those containing the typed text."""
-    def __init__(self, brands, openable=True):
-        self.brands, self.openable, self.typed, self.taps = brands, openable, [], []
-        self.query = ""
-
-    def state(self):
-        return ("com.ril.ajio", ".home.AjioHomeActivity", self._filter_source() if self.taps else PLP_SRC)
-
-    def _filter_source(self):
-        if not self.openable:
-            return PLP_SRC
-        rows = "".join(f'<node resource-id="com.ril.ajio:id/general_facet_value_row_tv" text="{b} ({n})" bounds="[0,0][1,1]"/>'
-                       for b, n in self.brands if self.query.lower() in b.lower())
-        return ('<hierarchy><node resource-id="com.ril.ajio:id/facet_row_name_tv" text="Brands" bounds="[0,653][309,696]"/>'
-                + rows + '</hierarchy>')
-
-    def tap(self, box):
-        self.taps.append(box)
-
-    def type_into(self, rid, text):
-        self.typed.append(text)
-        self.query = text
-
-
-@pytest.fixture(autouse=True)
-def fast(monkeypatch):
-    monkeypatch.setattr(filters.time, "sleep", lambda s: None)
-
-
 # target_gender defaults to a recognized-but-unchecked reading (no listing_genders passed in most
 # tests here means "no evidence" -> None, never blocking) so brand/title-focused tests below don't
 # also have to think about gender; tests about gender itself override target_gender explicitly.
 INFO = {"brands_mentioned": ["Dune London", "Guess"], "deal_offered": "MIN. 40% OFF*", "target_gender": "men_and_women"}
-
-
-def test_pass_when_all_brands_are_filter_options_and_title_matches():
-    d = FakeDevice([("DUNE LONDON", 12), ("GUESS", 9), ("Other", 1)])
-    r = filters.verify_against_banner(d, INFO, "Min 40 Percent Off", ALIASES)
-    assert r["result"] == "PASS" and r["missing_brands"] == [] and d.typed == ["Dune London", "Guess"]
-
-
-def test_fail_when_a_banner_brand_is_not_in_the_filter():
-    d = FakeDevice([("DUNE LONDON", 12), ("Other", 1)])
-    r = filters.verify_against_banner(d, INFO, "Min 40 Percent Off", ALIASES)
-    assert r["result"] == "FAIL" and r["missing_brands"] == ["Guess"]
-
-
-def test_fail_when_title_does_not_match_the_deal():
-    d = FakeDevice([("DUNE LONDON", 12), ("GUESS", 9)])
-    assert filters.verify_against_banner(d, INFO, "Min 70 Percent Off", ALIASES)["result"] == "FAIL"
-
-
-def test_inconclusive_when_the_filter_cannot_be_opened_or_banner_unreadable():
-    assert filters.verify_against_banner(FakeDevice([], openable=False), INFO, "Min 40 Percent Off", ALIASES)["result"] == "INCONCLUSIVE"
-    nothing = {"brands_mentioned": [], "deal_offered": ""}
-    assert filters.verify_against_banner(FakeDevice([]), nothing, "Title", ALIASES)["result"] == "INCONCLUSIVE"
 
 
 def test_verify_from_listing_uses_the_servers_brand_filter():

@@ -184,3 +184,10 @@ def test_the_run_summary_carries_the_total_only_while_the_run_is_going(tmp_path,
     assert live["total"] == 3 and sum(live["counts"].values()) == 1          # 1 of 3 done, not 1 of 1
     db.finish_run("r1", "done")
     assert "total" not in api._run_summary(db.get_run("r1"))
+
+
+def test_every_banner_row_carries_its_carousels_title(tmp_path):
+    from dataclasses import replace
+    fv.save_banners(tmp_path, [replace(make_banner("a", 0), label="MAIN SECTION 25TH"), replace(make_banner("b", 1), label="")])
+    r = rows(tmp_path)
+    assert r["a"]["carousel_label"] == "MAIN SECTION 25TH" and r["b"]["carousel_label"] == ""

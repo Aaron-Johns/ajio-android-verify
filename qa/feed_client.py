@@ -18,7 +18,6 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 import requests
 
@@ -294,8 +293,22 @@ def fetch_banners(slug: str = "home", run_log: RunLog | None = None) -> list[Ban
     return parse_banners(fetch_theme(slug, run_log=run_log))
 
 
-def host_of(destination: str | None) -> str:
-    return urlsplit(destination or "").netloc
+# The CDN picks the format from Accept and serves AVIF (which Windows/Excel often can't open)
+# unless WebP is offered explicitly.
+IMAGE_ACCEPT = "image/webp,image/png,image/jpeg"
+
+
+def fetch_image(url: str, getter=requests.get, timeout: float = 30.0) -> tuple[str, bytes | None, str]:
+    try:
+        resp = getter(url, headers={"Accept": IMAGE_ACCEPT}, timeout=timeout)
+    except requests.RequestException as exc:
+        return f"error: {type(exc).__name__}", None, ""
+    ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+    if resp.status_code != 200:
+        return f"HTTP {resp.status_code}", None, ctype
+    if not ctype.startswith("image/"):
+        return f"not an image ({ctype or 'no content-type'})", None, ctype
+    return "OK", resp.content, ctype
 
 
 def main() -> None:

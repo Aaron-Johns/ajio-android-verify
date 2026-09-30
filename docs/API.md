@@ -80,9 +80,6 @@ Body:
   entirely. Prefer this over `excluded_carousels` when starting several combinations: an id keeps
   naming the same carousel when the feed's order shifts, and in every combination whose feed has it.
 
-The single-value names from before multi-select — `l1`, `l2`, `state`, `pincode` — are still accepted
-and mean a one-item list (when the plural name is absent).
-
 Response:
 ```json
 {"run_id": "20260928T111636Z_feedverify", "batch_id": "3f9c2a71b0de", "combos": 4, "queued": 3}
@@ -323,6 +320,8 @@ cancelled through this endpoint anymore).
 
 UI-only bookkeeping — the run's folder on disk is never touched. Returns `{"hidden": true}`.
 
+**Retention:** the server deletes runs (row and folder) that started more than 30 days ago, two minutes after each start and then daily (`web/retention.py`). Runs that are `running` are skipped. There is no endpoint for it; a deleted run answers 404, and alerts about it keep existing with `run_id: null`.
+
 ## Per-banner actions
 
 ### `POST /api/runs/{run_id}/banners/{banner_id}/retry`
@@ -466,8 +465,7 @@ Body: `{"name": str, "interval_minutes": int (≥1), "pages": [str], "l1s": [str
 "enabled": bool, "excluded_sections": [{"id": str, "label": str}], "notify_mode": str,
 "notify_toast": bool}`. Only `name`, `interval_minutes`, `l1s` and `l2s` are required; the rest default
 as in `POST /api/runs` (`pages` → `["home"]`, `states` → `["KARNATAKA"]`, `pincodes` → `["560029"]`), `start_at` → `null`,
-`notify_mode` → `"new_fails"`, `notify_toast` → `true`, `enabled` → `true`. The single-value names
-`l1`/`l2`/`state`/`pincode` are still accepted. `start_at` is an ISO date-time; with no timezone it's
+`notify_mode` → `"new_fails"`, `notify_toast` → `true`, `enabled` → `true`. `start_at` is an ISO date-time; with no timezone it's
 read as the server machine's local time (send an offset or `Z` to be exact) and it's stored as UTC.
 Returns the created schedule object. An enabled schedule's timer starts immediately.
 `422` for the same reasons as `POST /api/runs` (including more than `max_combos` combinations), an
@@ -596,7 +594,6 @@ START HERE
    excluded_carousels (optional)} -> {"run_id": "<the first combination's>", "batch_id", "combos",
    "queued"}. Returns immediately; the first run starts in the background and the other `queued`
    combinations start one after another as each finishes (find them in GET /api/runs by batch_id).
-   The old single-value fields l1/l2/state/pincode are still accepted.
 4. Either poll GET /api/runs/{run_id}/banners repeatedly (safe to call as often as you like, always
    reflects current state), or open GET /api/runs/{run_id}/stream (SSE) for push updates - one `data:`
    event per changed banner row, then `event: done` with final status when the run stops being

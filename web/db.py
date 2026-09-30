@@ -230,6 +230,19 @@ def schedule_stats() -> dict[int, dict]:
     return stats
 
 
+def list_runs_started_before(cutoff_iso: str) -> list[sqlite3.Row]:
+    """Runs that started before the cutoff and are not running (the retention clean-up, web/retention.py)."""
+    with connect() as conn:
+        return conn.execute("SELECT * FROM runs WHERE started_at < ? AND status != 'running'", (cutoff_iso,)).fetchall()
+
+
+def delete_run(run_id: str) -> None:
+    """Remove a run's row; alerts that pointed at it stay, without the link."""
+    with connect() as conn:
+        conn.execute("UPDATE alerts SET run_id=NULL WHERE run_id=?", (run_id,))
+        conn.execute("DELETE FROM runs WHERE run_id=?", (run_id,))
+
+
 def hide_run(run_id: str) -> None:
     """UI-only dismissal from the Recent runs list - never touches the run's folder on disk."""
     with connect() as conn:

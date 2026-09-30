@@ -285,3 +285,31 @@ def test_unset_override_falls_back_to_the_default_baseline_if_resolution_fails(m
         raise feed_client.cohort_client.CohortError("network down")
     monkeypatch.setattr(feed_client.cohort_client, "resolve_user_groups", boom)
     assert feed_client._resolve_user_groups("dev-1") == feed_client.cohort_client.DEFAULT_USER_GROUPS
+
+
+# ---- banner image download ----
+
+class _ImageResp:
+    def __init__(self, status, body, ctype):
+        self.status_code, self.content, self.headers = status, body, {"content-type": ctype}
+
+
+def _image_getter(status=200, body=b"fake-bytes", ctype="image/webp"):
+    return lambda url, headers=None, timeout=None: _ImageResp(status, body, ctype)
+
+
+def test_fetch_image_requests_webp_first():
+    seen = {}
+
+    def getter(url, headers=None, timeout=None):
+        seen["headers"] = headers
+        return _ImageResp(200, b"x", "image/webp")
+
+    feed_client.fetch_image("http://x", getter)
+    assert seen["headers"]["Accept"] == feed_client.IMAGE_ACCEPT
+
+
+def test_fetch_image_reports_non_ok_and_non_image():
+    assert feed_client.fetch_image("http://x", _image_getter(status=404))[0] == "HTTP 404"
+    assert feed_client.fetch_image("http://x", _image_getter(ctype="text/html"))[0].startswith("not an image")
+    assert feed_client.fetch_image("http://x", _image_getter()) == ("OK", b"fake-bytes", "image/webp")

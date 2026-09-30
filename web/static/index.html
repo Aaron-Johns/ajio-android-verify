@@ -1144,8 +1144,10 @@ function renderCarouselFilterOptions() {
   const indices = [...new Set([...currentBanners.values()]
     .map(b => b.section_index).filter(v => v !== undefined && v !== null))].sort((a, b) => a - b);
   const keep = carouselFilter;
+  const titles = new Map();          // the carousel's own title from the feed (its CMS label), shown beside the number
+  for (const b of currentBanners.values()) if (b.carousel_label && !titles.has(b.section_index)) titles.set(b.section_index, b.carousel_label);
   sel.innerHTML = '<option value="">All carousels</option>' +
-    indices.map(i => `<option value="${i}">Carousel ${i}</option>`).join("");
+    indices.map(i => `<option value="${i}">Carousel ${i}${titles.has(i) ? " \u00b7 " + escapeHtml(titles.get(i)) : ""}</option>`).join("");
   sel.value = indices.includes(Number(keep)) || keep === "" ? keep : "";
   carouselFilter = sel.value;
 }

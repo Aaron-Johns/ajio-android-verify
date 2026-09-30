@@ -3,8 +3,8 @@
 [!] The matching logic (normalize_brand, build_brand_index, word_boundary_match, similarity,
 fuzzy_find, resolve_brand) is copied verbatim and must not change; it is pinned by
 inputs/resolver_fixtures.json (tests/test_brand_resolver.py). Only the file loading was adapted
-(no prints / SystemExit) and the Gemini-file processing was dropped. The ambiguity handling that
-the original resolver lacks lives in qa/status.py, not here (CLAUDE.md 7.1).
+(no prints / SystemExit) and the Gemini-file processing was dropped. Ambiguity handling (word-boundary matches with several candidate brands) is not
+done here; the resolver only answers "which brands could this be" (CLAUDE.md 5).
 """
 from __future__ import annotations
 

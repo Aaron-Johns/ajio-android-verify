@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -20,11 +20,11 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from starlette.responses import FileResponse, StreamingResponse
 
 from qa import run_diff
-from web import alerts, db, runner
+from web import alerts, db, retention, runner
 
 log = logging.getLogger("web.api")
 app = FastAPI(title="AJIO Feed Verify")
@@ -36,24 +36,10 @@ scheduler = BackgroundScheduler()
 # ---- request models -------------------------------------------------------------------------
 
 # l1 / l2 / state / pincode are each a list: a run (or a scheduler fire) covers every combination of them,
-# one run per combination. The single-value names from before multi-select are still accepted and mean a
-# one-item list, so an older client keeps working.
-_SINGULAR = {"l1s": "l1", "l2s": "l2", "states": "state", "pincodes": "pincode"}
+# one run per combination.
 
 
-class _AcceptsSingleValues(BaseModel):
-    @model_validator(mode="before")
-    @classmethod
-    def accept_single_values(cls, data):
-        if isinstance(data, dict):
-            data = dict(data)
-            for plural, singular in _SINGULAR.items():
-                if plural not in data and data.get(singular) is not None:
-                    data[plural] = [data[singular]]
-        return data
-
-
-class RunRequest(_AcceptsSingleValues):
+class RunRequest(BaseModel):
     pages: list[str] = Field(default_factory=lambda: [runner.qa_pages.DEFAULT_PAGE])   # only home uses l1s / l2s
     l1s: list[str]
     l2s: list[str]
@@ -73,7 +59,7 @@ class SectionRef(BaseModel):
     label: str = ""
 
 
-class ScheduleRequest(_AcceptsSingleValues):
+class ScheduleRequest(BaseModel):
     name: str
     interval_minutes: int = Field(ge=1)
     pages: list[str] = Field(default_factory=lambda: [runner.qa_pages.DEFAULT_PAGE])
@@ -91,7 +77,7 @@ class ScheduleRequest(_AcceptsSingleValues):
     start_at: str | None = None      # ISO date-time the interval counts from; null = from when it's saved
 
 
-class ScheduleUpdate(_AcceptsSingleValues):
+class ScheduleUpdate(BaseModel):
     name: str | None = None
     interval_minutes: int | None = Field(default=None, ge=1)
     pages: list[str] | None = None
@@ -694,6 +680,9 @@ def _startup():
     for row in db.list_schedules():
         if row["enabled"]:
             _sync_job(row)
+    # once shortly after every start (the PC may be off at any fixed hour), then daily
+    scheduler.add_job(retention.purge_old_runs, IntervalTrigger(hours=24), id="purge-old-runs", replace_existing=True,
+                      max_instances=1, coalesce=True, next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2))
 
 
 @app.on_event("shutdown")

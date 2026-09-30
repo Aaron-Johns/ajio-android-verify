@@ -169,10 +169,6 @@ def product_row(p: dict) -> dict:
             "category": p.get("verticalNameText"), "gender": p.get("segmentNameText"), "url": p.get("url")}
 
 
-def product_rows(listing: Listing) -> list[dict]:
-    return [product_row(p) for p in listing.products]
-
-
 if __name__ == "__main__":
     import sys
     arg = sys.argv[1] if len(sys.argv) > 1 else "https://www.ajio.com/s/min70percentoffcurated-402881"

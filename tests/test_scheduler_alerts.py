@@ -227,10 +227,10 @@ def test_a_live_run_process_is_adopted_and_can_be_cancelled_again(tmp_path, toas
         running_row(tmp_path, "orphan", proc.pid)
         summary = runner.reconcile_orphans()
         assert summary == {"adopted": ["orphan"], "finalized": []}
-        assert db.get_run("orphan")["status"] == "running" and runner.is_running("orphan")
+        assert db.get_run("orphan")["status"] == "running" and proc.poll() is None
         assert runner.cancel_run("orphan") is True
         assert wait_for(lambda: db.get_run("orphan")["status"] == "cancelled")
-        assert not runner.is_running("orphan")
+        assert wait_for(lambda: proc.poll() is not None)
     finally:
         proc.kill()
 

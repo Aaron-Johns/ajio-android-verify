@@ -4,8 +4,7 @@ A QA tool that checks whether AJIO's home-screen promotional banners actually le
 destination they claim to. Instead of tapping through the app to find out, it reads the destination
 straight out of AJIO's own backend feed (the same data the app itself uses to build the home screen),
 then checks that destination's real listing page to confirm the banner's brand/deal/audience claims
-actually match what's there. An emulator is only used for a secondary, occasional spot-check — the
-day-to-day tool is a local web app with no phone or emulator involved.
+actually match what's there. It is a local web app with no phone or emulator involved.
 
 This doc gets a new person from "just cloned the repo" to "running checks in the browser." For how
 the tool was built and why, see `PROGRESS.md`; for the reverse-engineered API details, see

@@ -424,13 +424,6 @@ def cancel_run(run_id: str) -> bool:
     return True
 
 
-def is_running(run_id: str) -> bool:
-    with _lock:
-        proc = _procs.get(run_id)
-        adopted_pid = _adopted.get(run_id)
-    return bool(proc and proc.poll() is None) or bool(adopted_pid and psutil.pid_exists(adopted_pid))
-
-
 _retrying: set[tuple[str, str]] = set()
 
 
@@ -464,11 +457,6 @@ def _watch_retry(key: tuple[str, str], proc: subprocess.Popen) -> None:
     proc.communicate()
     with _lock:
         _retrying.discard(key)
-
-
-def is_retrying(run_id: str, banner_id: str) -> bool:
-    with _lock:
-        return (run_id, banner_id) in _retrying
 
 
 _skip_lock = threading.Lock()
@@ -652,7 +640,7 @@ def run_view(out_dir: Path, scope: str, banner_limit: int | None, is_live: bool 
         # results saved by an older run, from before feed_verify.py started including it itself
         total_links = (1 if b.destination_raw else 0) + len(b.hotspots)
         r = {**r, "section_index": b.section_index, "block_index": b.block_index, "position": b.position,
-             "total_links": total_links, "hidden": b.hidden, "hidden_reason": b.hidden_reason}
+             "total_links": total_links, "hidden": b.hidden, "hidden_reason": b.hidden_reason, "carousel_label": b.label}
         rows.append(r)
     return rows
 

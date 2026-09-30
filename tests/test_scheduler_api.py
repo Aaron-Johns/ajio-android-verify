@@ -1,5 +1,5 @@
 """The multi-select surface of the web API: several l1/l2/state/pincode values per run or schedule, the cap on
-how many runs that may expand into, the single-value fields older clients still send, and a schedule's start
+how many runs that may expand into, and a schedule's start
 date-time. Uses a throwaway SQLite file and stubs whatever would start a real run; the FastAPI app is driven
 without its startup hooks (no real scheduler thread, no orphan reconciliation)."""
 import json
@@ -47,12 +47,6 @@ def test_run_now_expands_every_selection_into_combinations(client, started):
     assert r.status_code == 200
     assert r.json() == {"run_id": "run-1", "batch_id": "batch-1", "combos": 16, "queued": 15}
     assert len(started[0]["combos"]) == 16
-
-
-def test_run_now_still_accepts_the_single_value_fields_older_clients_send(client, started):
-    r = client.post("/api/runs", json={"l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "400001"})
-    assert r.status_code == 200 and r.json()["combos"] == 1
-    assert started[0]["combos"] == [{"page": "home", "l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "400001"}]
 
 
 def test_a_blank_state_and_pincode_fall_back_to_the_defaults(client, started):
@@ -115,12 +109,6 @@ def test_a_schedule_saved_before_multi_select_existed_still_reads_and_runs(clien
     assert s["combo_count"] == 1 and s["start_at"] is None
 
 
-def test_creating_a_schedule_with_the_single_value_fields_still_works(client):
-    r = client.post("/api/schedules", json={"name": "s", "interval_minutes": 30, "l1": "premium", "l2": "men",
-                                            "state": "ASSAM", "pincode": "400001"})
-    assert r.status_code == 200 and r.json()["states"] == ["ASSAM"] and r.json()["pincodes"] == ["400001"]
-
-
 def test_a_schedule_over_the_combination_cap_is_refused(client):
     r = client.post("/api/schedules", json=schedule_body(l1s=runner.L1_OPTIONS, l2s=runner.L2_OPTIONS,
                                                          states=["ASSAM", "GOA"], pincodes=["1", "2"]))
@@ -138,7 +126,7 @@ def test_editing_one_selection_leaves_the_others_alone(client):
     sid = client.post("/api/schedules", json=schedule_body(states=["ASSAM"], pincodes=["400001"])).json()["id"]
     s = client.patch(f"/api/schedules/{sid}", json={"l1s": ["premium", "nonpremium"]}).json()
     assert s["l1s"] == ["premium", "nonpremium"] and s["states"] == ["ASSAM"] and s["pincodes"] == ["400001"]
-    s = client.patch(f"/api/schedules/{sid}", json={"state": "GOA"}).json()             # the single-value name still works
+    s = client.patch(f"/api/schedules/{sid}", json={"states": ["GOA"]}).json()
     assert s["states"] == ["GOA"] and s["l1s"] == ["premium", "nonpremium"]
 
 

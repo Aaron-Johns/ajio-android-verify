@@ -1,7 +1,7 @@
 """Verify a listing page against the banner that opened it, using the listing's own filters.
 
 Three rules: every brand named in the banner must be an option in the listing's Brands filter
-(searched one by one in the filter's search box), the listing title must match the deal the
+(as the listing's Brands facet lists them), the listing title must match the deal the
 banner offers, and the listing's Gender facet must satisfy the banner's audience's required/
 excluded categories (excluded categories tolerate up to 2% noise/cross-tagging - see
 `gender_matches()`, a user-specified rule set, not inferred). If the banner mentions AJIO's beauty
@@ -18,16 +18,11 @@ is ignored rather than failed, since it's more likely a vision misread than a re
 from __future__ import annotations
 
 import re
-import time
 import unicodedata
-import xml.etree.ElementTree as ET
 
 from qa.brand_resolver import load_brand_list, normalize_brand
 from qa.compare import AliasMap, brand_key
-from qa.spotcheck import landing as lp
 
-BRAND_SEARCH_ID = "brand_facet_value_row_search_et"
-_ROW = re.compile(r"^(.*?)\s*\((\d+)\)\s*$")
 _DEAL_NOISE = {"percent", "off", "and", "the", "on", "flat", "extra", "products", "product"}
 
 # The closed set of gender categories a listing's Gender facet is checked against. Anything a
@@ -65,33 +60,6 @@ _BANNER_GENDER_RULES = {
     "men_and_women":  {"required": {"Men", "Women"}, "excluded": set()},
     "girls_and_boys": {"required": set(),            "excluded": {"Men", "Women"}},
 }
-
-
-def _by_id(source: str, rid: str) -> list[tuple[str, tuple | None]]:
-    from qa.spotcheck.device import parse_bounds
-    return [(n.get("text") or "", parse_bounds(n.get("bounds") or ""))
-            for n in ET.fromstring(source).iter() if (n.get("resource-id") or "").endswith(f"id/{rid}")]
-
-
-def filter_button(source: str):
-    boxes = _by_id(source, "plp_filter_view")
-    return boxes[0][1] if boxes else None
-
-
-def facet_tab(source: str, name: str):
-    for text, box in _by_id(source, "facet_row_name_tv"):
-        if text == name:
-            return box
-    return None
-
-
-def brand_rows(source: str) -> list[tuple[str, int]]:
-    """Brand options currently listed in the Brands filter as (name, product count)."""
-    rows = []
-    for text, _ in _by_id(source, "general_facet_value_row_tv"):
-        m = _ROW.match(text)
-        rows.append((m.group(1), int(m.group(2))) if m else (text, 0))
-    return rows
 
 
 def _fold(text: str | None) -> str:
@@ -245,53 +213,11 @@ def gender_matches(banner_gender: str | None, listing_genders: dict[str, int],
     return True
 
 
-def open_brand_filter(device) -> bool:
-    _, _, src = device.state()
-    box = filter_button(src)
-    if box is None:
-        return False
-    device.tap(box)
-    time.sleep(3)
-    _, _, src = device.state()
-    tab = facet_tab(src, "Brands")
-    if tab is None:
-        return False
-    device.tap(tab)
-    time.sleep(2)
-    return True
-
-
-def search_brand(device, name: str, aliases: AliasMap | None = None) -> dict:
-    device.type_into(BRAND_SEARCH_ID, name)
-    time.sleep(2.5)
-    _, _, src = device.state()
-    rows = brand_rows(src)
-    matched, kind = match_brand(name, [n for n, _ in rows], aliases)
-    return {"brand": name, "found": matched is not None, "matched_as": matched, "match": kind,
-            "products": next((c for n, c in rows if n == matched), None), "search_results": [n for n, _ in rows][:8]}
-
-
 def _split_ignored(raw_brands: list[str]) -> tuple[list[str], list[dict]]:
     """Drop AJIO's own store-wide labels before any matching; keep them as a visible receipt."""
     ignored = [{"brand": b, "reason": "ajio_own_brand"} for b in raw_brands if is_ajio_own_brand(b)]
     kept = [b for b in raw_brands if not is_ajio_own_brand(b)]
     return kept, ignored
-
-
-def verify_against_banner(device, banner_info: dict, listing_title: str | None, aliases: AliasMap | None = None) -> dict:
-    """banner_info is the vision output: brands_mentioned + deal_offered. Leaves the filter panel open."""
-    brands, ignored = _split_ignored([b for b in banner_info.get("brands_mentioned") or [] if b])
-    deal = banner_info.get("deal_offered") or None
-    out: dict = {"banner_brands": brands, "banner_deal": deal, "listing_title": listing_title, "ignored_brands": ignored}
-    title_ok = deal_matches_title(deal, listing_title)
-    out["title_matches_deal"] = title_ok
-    out["brand_checks"] = []
-    if brands:
-        if not open_brand_filter(device):
-            out["error"] = "could_not_open_brand_filter"
-        else:
-            out["brand_checks"] = [search_brand(device, b, aliases) for b in brands]
-    return _finish(out, brands, title_ok)
 
 
 def _finish(out: dict, brands: list[str], title_ok: bool | None, gender_ok: bool | None | str = None) -> dict:

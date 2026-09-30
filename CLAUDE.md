@@ -46,13 +46,12 @@ analysis/FINDINGS.md       API facts (read 6.x first); traffic_capture/ holds ca
 qa/
   feed_client.py fp_signer.py cohort_client.py   home feed: Fynd "theme" endpoint, static bearer + local x-fp-signature,
                                                  cohort (l1/l2/state/pincode) via a cached guest token in qa/.cache/
-  deeplink_resolve.py brand_resolver.py compare.py status.py reference.py    Phase 4 destination parsing/matching (5)
+  deeplink_resolve.py brand_resolver.py compare.py reference.py    link parsing, the brand resolver, alias-aware brand compare, reference-row loader (5)
   reference_check.py reference_template.py       optional human expectations (6): judged in feed_verify, template writer
   listing_client.py        search-edge listing API (no auth, app-identity headers); luxe.ajio.com links use store=luxe
   feed_verify.py           THE pipeline + CLI: shared retry queue, activity log, cross-run cache, shown_result()
-  banner_cache.py run_diff.py export_xlsx.py export_banners.py asset_set.py envfile.py
-  spotcheck/               vision.py (Gemma + shared pacer), hero.py, filters.py (gender/brand rules), landing/plp/runner
-                           (the optional emulator tap-through; not used by the web tool)
+  banner_cache.py run_diff.py export_xlsx.py asset_set.py envfile.py
+  spotcheck/               vision.py (Gemma + shared pacer), hero.py (hero-slide picker, retrying vision call), filters.py (gender/brand rules)
 web/                       FastAPI + APScheduler + SQLite (web/app.sqlite3, gitignored). api.py runner.py db.py alerts.py notify.py
   static/index.html        classic UI at /   (the default; do not replace it)
   static/manager/index.html  manager UI at /manager/ (same API, alternate face; keep the two at feature parity)
@@ -111,15 +110,17 @@ that must pass exactly), `image_segmentation_2.py` (origin of the Gemma prompt/p
 - **UI:** finished runs are blue, running purple, cancelled grey, a run that itself failed red. UNAVAILABLE never counts as
   "needs a look" and never raises an alert. Logos: manager = white A in a black
   square with a white border, classic = the opposite.
+- **Retention [D] (2026-09-30):** runs older than 30 days (`started_at`) are deleted, row and `runs/<id>` folder, by a job in `web/api.py` (2 min after each server start, then every 24 h; `web/retention.py`, `RETENTION_DAYS`). Never a `running` run; alerts about it are kept with `run_id` NULL; stray `runs/<stamp>*` folders with no row go by their name's timestamp; loose files in `runs/` stay. Anything that keeps a run's data past 30 days must export it first.
 - **Not tracked on purpose:** Gemma token usage (the user declined).
 
-## 5. Destination resolution and brand matching [D] (Phase 4, still true)
+## 5. Destination resolution and brand matching [D] (Phase 4)
 
-Statuses of `qa/compare.py`: `MATCH`, `MISMATCH`, `AMBIGUOUS_DEEPLINK`, `NO_REFERENCE`, `ERROR`. Findings that must not regress:
+The Phase 4 URL-text comparison (`compare_banner`, the `Status` enum) and the emulator tap-through (`spotcheck/runner|device|landing|plp`) were
+removed on 2026-09-30 (ponytail audit): nothing in the web tool used them. What is left is below. Findings that must not regress:
 
-- **Whole-word substring matches auto-accept ambiguous brands** ("Polo" -> "Polo Plus", "Kids" -> "Aks Kids"). [!] The
-  resolver's matching logic must not change; fix it at the status layer: a `word_boundary` result with more than one
-  `possible_ajio_brands` is `AMBIGUOUS_DEEPLINK`, never a match. An empty brand list also needs verification.
+- **Whole-word substring matches are ambiguous** ("Polo" -> "Polo Plus", "Kids" -> "Aks Kids"). [!] The resolver's matching
+  logic must not change (`resolver_fixtures.json`, `tests/test_brand_resolver.py`). Its only callers now are those tests; if a status layer
+  is ever rebuilt on it, a `word_boundary` result with more than one `possible_ajio_brands` must count as ambiguous, never a match.
 - **22 alias groups** (`brand_aliases.draft.json`, approved as drafted 2026-09-21) need alias-aware comparison (LEVI'S/LEVIS,
   RED TAPE/REDTAPE...). **3 pairs collide under the resolver's normalisation** (GINI & JONY, Oomph, ZRI); the deduped copy
   `config/ajio_brand_names_deduped.json` (first spelling kept [A]) is for runtime, but the regression fixtures include
@@ -137,8 +138,7 @@ link really opens** (not the link text): link type (PLP family), every expected 
 category contained in the listing title [A]. A MISMATCH makes the banner FAIL (an already-FAIL banner keeps its own reasons and gains
 the finding); untestable things are UNCHECKED, never pass or fail. It runs after the banner cache, skips hidden/skipped banners and
 ignores hotspots. Shown as a `reference_check` field, in the reason, a "Reference" row in the detail views, Excel and alert text.
-`config/reference.sample.csv` is a format example (3 stale placeholder rows), and the old Phase 4 `qa/compare.py` (URL-text based)
-plus the emulator spot-check's `--reference` still use `qa/reference.py` on their own. **No real rows exist yet: the data is held by
+`config/reference.sample.csv` is a format example (3 stale placeholder rows), and `qa/reference.py` only loads the file. **No real rows exist yet: the data is held by
 a colleague of the user (2026-09-30), and the user chose to leave the check as an OPTION until it arrives, so don't chase it or
 nag. Do not invent expectations, and do not treat placeholder rows as evidence.** Docs: `docs/UI_GUIDE.md`, "Reference data".
 
@@ -158,7 +158,7 @@ nag. Do not invent expectations, and do not treat placeholder rows as evidence.*
 2. **Reference rows: the mechanism is built (6); the real expectations are with the user's colleague. Optional until they arrive, no action needed.**
 3. Alias groups and the 3-pair dedupe: **answered [D] 2026-09-21**.
 4. Check cadence: **answered by use**, schedules are user-defined per scheduler (interval, start time, multi-select axes); no global default.
-5. Emulator spot-check: built (`qa/spotcheck/`) but **not scheduled by the web app** [A]; run it by hand when wanted.
+5. Emulator spot-check: **removed 2026-09-30** (the tap-through, `qa/spotcheck/runner|device|landing|plp`; `git log` has it). `hero`/`filters`/`vision` stay: the feed check uses them.
 6. Scope boundary (read-only, no redistribution): **confirmed by working on the user's word**; see 0.
 7. Known gaps, not built: resuming queued multi-run batches after a server restart; a FAIL -> UNAVAILABLE -> FAIL sequence
    re-alerts "new FAIL"; results saved for `luxe.ajio.com` links before the store fix are stale; other AJIO hosts/stores are unexamined.

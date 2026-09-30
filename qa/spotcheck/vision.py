@@ -19,7 +19,6 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from qa.envfile import load_env
-from qa.spotcheck.landing import VisionVerdict, brands_overlap
 
 log = logging.getLogger("qa.spotcheck.vision")
 
@@ -409,12 +408,3 @@ def analyze_image(image_path: str | Path, client=None, extra: str = "") -> dict:
                 log.warning("could not delete uploaded file %s: %s", getattr(uploaded, "name", "?"), exc)
 
 
-def compare_banner_to_landing(banner: dict, landing: dict, aliases=None) -> VisionVerdict | None:
-    """Same brand on the banner image and the landing page? None when either side names no brand."""
-    banner_brands = [b for b in banner.get("brands_mentioned") or [] if isinstance(b, str)]
-    landing_brands = [b for b in landing.get("brands_mentioned") or [] if isinstance(b, str)]
-    if not banner_brands or not landing_brands:
-        return None
-    if brands_overlap(banner_brands, landing_brands, aliases):
-        return VisionVerdict("MATCH", f"banner brands {banner_brands} appear on the landing page")
-    return VisionVerdict("DIFFERENT", f"banner brands {banner_brands} vs landing page brands {landing_brands}")

@@ -1261,10 +1261,12 @@ function paintRun() {
   $$(".lg-chip", sum).forEach(c => c.addEventListener("click", () => { const k = c.dataset.st; R.filter.has(k) ? R.filter.delete(k) : R.filter.add(k); paintRun(); }));
 
   const indices = [...new Set([...R.banners.values()].map(b => b.section_index).filter(v => v != null))].sort((a, b) => a - b);
+  const titles = new Map();          // the carousel's own title from the feed (its CMS label), shown beside the number
+  for (const b of R.banners.values()) if (b.carousel_label && !titles.has(b.section_index)) titles.set(b.section_index, b.carousel_label);
   const hiddenN = [...R.banners.values()].filter(b => b.hidden).length;
   const tb = byId("rp-toolbar");
   const hadFocus = document.activeElement && document.activeElement.id;
-  tb.innerHTML = `<select class="sel" id="rp-car" aria-label="Carousel"><option value="">All carousels</option>${indices.map(i => `<option value="${i}"${String(R.carousel) === String(i) ? " selected" : ""}>Carousel ${i}</option>`).join("")}</select>
+  tb.innerHTML = `<select class="sel" id="rp-car" aria-label="Carousel"><option value="">All carousels</option>${indices.map(i => `<option value="${i}"${String(R.carousel) === String(i) ? " selected" : ""}>Carousel ${i}${titles.has(i) ? ` · ${esc(titles.get(i))}` : ""}</option>`).join("")}</select>
     <select class="sel" id="rp-sort" aria-label="Order"><option value="feed"${R.sort === "feed" ? " selected" : ""}>Feed order</option><option value="problems"${R.sort === "problems" ? " selected" : ""}>Problems first</option></select>
     ${hiddenN ? `<label class="switch"><input type="checkbox" id="rp-hid" ${R.hidden ? "checked" : ""}> Show ${hiddenN} hidden / out-of-schedule</label>` : ""}
     <span class="grow"></span>

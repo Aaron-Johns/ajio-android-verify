@@ -28,8 +28,7 @@ from qa import asset_set, deal_sort_check, listing_client as lc, reference_check
 from qa.pages import DEFAULT_PAGE, PAGE_IDS
 from qa.banner_cache import BannerCache, dhash
 from qa.compare import AliasMap
-from qa.export_banners import fetch_image
-from qa.feed_client import RUNS_DIR, Banner, Hotspot, RunLog, fetch_banners, parse_banners
+from qa.feed_client import RUNS_DIR, Banner, Hotspot, RunLog, fetch_banners, fetch_image, parse_banners
 from qa.spotcheck import filters, hero, vision
 
 log = logging.getLogger("qa.feed_verify")

@@ -1599,3 +1599,29 @@ the next step up must hold strictly fewer products than the floor step, else MIS
 top step has nothing above and skips it; the lower-steps check still comes first. Asked which reading (floor step / banner's own step / smaller-or-equal): user chose the floor
 step, strictly smaller, after being told it fails a listing whose minimum is exactly x. Live on the three prem kids listings: "Min 50" True, "50-80" True, "Min 70" (60% and 70%
 both 9,309) now False. Tests: 683 pass (5 new / changed).
+
+### Carousel filter shows the carousel title (2026-09-30)
+Asked: in the banner page's carousel filter, add the carousel's title beside it. `run_view` now overlays `carousel_label` (the section's CMS label from banners.json,
+the same text the New run preview uses as the carousel heading) on every banner row, and the carousel dropdown in both UIs reads "Carousel 3 · <title>"
+(escaped; just the number when a carousel has no label). Works for old runs too (read from banners.json). Needs the server restarted for the new field.
+
+### Ponytail audit cuts (2026-09-30)
+User asked for everything from the ponytail audit. Done (all in git history if wanted back):
+- **Emulator tap-through removed:** `qa/spotcheck/runner.py`, `device.py`, `landing.py`, `plp.py` and their tests/fixtures; `hero.py` cut to `hero_candidates` + `_analyze`;
+  `filters.py` lost its on-device brand-filter functions (`verify_from_listing` etc. stay); `vision.compare_banner_to_landing` gone. Not verified: the emulator by hand (it can't run any more).
+- **Phase 4 URL-text comparison removed:** `compare_banner`, `qa/status.py` (`Status`, `SpotStatus`, `Comparison`, `brand_needs_review`). `compare.py` keeps `AliasMap`, `brand_key`, `_type_ok`.
+  `brand_resolver.BrandResolver` is now only called by `tests/test_brand_resolver.py` (pinned by the [!] fixtures rule); left alone.
+- **Singular request fields removed** (`l1`/`l2`/`state`/`pincode` on `POST /api/runs`, `POST/PATCH /api/schedules`): only the list names are accepted. `docs/API.md` updated.
+- **Dead helpers removed:** `runner.is_running`, `runner.is_retrying`, `feed_client.host_of`, `listing_client.product_rows`.
+- **`qa/export_banners.py` and `qa/dedupe_brands.py` removed.** `fetch_image` moved to `qa/feed_client.py`. The raw-banner CSV/Excel exporter is gone (it wrote `data/banners.xlsx`); `qa/export_xlsx.py` (the check results) is unchanged.
+- **`requirements.txt`** cut from ~60 freeze pins to the 11 direct ones (no Appium). Not verified in a fresh venv (creating one was blocked).
+- **Not done:** the two UIs' shared code. Measured it: only 8 same-named helpers are identical (~35 lines); the other 40 differ in the DOM they touch, so a shared `common.js` would add a file for almost nothing.
+- Tests: 577 pass (was 684; the difference is the deleted emulator / exporter / compare tests). Server restarted; `/api/meta` answers 200.
+
+### Automatic deletion of runs older than 30 days (2026-09-30)
+User: set up an auto-deletion system, delete runs over 30 days old from the current time. New `web/retention.py` (`purge_old_runs`, `RETENTION_DAYS = 30`): deletes each run whose `started_at`
+is over 30 days ago and is not `running` (folder first, only a direct child of `runs/`; if the folder can't be removed the row stays for the next pass), then the row (`db.delete_run`, which also
+sets `alerts.run_id` NULL so the alert stays but its "Open run" button goes). Also removes stray `runs/<stamp>*` folders that have no row, by the timestamp in the name; loose files stay.
+Scheduled in `web/api.py` `_startup`: once 2 minutes after every start (the PC may be off at any fixed hour), then every 24 h. [A] Uses the run's start time, not its finish time; hidden and failed runs
+are deleted too. Nothing is old enough today (the oldest run is 2026-09-24, the oldest stray folder 2026-09-21), so the first deletions happen from 2026-10-24. Tests: 9 new (`tests/test_retention.py`), 586 pass.
+Not verified: a real deletion of real runs (none are old enough yet).

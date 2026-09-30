@@ -168,6 +168,9 @@ discount filter is simply not checked (never a failure): the banner keeps the PA
 Click a banner to see the result of this check under its details, as **Deal works on the listing?** (classic) or **Deal works on the page**
 (manager): just **True**, **False** or "Couldn't check" (the reason for a False is in the banner's Reason row). Banners whose deal has no such rule (a bare "UP TO 60%") show no row.
 
+The carousel filter above the banners lists each carousel by number and, beside it, the carousel's own title from the feed (for example
+"Carousel 3 · MAIN SECTION 25TH"; these are the CMS names the feed team gave the sections).
+
 **FAIL and INCONCLUSIVE are not the same thing**, even though both need a look: FAIL means the
 pipeline made a determination and it didn't match — that's a real, specific finding you can act on.
 INCONCLUSIVE means the pipeline couldn't confidently determine the answer at all — it's "needs a
@@ -347,6 +350,15 @@ Everything opens *inside the main window* and drills down the same way the rest 
   "running".
 - A fire that takes longer than its interval (many combinations, slow runs) doesn't stack: the next tick
   is skipped while the previous fire is still working through its combinations.
+
+## Old runs are deleted automatically
+
+A run that started more than **30 days** ago is deleted for good: its entry in Recent runs and its folder under
+`runs\` (banner images and results). It happens by itself two minutes after the server starts
+and then once a day, so nothing needs doing and there is no button. A run that is still running is never touched,
+hidden runs are deleted like any other, and alerts about a deleted run stay in the alert list but lose their
+"Open run" button. Export a run to Excel first if you want to keep it. The 30 days are `RETENTION_DAYS` in
+`web/retention.py`.
 
 ## Clearing the cache
 
