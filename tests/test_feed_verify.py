@@ -1103,3 +1103,12 @@ def test_the_summary_and_an_old_result_without_a_reason_are_explained(tmp_path):
     assert "no deal text" in fv.format_summary([old])
     from qa import export_xlsx
     assert "no deal text" in export_xlsx._cell(old, "reason")
+
+
+def test_an_old_undecided_result_and_its_hotspots_are_explained_when_the_run_is_read_back():
+    from web import runner
+    check = {"title_matches_deal": None, "banner_brands": ["X"]}
+    old = {"result": "INCONCLUSIVE", "reason": "", "banner_check": check}
+    assert "no deal text" in runner._explained(old)["reason"]
+    assert runner._explained({**old, "reason": "already has one"})["reason"] == "already has one"
+    assert runner._explained({"result": "PASS", "reason": "", "banner_check": check})["reason"] == ""

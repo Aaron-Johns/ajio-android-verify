@@ -1035,7 +1035,7 @@ async function viewOverview(route, view, stale) {
     ${pageHead({ title: "Overview", sub: "Is the AJIO home feed sending shoppers to the right places?",
       actions: `<button class="btn primary" id="ov-new">${ico("plus")} New check</button>` })}
     ${live.length ? live.slice(0, 1).map(r => {
-      const t = totalOf(r.counts), d = t - ((r.counts || {}).PENDING || 0) - ((r.counts || {}).PROCESSING || 0);
+      const c = r.counts || {}, d = totalOf(c) - (c.PENDING || 0) - (c.PROCESSING || 0), t = r.total || totalOf(c);   // r.total = every banner of the run; counts only has those with a result
       return `<div class="card live-strip" data-open="${esc(r.run_id)}"><span class="pill proc plain">Live</span><div class="grow"><b>Checking ${feedLabel(r)}</b> <span class="muted">· ${placeLabel(r)}</span>
         <div style="margin-top:8px;max-width:420px">${segBar(r.counts)}</div></div>
         <span class="dim">${live.length > 1 ? `${live.length} checks running · ` : ""}${d} of ${t || "…"} done</span>${ico("right")}</div>`; }).join("") : ""}
@@ -1173,19 +1173,7 @@ function reasonTextBase(b, short = false) {
   if (c.gender_matches === "AJIO_BEAUTY") p.push("AJIO beauty banner — the gender check doesn't apply, so please look at it");
   if (c.gender_matches === "INCONCLUSIVE") p.push(`Couldn't tell which audience the banner is for (“${c.banner_gender || ""}”)`);
   if (c.extra_brands && c.extra_brands.length) p.push(`The page also shows brands not named on the banner: ${short ? trunc(c.extra_brands) : c.extra_brands.join(", ")}`);
-  if (!p.length && b.result === "INCONCLUSIVE") p.push(undecidedReason(c));
   return p.join(". ");
-}
-// Mirrors qa/feed_verify.py undecided_reason(): why a banner with nothing wrong found is still "not sure" (also explains results saved before reasons were written).
-function undecidedReason(c) {
-  if (!c || !Object.keys(c).length) return "";
-  const hasBrands = !!(c.banner_brands && c.banner_brands.length);
-  if (c.title_matches_deal === null || c.title_matches_deal === undefined) {
-    return hasBrands ? "The banner has no deal text, so the page title can't be checked (its brands and audience are fine)"
-                     : "The banner names no brand and shows no deal text, so there is nothing to compare with the page";
-  }
-  if (!hasBrands) return "The banner names no brand, so the page's brand list can't be checked (the deal matches the page title)";
-  return "";
 }
 function hotspotReason(h) {
   if (h.reason) return h.reason;
@@ -1194,7 +1182,6 @@ function hotspotReason(h) {
   if (c.title_matches_deal === false) p.push("title doesn't match the deal");
   if (c.gender_matches === false) p.push("gender mismatch");
   if (c.extra_brands && c.extra_brands.length) p.push(`extra brands ${c.extra_brands.join(", ")}`);
-  if (!p.length && h.result === "INCONCLUSIVE") p.push(c.gender_matches === "AJIO_BEAUTY" ? "AJIO beauty banner, gender check skipped" : undecidedReason(c));
   return p.join("; ");
 }
 function activityWord(b) { return b.result === "PROCESSING" ? (b.activity || "Working") : ""; }

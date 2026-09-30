@@ -261,7 +261,7 @@ def test_a_process_created_long_before_or_after_the_run_started_is_not_its_proce
 
 # ---- the run gate ----------------------------------------------------------------------------------
 
-SCHEDULE_ROW = {"id": 7, "l1": "nontransacted", "l2": "unisex", "scope": "hero", "banner_limit": None, "workers": 3,
+SCHEDULE_ROW = {"id": 7, "page": json.dumps(["home"]), "l1": "nontransacted", "l2": "unisex", "scope": "hero", "banner_limit": None, "workers": 3,
                 "pincode": "400001", "state": "ASSAM",
                 "excluded_sections": json.dumps([{"id": "SEC-A", "label": "Bank offers"}])}
 
@@ -308,9 +308,9 @@ def test_repeated_selections_do_not_repeat_a_run():
 
 
 def test_a_schedule_row_reads_as_its_combinations_whether_stored_as_a_list_or_a_plain_string():
-    legacy = {"l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "560029"}
+    legacy = {"page": "home", "l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "560029"}
     assert runner.combos_of(legacy) == [{"page": "home", "l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "560029"}]
-    stored = {"l1": json.dumps(["premium", "nonpremium"]), "l2": json.dumps(["men"]),
+    stored = {"page": json.dumps(["home"]), "l1": json.dumps(["premium", "nonpremium"]), "l2": json.dumps(["men"]),
               "state": json.dumps(["ASSAM", "GOA"]), "pincode": json.dumps(["560029"])}
     assert len(runner.combos_of(stored)) == 4
     blank = runner.combos_of({**legacy, "state": None, "pincode": ""})

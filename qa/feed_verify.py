@@ -800,8 +800,7 @@ def main() -> None:
                 if confirmed:
                     print(f"confirmed a {args.confirm_asset_set!r} banner after {attempts} feed fetch(es)")
                 else:
-                    print(f"WARNING: never saw a {args.confirm_asset_set!r} banner in {attempts} feed fetches; "
-                         f"proceeding with the last pull anyway - this run's results should be treated as suspect")
+                    print("Premium cannot be loaded")     # the run still goes on with the last pull; only the wording is short
         if args.list_carousels:
             rows = [{"banner_id": b.banner_id, "alt_text": b.alt_text, "destination_raw": b.destination_raw,
                     "image_url": b.image_url, "section_index": b.section_index, "section_id": section_id(b),

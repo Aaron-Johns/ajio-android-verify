@@ -18,8 +18,3 @@ PAGES = [
     {"id": "kidswear", "label": "Non prem kids", "tier": "standard"},
 ]
 PAGE_IDS = [p["id"] for p in PAGES]
-_LABELS = {p["id"]: p["label"] for p in PAGES}
-
-
-def label(page: str) -> str:
-    return _LABELS.get(page, page)

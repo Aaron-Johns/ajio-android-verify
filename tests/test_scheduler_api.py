@@ -267,8 +267,7 @@ def test_only_home_multiplies_by_l1_and_l2_every_other_page_is_one_run_per_state
                                   ["home", "menswear", "premium-women"])
     assert [c["page"] for c in combos] == ["home"] * 8 + ["menswear"] * 2 + ["premium-women"] * 2
     assert {(c["l1"], c["l2"]) for c in combos if c["page"] != "home"} == {(runner.NEUTRAL_L1, runner.NEUTRAL_L2)}
-    assert runner.count_combos(["home", "menswear", "premium-women"], ["premium", "nonpremium"], ["men", "women"],
-                               ["ASSAM"], ["560029", "400001"]) == len(combos) == 12
+    assert len(combos) == 12
 
 
 def test_run_now_on_other_pages_starts_one_run_per_page(client, started):
@@ -290,7 +289,7 @@ def test_an_unknown_page_is_refused(client, started):
 
 def test_the_combination_cap_counts_pages_correctly(client, started):
     # 4 x 3 home l1/l2 combos + 6 other pages = 18 <= 24 is fine; adding a second state pushes it to 36
-    body = {"pages": runner.PAGE_IDS, "l1s": ["premium", "nonpremium"], "l2s": ["men", "women"]}
+    body = {"pages": runner.qa_pages.PAGE_IDS, "l1s": ["premium", "nonpremium"], "l2s": ["men", "women"]}
     assert client.post("/api/runs", json=body).json()["combos"] == 4 + 6
     assert client.post("/api/runs", json={**body, "states": ["ASSAM", "GOA", "BIHAR"]}).status_code == 422
 

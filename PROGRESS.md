@@ -1477,3 +1477,40 @@ asked for reasons).
   shows "banner has no deal text, ..." in both UIs and the popup, beauty slides and PASS rows unchanged, 8/8, 0 console errors.
 **Not done:** server restart (the user's premium-men run was mid-flight): Excel export of *old* results gets the fallback only after the
 next restart; cached verdicts from before this keep a blank saved reason for up to 24 h (the display fallback covers them).
+
+## Ponytail review of the page picker + INCONCLUSIVE reasons: fixes applied (2026-09-30)
+
+- `web/runner.py`: dropped the `PAGE_OPTIONS` / `PAGE_IDS` aliases (call sites use `qa_pages` directly), `count_combos` (the API counts
+  `len(expand_combos(...))`, so the count can't drift from what runs) and `_row_pages` (rows always have a `page` column after the migration).
+- `qa/pages.py`: `label()` / `_LABELS` folded into the one caller (`combo_label`).
+- `web/api.py`: `/api/feed-preview` no longer validates `page` itself; `runner.list_carousels` does, so an unknown page now surfaces as a 502
+  "could not fetch the feed" instead of a 422 (the UI only ever sends real ones).
+- The two hand-mirrored JS copies of `undecided_reason` (and the hotspot special cases) are gone. Instead `runner._explained` fills the reason of an
+  old INCONCLUSIVE banner / hotspot on the server when a run is read back, so there is one Python copy and both UIs just show `reason`.
+- Classic `schedWhat` inlined (one use). Kept: `runWhat` (3 uses), manager `schedPages` (5 uses), `pageLabel`, the duplicated `makePageGroup`
+  (two standalone HTML files), and the `_hotspot_reason` name (rename later).
+**Tests:** 638 pass (tests updated for the removed helpers; 1 new for `_explained`). **Live:** server restarted; the API now returns the
+reason for the old premium-men run's INCONCLUSIVE slides (no deal text / AJIO beauty), both UIs show it, 6/6 relevant checks, 0 console errors.
+**Not verified live:** an INCONCLUSIVE *hotspot* served with a filled reason (no such hotspot in the live data; same `_explained` function, unit-tested on a banner only).
+
+## Manager overview: "x of n done" showed "x of x" (2026-09-30)
+
+**Bug:** the live strip on the manager overview built its total from the run summary's `counts`, which only holds banners that already
+have a result, so total always equalled done. **Fix:** `runner.chosen_banners()` (the banner selection `run_view` already did, now shared)
+and `_run_summary` adds `total` (every banner the run covers) while the run is going; the strip uses `r.total`. The run page was already right
+(it counts the PENDING/PROCESSING placeholders). **Tests:** 640 pass (2 new). **Live:** server restarted; a throwaway running run (ZZ row, 5 banners,
+2 results, removed afterwards) shows "2 of 5 done" in headless Edge, 0 console errors. **Not verified:** a real run's strip while it is going.
+
+## Scheduler sidebar list: compact rows, x to delete (2026-09-30)
+
+Classic UI only (the manager has no such list). Each scheduler in the sidebar is now a compact two-line row (smaller padding and type, the
+name ellipsised); the View and Delete buttons are gone, replaced by a small **x** that asks "Delete scheduler ...?" first (same confirmation and
+same `DELETE /api/schedules/{id}` as before). Clicking the row still opens its runs. **Live** (headless Edge, throwaway ZZ schedules, removed): no
+View/Delete buttons, one x per row, 44 px rows, cancelling the confirm keeps it, accepting deletes it, the click doesn't also open the schedule,
+0 console errors; the user's real schedules untouched (id list identical before/after). UI_GUIDE updated.
+
+## Premium warning text (2026-09-30)
+
+User asked to replace the "never saw a 'PR' banner in N feed fetches; proceeding with the last pull anyway ..." message with just
+"Premium cannot be loaded". Changed the one print in `qa/feed_verify.py` (behaviour unchanged: the run still continues with the last pull). It is
+still only console output of the run subprocess, so the app does not show it anywhere (offered surfacing it in the UI; not asked for yet). Tests: 640 pass.

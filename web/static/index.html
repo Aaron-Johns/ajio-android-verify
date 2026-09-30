@@ -116,12 +116,13 @@
   }
   button.danger { color: var(--fail-text); }
   .sched-item {
-    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 7px; padding: 4px 6px 4px 9px; margin-bottom: 5px; background: var(--surface-2);
   }
-  .sched-item .name { font-weight: 600; font-size: 13px; }
+  .sched-item .name { font-weight: 600; font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sched-item .top { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-  .sched-item .meta { font-size: 11px; color: var(--text-dim); margin: 2px 0 6px; }
-  .sched-item .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .sched-item .meta { font-size: 10.5px; color: var(--text-dim); margin: 0; }
+  .sched-item .sched-x { border: none; background: none; color: var(--text-dim); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 5px; border-radius: 5px; margin-left: auto; }
+  .sched-item .sched-x:hover { color: var(--fail-text); background: var(--fail-bg); }
   /* Scheduler: the sidebar block, and the in-page sub-window that takes over the main panel */
   .sched-title { cursor: pointer; display: flex; align-items: center; gap: 8px; }
   .sched-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
@@ -692,11 +693,6 @@ function pageLabel(id) {
 }
 // What a run (or a schedule) checks, in words: the l1/l2 feed for home, the page's name for any other page.
 function runWhat(r) { return (r.page || "home") === "home" ? `${r.l1}/${r.l2}` : pageLabel(r.page); }
-function schedWhat(s) {
-  const pages = s.pages || ["home"];
-  return [pages.includes("home") ? `${s.l1s.join("+")}/${s.l2s.join("+")}` : null, ...pages.filter(p => p !== "home").map(pageLabel)]
-    .filter(Boolean).join(" + ");
-}
 
 const openPickers = new Set();
 document.addEventListener("mousedown", ev => { for (const p of [...openPickers]) if (!p.root.contains(ev.target)) p.close(); });
@@ -1268,20 +1264,7 @@ function explainReasonBase(b, { truncate = false } = {}) {
     const list = truncate ? truncatedList(c.extra_brands) : c.extra_brands.join(", ");
     parts.push(`listing has extra brands not named on the banner: ${list}`);
   }
-  if (!parts.length && b.result === "INCONCLUSIVE") parts.push(undecidedReason(c));
   return parts.join("; ");
-}
-
-// Mirrors qa/feed_verify.py undecided_reason(): why a banner with nothing wrong found is still INCONCLUSIVE (also explains results saved before reasons were written).
-function undecidedReason(c) {
-  if (!c || !Object.keys(c).length) return "";
-  const hasBrands = !!(c.banner_brands && c.banner_brands.length);
-  if (c.title_matches_deal === null || c.title_matches_deal === undefined) {
-    return hasBrands ? "banner has no deal text, so the page title can't be checked (its brands and audience are fine)"
-                     : "banner names no brand and shows no deal text, so there is nothing to compare with the page";
-  }
-  if (!hasBrands) return "banner names no brand, so the page's brand list can't be checked (the deal matches the page title)";
-  return "";
 }
 
 function hotspotReason(h) {
@@ -1292,10 +1275,6 @@ function hotspotReason(h) {
   if (c.title_matches_deal === false) parts.push("title doesn't match the deal");
   if (c.gender_matches === false) parts.push("gender mismatch");
   if (c.extra_brands && c.extra_brands.length) parts.push(`extra brands ${c.extra_brands.join(", ")}`);
-  if (!parts.length && h.result === "INCONCLUSIVE") {
-    if (c.gender_matches === "AJIO_BEAUTY") parts.push("AJIO beauty banner - gender check skipped, needs a human look");
-    else parts.push(undecidedReason(c));
-  }
   return parts.join("; ");
 }
 
@@ -1724,16 +1703,12 @@ function renderSidebarSchedules() {
     div.className = "sched-item";
     div.innerHTML = `
       <div class="top"><div class="name">${escapeHtml(s.name)}</div>
-        <span class="dot ${s.enabled ? "on" : ""}" title="${s.enabled ? "Enabled" : "Disabled"}"></span></div>
-      <div class="meta">every ${fmtInterval(s.interval_minutes)} · ${escapeHtml(schedWhat(s))}${s.combo_count > 1 ? ` · ${s.combo_count} runs` : ""}${s.last_status ? " · " + escapeHtml(s.last_status) : ""}${s.unread_alerts ? ` · ${s.unread_alerts} unread` : ""}</div>
-      <div class="actions">
-        <button class="secondary" data-act="view">View</button>
-        <button class="secondary danger" data-act="delete">Delete</button>
-      </div>`;
+        <span class="dot ${s.enabled ? "on" : ""}" title="${s.enabled ? "Enabled" : "Disabled"}"></span>
+        <button type="button" class="sched-x" title="Delete this scheduler" aria-label="Delete scheduler ${escapeHtml(s.name)}">&times;</button></div>
+      <div class="meta">every ${fmtInterval(s.interval_minutes)} · ${escapeHtml([s.pages.includes("home") ? `${s.l1s.join("+")}/${s.l2s.join("+")}` : "", ...s.pages.filter(p => p !== "home").map(pageLabel)].filter(Boolean).join(" + "))}${s.combo_count > 1 ? ` · ${s.combo_count} runs` : ""}${s.last_status ? " · " + escapeHtml(s.last_status) : ""}${s.unread_alerts ? ` · ${s.unread_alerts} unread` : ""}</div>`;
     div.title = "Open this scheduler's runs";
     div.addEventListener("click", () => openScheduler("detail", s.id));      // the schedule itself opens its runs
-    div.querySelector('[data-act="view"]').addEventListener("click", ev => { ev.stopPropagation(); openScheduler("detail", s.id); });
-    div.querySelector('[data-act="delete"]').addEventListener("click", ev => { ev.stopPropagation(); schedAction("delete", s); });
+    div.querySelector(".sched-x").addEventListener("click", ev => { ev.stopPropagation(); schedAction("delete", s); });
     el.appendChild(div);
   }
 }

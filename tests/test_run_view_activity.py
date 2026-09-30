@@ -163,3 +163,24 @@ def test_the_web_retry_launches_the_check_with_no_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "_retrying", set())
     assert runner.retry_banner("r", "b1") is True
     assert "--no-cache" in seen["cmd"] and "--only-banner" in seen["cmd"] and "--resume-from" in seen["cmd"]
+
+
+def test_a_running_runs_total_counts_banners_that_have_no_result_yet(tmp_path):
+    run_dir(tmp_path, ids=("a", "b", "c", "d"))
+    assert len(runner.chosen_banners(tmp_path, "hero", None)) == 4
+    assert len(runner.chosen_banners(tmp_path, "hero", 3)) == 3                 # a banner limit is applied
+    assert runner.chosen_banners(tmp_path / "nowhere", "hero", None) == []      # no banners.json yet
+
+
+def test_the_run_summary_carries_the_total_only_while_the_run_is_going(tmp_path, monkeypatch):
+    from web import api, db
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "app.sqlite3")
+    db.init_db()
+    (tmp_path / "run").mkdir()
+    out = run_dir(tmp_path / "run", ids=("a", "b", "c"))
+    (out / "results.json").write_text(json.dumps([{"banner_id": "a", "result": "PASS", "reason": ""}]), encoding="utf-8")
+    db.insert_run("r1", str(out), "hero", None, 3, "nontransacted", "unisex", 1, None)
+    live = api._run_summary(db.get_run("r1"))
+    assert live["total"] == 3 and sum(live["counts"].values()) == 1          # 1 of 3 done, not 1 of 1
+    db.finish_run("r1", "done")
+    assert "total" not in api._run_summary(db.get_run("r1"))

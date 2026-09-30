@@ -240,8 +240,8 @@ block in the left sidebar has three things:
   that cover both. Esc clears it; the filter survives the list's automatic refresh. It only filters the sidebar list
   (the expanded page has its own All / Enabled / Disabled / Needs attention chips).
 - **Make scheduler** — opens the create form in the main window.
-- **A scrolling list** of your schedulers. Click one (or its **View**) to open its runs; **Delete**
-  removes it (its past runs and alerts are kept). A green dot means enabled. A count of unread alerts
+- **A scrolling list** of your schedulers, one compact line each. Click one to open its runs; the small **x**
+  at its right end deletes it after a confirmation (its past runs and alerts are kept). A green dot means enabled. A count of unread alerts
   shows on the block's title and beside any scheduler that has some.
 - **Expand** (or clicking the block's title) — opens the full list in the main window.
 

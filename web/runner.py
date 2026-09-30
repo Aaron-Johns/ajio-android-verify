@@ -93,15 +93,6 @@ def new_batch_id() -> str:
 # Only the home feed is personalised by l1/l2; every other page returns the same banners for any cohort, so
 # those pages run once per state/pincode with this fixed, neutral cohort (the baseline in qa/cohort_client.py).
 NEUTRAL_L1, NEUTRAL_L2 = "nontransacted", "unisex"
-PAGE_OPTIONS = qa_pages.PAGES
-PAGE_IDS = qa_pages.PAGE_IDS
-
-
-def count_combos(pages, l1s, l2s, states, pincodes) -> int:
-    """How many runs expand_combos would make, without building them: home is l1 x l2, any other page 1."""
-    uniq = lambda values: len(set(values))
-    per_page = sum(uniq(l1s) * uniq(l2s) if p == qa_pages.DEFAULT_PAGE else 1 for p in dict.fromkeys(pages))
-    return per_page * uniq(states) * uniq(pincodes)
 
 
 def expand_combos(l1s, l2s, states, pincodes, pages=(qa_pages.DEFAULT_PAGE,)) -> list[dict]:
@@ -118,22 +109,17 @@ def expand_combos(l1s, l2s, states, pincodes, pages=(qa_pages.DEFAULT_PAGE,)) ->
     return out
 
 
-def _row_pages(row) -> list[str]:
-    keys = row.keys() if hasattr(row, "keys") else ()
-    return db.as_list(row["page"] if "page" in keys else None) or [qa_pages.DEFAULT_PAGE]
-
-
 def combos_of(row) -> list[dict]:
     """The combinations a schedule row covers. Reads both storage shapes (see db.as_list); a missing
-    state/pincode means the tool's defaults and a missing page means home."""
+    state/pincode means the tool's defaults and a blank page means home."""
     return expand_combos(db.as_list(row["l1"]), db.as_list(row["l2"]),
                          db.as_list(row["state"]) or [DEFAULT_STATE], db.as_list(row["pincode"]) or [DEFAULT_PINCODE],
-                         _row_pages(row))
+                         db.as_list(row["page"]) or [qa_pages.DEFAULT_PAGE])
 
 
 def combo_label(combo: dict) -> str:
     page = combo.get("page", qa_pages.DEFAULT_PAGE)
-    what = f"{combo['l1']}/{combo['l2']}" if page == qa_pages.DEFAULT_PAGE else qa_pages.label(page)
+    what = f"{combo['l1']}/{combo['l2']}" if page == qa_pages.DEFAULT_PAGE else next(p["label"] for p in qa_pages.PAGES if p["id"] == page)
     return f"{what} · {combo['state']} · {combo['pincode']}"
 
 
@@ -144,7 +130,7 @@ def start_run(l1: str, l2: str, scope: str, banner_limit: int | None, workers: i
               page: str = qa_pages.DEFAULT_PAGE) -> str:
     if l1 not in L1_OPTIONS or l2 not in L2_OPTIONS:
         raise ValueError(f"unknown l1/l2: {l1}/{l2}")
-    if page not in PAGE_IDS:
+    if page not in qa_pages.PAGE_IDS:
         raise ValueError(f"unknown page: {page}")
     if scope not in SCOPES:
         raise ValueError(f"unknown scope: {scope}")
@@ -302,7 +288,7 @@ def list_carousels(l1: str, l2: str, scope: str, page: str = qa_pages.DEFAULT_PA
     is read once at import time, not passable as a plain argument."""
     if l1 not in L1_OPTIONS or l2 not in L2_OPTIONS:
         raise ValueError(f"unknown l1/l2: {l1}/{l2}")
-    if page not in PAGE_IDS:
+    if page not in qa_pages.PAGE_IDS:
         raise ValueError(f"unknown page: {page}")
     if scope not in SCOPES:
         raise ValueError(f"unknown scope: {scope}")
@@ -528,7 +514,7 @@ def unrequest_skip(run_id: str, banner_id: str) -> None:
 
 # ---- reading a run's output (pure reads; safe to do in-process) ---------------------------
 
-from qa.feed_verify import (RETRY_ROUNDS, UNAVAILABLE, _safe, exclude_banners, is_retryable, load_activity,  # noqa: E402
+from qa.feed_verify import (RETRY_ROUNDS, UNAVAILABLE, _safe, undecided_reason, exclude_banners, is_retryable, load_activity,  # noqa: E402
                             load_banners, load_final_results, select_banners, shown_hotspot_result, shown_result)
 
 # 1 initial attempt + RETRY_ROUNDS retries - matches every web-triggered run exactly, since start_run()
@@ -560,6 +546,13 @@ def current_activity(entry: dict | None, now: float | None = None) -> str:
     return entry["activity"]
 
 
+def _explained(item: dict) -> dict:
+    """An INCONCLUSIVE banner / hotspot saved before reasons were written for it gets one read off its banner_check."""
+    if item["result"] == "INCONCLUSIVE" and not item.get("reason"):
+        return {**item, "reason": undecided_reason(item.get("banner_check") or {})}
+    return item
+
+
 def load_shown_results(out_dir: Path, is_live: bool = False) -> dict[str, dict]:
     """load_results with each record's `result` replaced by the status a person sees (see qa.feed_verify.shown_result):
     a banner that only hit a temporary server/network error and used up its retries is UNAVAILABLE, not INCONCLUSIVE.
@@ -574,6 +567,15 @@ def load_shown_results(out_dir: Path, is_live: bool = False) -> dict[str, dict]:
 def load_results(out_dir: Path) -> dict[str, dict]:
     """banner_id -> latest known result: results.json once finished (plus any later per-banner retry), else partial.jsonl."""
     return load_final_results(out_dir)
+
+
+def chosen_banners(out_dir: Path, scope: str, banner_limit: int | None, excluded_carousels: set[int] | None = None,
+                   excluded_sections: set[str] | None = None) -> list:
+    """The banners a run covers (its scope, carousel exclusions and banner limit applied), whether or not any has a result yet."""
+    if not (out_dir / "banners.json").exists():
+        return []
+    chosen = exclude_banners(select_banners(load_banners(out_dir), scope), excluded_carousels, excluded_sections)
+    return chosen[:banner_limit] if banner_limit else chosen
 
 
 def run_view(out_dir: Path, scope: str, banner_limit: int | None, is_live: bool = True,
@@ -596,13 +598,7 @@ def run_view(out_dir: Path, scope: str, banner_limit: int | None, is_live: bool 
     nothing will ever advance that banner again, so it's treated as exhausted too (offering the same
     manual retry) regardless of its attempts count, instead of showing a permanently-stuck "still
     processing" with no way forward."""
-    banners_file = out_dir / "banners.json"
-    if not banners_file.exists():
-        return []
-    banners = load_banners(out_dir)
-    chosen = exclude_banners(select_banners(banners, scope), excluded_carousels, excluded_sections)
-    if banner_limit:
-        chosen = chosen[:banner_limit]
+    chosen = chosen_banners(out_dir, scope, banner_limit, excluded_carousels, excluded_sections)
     results = load_results(out_dir)
     skip_ids = _read_skip_requests(out_dir / "skip_requests.json")
     activity = load_activity(out_dir) if is_live else {}
@@ -641,7 +637,8 @@ def run_view(out_dir: Path, scope: str, banner_limit: int | None, is_live: bool 
                 r = {**r, "try_number": attempts, "max_tries": MAX_TRIES, "retries_exhausted": exhausted, "reason": reason,
                      **({"result": UNAVAILABLE} if exhausted and r["result"] == "INCONCLUSIVE" else {})}
                 if r.get("hotspot_checks"):      # each hotspot's own status: a temporary error on one link is UNAVAILABLE, not a finding
-                    r["hotspot_checks"] = [{**h, "result": shown_hotspot_result(h)} for h in r["hotspot_checks"]]
+                    r["hotspot_checks"] = [_explained({**h, "result": shown_hotspot_result(h)}) for h in r["hotspot_checks"]]
+                r = _explained(r)
         if r["result"] == "PROCESSING":
             r = {**r, "activity": current_activity(activity.get(b.banner_id))}
         # Retry is offered on a FAIL / INCONCLUSIVE / UNAVAILABLE banner. While the run is still going only when its automatic

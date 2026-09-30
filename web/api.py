@@ -160,15 +160,15 @@ def _clean_pincodes(values: list[str]) -> list[str]:
 def _clean_pages(values: list[str]) -> list[str]:
     values = _unique(values)
     if not values:
-        raise HTTPException(422, f"pick at least one page from {runner.PAGE_IDS}")
-    bad = [v for v in values if v not in runner.PAGE_IDS]
+        raise HTTPException(422, f"pick at least one page from {runner.qa_pages.PAGE_IDS}")
+    bad = [v for v in values if v not in runner.qa_pages.PAGE_IDS]
     if bad:
-        raise HTTPException(422, f"page must be one of {runner.PAGE_IDS} (got {bad})")
+        raise HTTPException(422, f"page must be one of {runner.qa_pages.PAGE_IDS} (got {bad})")
     return values
 
 
 def _check_combo_count(l1s, l2s, states, pincodes, pages) -> None:
-    n = runner.count_combos(pages, l1s, l2s, states, pincodes)
+    n = len(runner.expand_combos(l1s, l2s, states, pincodes, pages))
     if n > runner.MAX_COMBOS:
         raise HTTPException(422, f"{len(pages)} page(s) x {len(l1s)} l1 x {len(l2s)} l2 (home only) x {len(states)} states x "
                                  f"{len(pincodes)} pincodes = {n} runs; at most {runner.MAX_COMBOS} are allowed at once - "
@@ -219,7 +219,7 @@ def meta():
     return {
         "l1_options": runner.L1_OPTIONS,
         "l2_options": runner.L2_OPTIONS,
-        "page_options": runner.PAGE_OPTIONS,
+        "page_options": runner.qa_pages.PAGES,
         "scopes": runner.SCOPES,
         "state_options": runner.STATE_OPTIONS,
         "notify_modes": list(run_diff.MODES),
@@ -259,6 +259,9 @@ def _run_summary(row) -> dict:
     for r in results.values():
         counts[r["result"]] = counts.get(r["result"], 0) + 1
     d["counts"] = counts
+    if d["status"] == "running":     # counts only holds banners with a result so far; "x of n done" needs n
+        d["total"] = len(runner.chosen_banners(out_dir, d["scope"], d["banner_limit"], _excluded_carousels(row),
+                                               _run_excluded_sections(row)))
     d["excluded_carousels"] = sorted(_excluded_carousels(row))
     d["excluded_sections"] = sorted(_run_excluded_sections(row))
     # the full diff is big and has its own endpoint - a run summary only carries the headline
@@ -274,7 +277,7 @@ def _run_summary(row) -> dict:
 def feed_preview(l1: str, l2: str, scope: str = "hero", page: str = runner.qa_pages.DEFAULT_PAGE):
     """Fetches the feed fresh and groups it by carousel, without running any verification - the "New
     run" form's carousel checklist calls this before a run starts (see runner.list_carousels)."""
-    _clean_l1s([l1]), _clean_l2s([l2]), _clean_pages([page]), _validate_scope(scope)
+    _clean_l1s([l1]), _clean_l2s([l2]), _validate_scope(scope)
     try:
         return runner.list_carousels(l1, l2, scope, page)
     except Exception as exc:
@@ -589,7 +592,7 @@ def update_schedule(schedule_id: int, req: ScheduleUpdate):
     axes = {"l1s": db.as_list(row["l1"]), "l2s": db.as_list(row["l2"]),
             "states": db.as_list(row["state"]) or [runner.DEFAULT_STATE],
             "pincodes": db.as_list(row["pincode"]) or [runner.DEFAULT_PINCODE],
-            "pages": runner._row_pages(row)}
+            "pages": db.as_list(row["page"]) or [runner.qa_pages.DEFAULT_PAGE]}
     if any(k in fields for k in _AXIS_FIELDS):
         for k in _AXIS_FIELDS:
             if k in fields:
