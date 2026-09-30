@@ -92,8 +92,10 @@ that must pass exactly), `image_segmentation_2.py` (origin of the Gemma prompt/p
   (default 560029), all multi-select. **`l1:premium` sometimes returns a non-premium asset set: known, ~90% fine, accepted;
   do not re-flag it as a bug.**
 - **Deal-sort check [D] (2026-09-30, `qa/deal_sort_check.py`):** a banner's price/discount claim is checked against the listing sorted with
-  AJIO's own sort codes (`query=:discount-desc | :prce-asc | :prce-desc`; the app API ignores `:discount-asc`, so the lowest discount is read from
-  the last page of `:discount-desc`, 60 a page). "MIN x% OFF": lowest discount >= x-10. "x-y% OFF": the same low-end rule with x, and **no cap on y** (user, 2026-09-30).
+  AJIO's own sort codes (`query=:discount-desc | :prce-asc | :prce-desc`; the app API ignores `:discount-asc`). The low-end (discount) rule is answered first from the
+  listing's own **"Discount Ranges" facet** ("40% and above" = N of the total; exact for a multiple-of-10 threshold, no extra request); only when that
+  can't settle it (no such facet, or the threshold sits between two steps) is the lowest discount read from the last page of `:discount-desc`
+  (60 a page; deep pages are refused, see below). "MIN x% OFF": lowest discount >= x-10. "x-y% OFF": the same low-end rule with x, and **no cap on y** (user, 2026-09-30).
   "UNDER Rs x": dearest item <= x+1. "STARTING AT Rs x": the cheapest item must be **exactly** x (strict, no slack). A mismatch makes the banner FAIL (not over the
   beauty / unrecognised-audience INCONCLUSIVE); "UP TO x%", "FLAT x%" and anything else have no rule; a sort that can't be loaded is
   UNCHECKED, never a failure (a listing too big to page to its end keeps its PASS/FAIL from the other checks, with the reason

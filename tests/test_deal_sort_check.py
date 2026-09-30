@@ -155,3 +155,51 @@ def test_a_listing_too_large_to_page_keeps_its_verdict_and_says_what_it_could_no
     r = run([banner("b", "https://ajio.com/s/a-1")], tmp_path, TooBig([product(price=500, discount=45)]))[0]
     assert r["result"] == "PASS"                                                     # decided by the brand / title / gender checks
     assert r["reason"] == "couldn't get the minimum discount since the page was too large"
+
+
+# ---- the Discount Ranges filter answers the low end before any sorted page is fetched ---------------------
+
+def _too_big(sort, page, size):
+    raise RuntimeError("listing a-1: HTTP 403 (outside the allowed range)")
+
+
+def test_the_discount_filter_settles_a_min_deal_without_fetching_a_page():
+    ranges = {10: 1000, 20: 1000, 30: 1000, 40: 1000, 50: 800}                     # everyone is discounted at least 40%
+    r = ds.check("MIN. 50% OFF", 1000, _too_big, ranges)                            # needs >= 40; an unreachable page would have failed
+    assert r["status"] == "MATCH" and r["observed"] == {"discount_filter": {"all_at_or_above": 40}}
+    assert ds.check("MIN. 40% OFF", 1000, _too_big, ranges)["status"] == "MATCH"
+
+
+def test_the_discount_filter_finds_products_below_what_the_banner_allows():
+    ranges = {10: 1000, 20: 1000, 30: 990, 40: 900, 50: 700}                        # 10 products are under 30%
+    r = ds.check("MIN. 40% OFF", 1000, _too_big, ranges)                            # needs >= 30
+    assert r["status"] == "MISMATCH"
+    assert "10 of 1000 products on the listing are discounted less than 30%" in r["reason"]
+
+
+def test_a_need_between_two_steps_uses_whichever_side_is_certain():
+    ranges = {10: 1000, 20: 1000, 30: 1000, 40: 900}
+    assert ds.check("MIN. 50% OFF", 1000, _too_big, {**ranges, 40: 1000})["status"] == "MATCH"     # all >= 40 >= 35? need 40, exact
+    assert ds.check("MIN. 45% OFF", 1000, _too_big, {**ranges, 40: 1000})["status"] == "MATCH"      # need 35: all >= 40
+    r = ds.check("MIN. 45% OFF", 1000, _too_big, {**ranges, 30: 950, 40: 900})                        # need 35: 50 are under 30
+    assert r["status"] == "MISMATCH"
+    r = ds.check("MIN. 45% OFF", 1000, _too_big, ranges)                            # need 35: all >= 30 but 100 are under 40: undecided
+    assert r["status"] == "UNCHECKED" and "too large" in r["reason"]                # so it falls back to the last page, which is unreachable
+
+
+def test_an_undecided_filter_falls_back_to_the_last_page_when_it_can_be_reached():
+    get = Sorted(CATALOGUE)
+    r = ds.check("MIN. 45% OFF", 6, get, {10: 6, 20: 6, 30: 6, 40: 5})               # need 35; lowest is 30 -> mismatch via the page
+    assert r["status"] == "MISMATCH" and r["observed"] == {"lowest_discount": 30}
+
+
+def test_a_range_deal_uses_the_filter_for_its_low_end_too():
+    r = ds.check("50-80% OFF", 1000, _too_big, {10: 1000, 20: 1000, 30: 1000, 40: 1000, 50: 900})
+    assert r["status"] == "MATCH"
+
+
+def test_the_discount_filter_is_read_from_the_listing_response():
+    data = {"pagination": {"totalResults": 9}, "facets": [{"name": "Discount Ranges", "values": [
+        {"name": "10% and above", "count": 9}, {"name": "50% and above", "count": 4}, {"name": "weird", "count": 1}]}]}
+    assert lc.parse_listing("s", 0, data).discount_ranges == {10: 9, 50: 4}
+    assert lc.parse_listing("s", 0, {"pagination": {}, "facets": []}).discount_ranges == {}

@@ -158,7 +158,7 @@ status.
 
 **The deal-sort check.** When a banner's deal is a discount or price claim, the tool also asks AJIO for the listing sorted by
 discount or price and compares the ends with the claim: "MIN. 40% OFF" needs the listing's lowest discount to be at least 30% (40 minus a
-10-point allowance); "20-70% OFF" gets the same low-end test with 20 (the top of a range is never checked); "UNDER ₹799" needs the dearest item to be at most ₹800;
+10-point allowance; this is read from the listing's own "Discount Ranges" filter counts, so it works on huge listings too); "20-70% OFF" gets the same low-end test with 20 (the top of a range is never checked); "UNDER ₹799" needs the dearest item to be at most ₹800;
 "STARTING AT ₹399" needs the cheapest item to be exactly ₹399. A mismatch is a FAIL and the reason says what the sorted listing
 showed. "UP TO x%", "FLAT x%" and other wording are not checked this way, and a listing that can't be sorted or paged that far is simply
 not checked (never a failure): the banner keeps the PASS or FAIL its other checks gave it, and its reason says what couldn't be read, for example

@@ -5,8 +5,11 @@
   "UNDER Rs 799"          sorted by price high to low, the first price is at most 799 + UNDER_PRICE_SLACK
   "STARTING AT Rs 399"    sorted by price low to high, the first price is exactly 399
 
-The sorts are the API's `query` values `:discount-desc`, `:prce-asc`, `:prce-desc` (its own spelling). There is no
-`:discount-asc`, so the lowest discount is read from the last page of `:discount-desc`. Anything else a banner says
+The low-end (discount) rule is answered from the listing's own "Discount Ranges" filter first ("40% and above" holds N of the
+total products), which comes back with the listing itself and is exact for a threshold that is a multiple of 10. Only when the
+filter can't decide (no such filter, or the threshold falls between two of its steps) is the lowest discount read from the last page
+of the sort. The sorts are the API's `query` values `:discount-desc`, `:prce-asc`, `:prce-desc` (its own spelling); there is no
+`:discount-asc`. Anything else a banner says
 ("UP TO 60%", "FLAT 50%") has no rule here and is left alone; a listing that can't be sorted or paged that far is
 UNCHECKED, never a failure: the banner keeps the verdict its other checks gave it and the reason says what couldn't be
 read (e.g. "couldn't get the minimum discount since the page was too large"). The slacks are the user's numbers (2026-09-30).
@@ -44,6 +47,20 @@ def parse_deal(text: str | None) -> tuple[str, int, int | None] | None:
     return None
 
 
+def _low_end_from_filter(need: int, total: int, ranges: dict[int, int]):
+    """Decide "every product is discounted at least `need`%" from the Discount Ranges filter. (True | False | None, detail):
+    None when the filter's steps don't settle it. A step is exact: "40% and above" counts the products discounted 40% or more."""
+    if need <= 0:
+        return True, {}
+    above = next((t for t in sorted(ranges) if t >= need), None)                # smallest step at or over the need
+    if above is not None and ranges[above] >= total:
+        return True, {"all_at_or_above": above}                                  # everything is at or over that step, so over the need
+    below = max((t for t in ranges if t <= need), default=None)                  # largest step at or under the need
+    if below is not None and ranges[below] < total:
+        return False, {"below": below, "products_below": total - ranges[below]}
+    return None, {}
+
+
 def _lowest_discount(get: Callable, total: int):
     """The lowest discount on the listing: the last product of the last page of the discount-descending sort."""
     last_page = max(0, math.ceil(total / PAGE_SIZE) - 1)
@@ -60,9 +77,10 @@ def _first(get: Callable, sort: str, field: str):
     return None
 
 
-def check(deal: str | None, total_results: int, get: Callable) -> dict | None:
+def check(deal: str | None, total_results: int, get: Callable, discount_ranges: dict[int, int] | None = None) -> dict | None:
     """None if the banner's deal has no rule here. Else {"status": MATCH | MISMATCH | UNCHECKED, "rule", "observed", "reason"}.
-    `get(sort, page, page_size)` returns the listing (with its products) in that order."""
+    `get(sort, page, page_size)` returns the listing (with its products) in that order; `discount_ranges` is the listing's
+    Discount Ranges filter ({50: count of products discounted 50% or more, ...}), tried before any sorted page is fetched."""
     rule = parse_deal(deal)
     if rule is None:
         return None
@@ -73,12 +91,20 @@ def check(deal: str | None, total_results: int, get: Callable) -> dict | None:
         if kind in ("min_discount", "discount_range"):
             if not total_results:
                 return {**out, "status": "UNCHECKED", "reason": "the listing has no products to sort"}
-            low = out["observed"]["lowest_discount"] = _lowest_discount(get, total_results)
-            if low is None:
-                return {**out, "status": "UNCHECKED", "reason": "the listing shows no discounts to compare"}
-            if low < x - MIN_DISCOUNT_SLACK:
-                problems.append(f"lowest discount on the listing is {low}%, banner promises at least {x}% "
-                                f"(allowed down to {x - MIN_DISCOUNT_SLACK}%)")
+            need = x - MIN_DISCOUNT_SLACK
+            ok, detail = _low_end_from_filter(need, total_results, discount_ranges or {})
+            if ok is not None:
+                out["observed"] = {"discount_filter": detail}
+                if not ok:
+                    problems.append(f"{detail['products_below']} of {total_results} products on the listing are discounted less than "
+                                    f"{detail['below']}%, banner promises at least {x}% (allowed down to {need}%)")
+            else:
+                low = out["observed"]["lowest_discount"] = _lowest_discount(get, total_results)
+                if low is None:
+                    return {**out, "status": "UNCHECKED", "reason": "the listing shows no discounts to compare"}
+                if low < need:
+                    problems.append(f"lowest discount on the listing is {low}%, banner promises at least {x}% "
+                                    f"(allowed down to {need}%)")
         elif kind == "under_price":
             top = out["observed"]["highest_price"] = _first(get, ":prce-desc", "price")
             if top is None:

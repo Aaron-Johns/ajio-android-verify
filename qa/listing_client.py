@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -35,6 +36,7 @@ class Listing:
     facets: dict[str, int] = field(default_factory=dict)          # facet name -> number of options
     products: list[dict] = field(default_factory=list)
     raw_query: str | None = None
+    discount_ranges: dict[int, int] = field(default_factory=dict)  # "Discount Ranges" facet: N -> products discounted N% or more
 
 
 def _device_id() -> str:
@@ -111,9 +113,13 @@ def parse_listing(slug: str, page: int, data: dict) -> Listing:
     brands = {v["name"]: v.get("count", 0) for v in brand_facet.get("values") or [] if v.get("name")}
     gender_facet = next((f for f in data.get("facets", []) if f.get("name") == "Gender"), {})
     genders = {v["name"]: v.get("count", 0) for v in gender_facet.get("values") or [] if v.get("name")}
+    discount_facet = next((f for f in data.get("facets", []) if f.get("name") == "Discount Ranges"), {})
+    discount_ranges = {int(m.group(1)): v.get("count", 0) for v in discount_facet.get("values") or []
+                       if (m := re.match(r"\s*(\d+)\s*%", v.get("name") or ""))}
     return Listing(slug=slug, title=title, total_results=(data.get("pagination") or {}).get("totalResults", 0), page=page,
                    brands=brands, genders=genders, facets=facets, products=data.get("products") or [],
-                   raw_query=((data.get("currentQuery") or {}).get("query") or {}).get("value"))
+                   raw_query=((data.get("currentQuery") or {}).get("query") or {}).get("value"),
+                   discount_ranges=discount_ranges)
 
 
 def fetch_listing(slug: str, page: int = 0, page_size: int = PAGE_SIZE, kind: str = CURATED, run_log: RunLog | None = None,

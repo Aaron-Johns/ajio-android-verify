@@ -182,7 +182,8 @@ def _verify_image(image_path: Path, destination_raw: str | None, analyzer: Calla
     note("Comparing")
     check = filters.verify_from_listing(info, listing.title, listing.brands, aliases, listing.genders, listing.total_results)
     sort_check = deal_sort_check.check(info.get("deal_offered"), listing.total_results,
-                                       lambda sort, page, size: listings.get(kind, slug, store, sort, page, size))
+                                       lambda sort, page, size: listings.get(kind, slug, store, sort, page, size),
+                                       listing.discount_ranges)
     if sort_check:
         check["sort_check"] = sort_check
         # a real mismatch is a finding; the beauty / unrecognised-audience INCONCLUSIVE is left as it is (a person looks anyway)

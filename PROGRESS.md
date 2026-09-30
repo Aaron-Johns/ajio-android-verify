@@ -1546,3 +1546,12 @@ User: when a listing is too large to page to the end, still give pass or fail, b
 already left to the other checks (UNCHECKED never changed it); what was missing was the note. Now `sort_check` carries `note: true` when a sorted page
 couldn't be loaded, and `_hotspot_reason` puts its text in the reason, also on a PASS: "couldn't get the minimum discount since the page was too
 large" (an HTTP 403 on the deep page, for min / range deals) or "couldn't load the sorted listing: ..." (any other failure). Tests: 665 pass.
+
+### Deal-sort check: the listing's Discount Ranges facet first (2026-09-30)
+User: check if there are discount filters first. The listing response already has a **"Discount Ranges"** facet (10%..90% "and above", each with a
+count, cumulative), in the same response as the listing. `Listing.discount_ranges` reads it. For "MIN x%" / "x-y%" the need is x-10: if the smallest
+step at or over the need has count == total then everyone is at least that discounted (MATCH); if the largest step at or under it has count < total
+then some are below the need (MISMATCH, "N of M products ... discounted less than T%"). Only when neither settles it (no facet, or the need sits
+between two steps) does it fall back to the last page of `:discount-desc`. Live: the three prem kids listings that were "too large" (132k, 9k and 160k
+products) now get a real answer with no extra request (MIN 50 / MIN 70 / 50-80 MATCH; a MIN 95 claim on the 132k one MISMATCH, 117,542 products
+under 80%). Tests: 671 pass (6 new).
