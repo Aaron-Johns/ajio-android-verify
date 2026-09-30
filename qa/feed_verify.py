@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Callable
 
 from qa import asset_set, listing_client as lc, reference_check
+from qa.pages import DEFAULT_PAGE, PAGE_IDS
 from qa.banner_cache import BannerCache, dhash
 from qa.compare import AliasMap
 from qa.export_banners import fetch_image
@@ -232,16 +233,36 @@ def _crop_hotspot(image_path: Path, banner: Banner, hs, out_dir: Path, index: in
         return crop_path
 
 
+def undecided_reason(c: dict) -> str:
+    """Why a banner whose checks found nothing wrong is still INCONCLUSIVE (qa/spotcheck/filters._finish). Read off the saved
+    banner_check, so it also explains results saved before reasons were written. "" when there is nothing to say."""
+    if not c:
+        return ""
+    if c.get("gender_matches") == "AJIO_BEAUTY":
+        return "AJIO beauty banner - gender check skipped, needs a human look"
+    if c.get("gender_matches") == "INCONCLUSIVE":
+        return f"banner's gender reading {c.get('banner_gender')!r} isn't a recognized audience"
+    has_brands = bool(c.get("banner_brands"))
+    if c.get("title_matches_deal") is None:
+        return ("banner has no deal text, so the page title can't be checked (its brands and audience are fine)" if has_brands
+                else "banner names no brand and shows no deal text, so there is nothing to compare with the page")
+    if not has_brands:
+        return "banner names no brand, so the page's brand list can't be checked (the deal matches the page title)"
+    return ""
+
+
 def _hotspot_reason(h: dict) -> str:
     if h.get("reason"):
         return h["reason"]
     c = h.get("banner_check") or {}
-    bits = filter(None, [
+    bits = list(filter(None, [
         f"missing brands {c['missing_brands']}" if c.get("missing_brands") else "",
         "title doesn't match the deal" if c.get("title_matches_deal") is False else "",
         f"banner targets {c.get('banner_gender')!r} but listing genders are {c.get('listing_genders')}"
         if c.get("gender_matches") is False else "",
-        f"extra brands in the listing: {c['extra_brands']}" if c.get("extra_brands") else ""])
+        f"extra brands in the listing: {c['extra_brands']}" if c.get("extra_brands") else ""]))
+    if not bits and h.get("result") == "INCONCLUSIVE":
+        return undecided_reason(c)
     return "; ".join(bits)
 
 
@@ -709,10 +730,8 @@ def format_summary(results: list[dict]) -> str:
             f"title {r.get('listing_title')!r} != deal {c.get('banner_deal')!r}" if c.get("title_matches_deal") is False else "",
             f"banner targets {c.get('banner_gender')!r} but listing genders are {c.get('listing_genders')}"
             if c.get("gender_matches") is False else "",
-            "AJIO beauty banner - gender check skipped, needs a human look" if c.get("gender_matches") == "AJIO_BEAUTY" else "",
-            f"banner's gender reading {c.get('banner_gender')!r} isn't a recognized audience"
-            if c.get("gender_matches") == "INCONCLUSIVE" else "",
-            f"listing has extra brands not named on the banner: {_truncated(c['extra_brands'])}" if c.get("extra_brands") else ""]))
+            f"listing has extra brands not named on the banner: {_truncated(c['extra_brands'])}" if c.get("extra_brands") else ""])
+            ) or (undecided_reason(c) if shown_result(r) == "INCONCLUSIVE" else "")
         ref = reference_check.note(r)             # what the reference CSV says, beside whichever reasons the banner already has
         if ref and ref not in why:
             why = f"{why}; {ref}" if why else ref
@@ -727,7 +746,9 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=WORKERS)
     ap.add_argument("--retry-rounds", type=int, default=RETRY_ROUNDS)
     ap.add_argument("--retry-pause", type=float, default=RETRY_PAUSE)
-    ap.add_argument("--from-run", type=Path, help="use this run's saved home response instead of a live feed call")
+    ap.add_argument("--page", choices=PAGE_IDS, default=DEFAULT_PAGE,
+                    help="which app page's feed to check (qa/pages.py); only home depends on the l1/l2 cohort")
+    ap.add_argument("--from-run", type=Path, help="use this run's saved response for --page (default home) instead of a live feed call")
     ap.add_argument("--resume-from", type=Path, help="continue an interrupted run folder: redo only banners with no result yet "
                                                      "or a temporary failure, reusing its banner list and images")
     ap.add_argument("--confirm-asset-set", choices=sorted(asset_set.KNOWN_SETS),
@@ -771,10 +792,10 @@ def main() -> None:
     else:
         out_dir = RUNS_DIR / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_feedverify"
         if args.from_run:
-            banners = parse_banners(json.loads((args.from_run / "home.response.json").read_text(encoding="utf-8")))
+            banners = parse_banners(json.loads((args.from_run / f"{args.page}.response.json").read_text(encoding="utf-8")))
         else:
             banners, attempts, confirmed = fetch_confirmed_banners(
-                "home", args.confirm_asset_set, args.confirm_attempts, args.confirm_pause, run_log=RunLog())
+                args.page, args.confirm_asset_set, args.confirm_attempts, args.confirm_pause, run_log=RunLog())
             if args.confirm_asset_set:
                 if confirmed:
                     print(f"confirmed a {args.confirm_asset_set!r} banner after {attempts} feed fetch(es)")

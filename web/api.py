@@ -54,6 +54,7 @@ class _AcceptsSingleValues(BaseModel):
 
 
 class RunRequest(_AcceptsSingleValues):
+    pages: list[str] = Field(default_factory=lambda: [runner.qa_pages.DEFAULT_PAGE])   # only home uses l1s / l2s
     l1s: list[str]
     l2s: list[str]
     states: list[str] = Field(default_factory=lambda: [runner.DEFAULT_STATE])
@@ -75,6 +76,7 @@ class SectionRef(BaseModel):
 class ScheduleRequest(_AcceptsSingleValues):
     name: str
     interval_minutes: int = Field(ge=1)
+    pages: list[str] = Field(default_factory=lambda: [runner.qa_pages.DEFAULT_PAGE])
     l1s: list[str]
     l2s: list[str]
     states: list[str] = Field(default_factory=lambda: [runner.DEFAULT_STATE])
@@ -92,6 +94,7 @@ class ScheduleRequest(_AcceptsSingleValues):
 class ScheduleUpdate(_AcceptsSingleValues):
     name: str | None = None
     interval_minutes: int | None = Field(default=None, ge=1)
+    pages: list[str] | None = None
     l1s: list[str] | None = None
     l2s: list[str] | None = None
     states: list[str] | None = None
@@ -154,15 +157,28 @@ def _clean_pincodes(values: list[str]) -> list[str]:
     return values
 
 
-def _check_combo_count(l1s, l2s, states, pincodes) -> None:
-    n = len(l1s) * len(l2s) * len(states) * len(pincodes)
+def _clean_pages(values: list[str]) -> list[str]:
+    values = _unique(values)
+    if not values:
+        raise HTTPException(422, f"pick at least one page from {runner.PAGE_IDS}")
+    bad = [v for v in values if v not in runner.PAGE_IDS]
+    if bad:
+        raise HTTPException(422, f"page must be one of {runner.PAGE_IDS} (got {bad})")
+    return values
+
+
+def _check_combo_count(l1s, l2s, states, pincodes, pages) -> None:
+    n = runner.count_combos(pages, l1s, l2s, states, pincodes)
     if n > runner.MAX_COMBOS:
-        raise HTTPException(422, f"{len(l1s)} l1 x {len(l2s)} l2 x {len(states)} states x {len(pincodes)} pincodes = "
-                                 f"{n} runs; at most {runner.MAX_COMBOS} are allowed at once - narrow the selection")
+        raise HTTPException(422, f"{len(pages)} page(s) x {len(l1s)} l1 x {len(l2s)} l2 (home only) x {len(states)} states x "
+                                 f"{len(pincodes)} pincodes = {n} runs; at most {runner.MAX_COMBOS} are allowed at once - "
+                                 f"narrow the selection")
 
 
-def _clean_axes(l1s, l2s, states, pincodes) -> tuple[list[str], list[str], list[str], list[str]]:
-    axes = (_clean_l1s(l1s), _clean_l2s(l2s), _clean_states(states), _clean_pincodes(pincodes))
+def _clean_axes(l1s, l2s, states, pincodes, pages=None) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
+    """(l1s, l2s, states, pincodes, pages) checked and de-duplicated; pages left out means just home."""
+    axes = (_clean_l1s(l1s), _clean_l2s(l2s), _clean_states(states), _clean_pincodes(pincodes),
+            _clean_pages(pages or [runner.qa_pages.DEFAULT_PAGE]))
     _check_combo_count(*axes)
     return axes
 
@@ -203,6 +219,7 @@ def meta():
     return {
         "l1_options": runner.L1_OPTIONS,
         "l2_options": runner.L2_OPTIONS,
+        "page_options": runner.PAGE_OPTIONS,
         "scopes": runner.SCOPES,
         "state_options": runner.STATE_OPTIONS,
         "notify_modes": list(run_diff.MODES),
@@ -254,22 +271,23 @@ def _run_summary(row) -> dict:
 
 
 @app.get("/api/feed-preview")
-def feed_preview(l1: str, l2: str, scope: str = "hero"):
+def feed_preview(l1: str, l2: str, scope: str = "hero", page: str = runner.qa_pages.DEFAULT_PAGE):
     """Fetches the feed fresh and groups it by carousel, without running any verification - the "New
     run" form's carousel checklist calls this before a run starts (see runner.list_carousels)."""
-    _clean_l1s([l1]), _clean_l2s([l2]), _validate_scope(scope)
+    _clean_l1s([l1]), _clean_l2s([l2]), _clean_pages([page]), _validate_scope(scope)
     try:
-        return runner.list_carousels(l1, l2, scope)
+        return runner.list_carousels(l1, l2, scope, page)
     except Exception as exc:
         raise HTTPException(502, f"could not fetch the feed: {exc}") from exc
 
 
 @app.post("/api/runs")
 def create_run(req: RunRequest):
-    """Starts one run per l1 x l2 x state x pincode combination. The first starts now and its id is
+    """Starts one run per page x l1 x l2 x state x pincode combination (l1/l2 only vary for the home page). The first starts now and its id is
     `run_id`; the others start one after another as each finishes (`queued` says how many are waiting)."""
     _validate_scope(req.scope)
-    combos = runner.expand_combos(*_clean_axes(req.l1s, req.l2s, req.states, req.pincodes))
+    l1s, l2s, states, pincodes, pages = _clean_axes(req.l1s, req.l2s, req.states, req.pincodes, req.pages)
+    combos = runner.expand_combos(l1s, l2s, states, pincodes, pages)
     run_id, batch_id, queued = runner.start_batch(
         combos, req.scope, req.banner_limit, req.workers, excluded_carousels=req.excluded_carousels or None,
         excluded_sections=_unique(req.excluded_sections) or None)
@@ -348,7 +366,8 @@ def export_run_xlsx(run_id: str):
     except FileNotFoundError:
         raise HTTPException(404, "no results to export for this run")
     timestamp = run_id.split("_", 1)[0]   # run_id is "<timestamp>_feedverify" - see web/runner.start_run
-    return FileResponse(path, filename=f"{row['l1']}_{row['l2']}_{timestamp}.xlsx",
+    what = f"{row['l1']}_{row['l2']}" if row["page"] == runner.qa_pages.DEFAULT_PAGE else row["page"]
+    return FileResponse(path, filename=f"{what}_{timestamp}.xlsx",
                         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
@@ -497,6 +516,7 @@ def _schedule_view(row, stats: dict | None = None, with_latest_run: bool = False
     d = dict(row)
     # l1 / l2 / state / pincode are each stored as a list; the view names them l1s / l2s / states / pincodes
     d["l1s"], d["l2s"] = db.as_list(d.pop("l1")), db.as_list(d.pop("l2"))
+    d["pages"] = db.as_list(d.pop("page")) or [runner.qa_pages.DEFAULT_PAGE]
     d["states"] = db.as_list(d.pop("state")) or [runner.DEFAULT_STATE]
     d["pincodes"] = db.as_list(d.pop("pincode")) or [runner.DEFAULT_PINCODE]
     d["combo_count"] = len(runner.combos_of(row))
@@ -535,13 +555,13 @@ def get_schedule(schedule_id: int):
 @app.post("/api/schedules")
 def create_schedule(req: ScheduleRequest):
     _validate_scope(req.scope)
-    l1s, l2s, states, pincodes = _clean_axes(req.l1s, req.l2s, req.states, req.pincodes)
+    l1s, l2s, states, pincodes, pages = _clean_axes(req.l1s, req.l2s, req.states, req.pincodes, req.pages)
     _validate_notify_mode(req.notify_mode)
     sid = db.insert_schedule(req.name, req.interval_minutes, req.scope, req.banner_limit, req.workers,
                              l1s, l2s, req.enabled, pincode=pincodes, state=states,
                              excluded_sections=_clean_sections(req.excluded_sections) or None,
                              notify_mode=req.notify_mode, notify_toast=req.notify_toast,
-                             start_at=_parse_start_at(req.start_at))
+                             start_at=_parse_start_at(req.start_at), pages=pages)
     _sync_job(db.get_schedule(sid))
     return _schedule_view(db.get_schedule(sid), db.schedule_stats(), with_latest_run=True)
 
@@ -550,7 +570,7 @@ def create_schedule(req: ScheduleRequest):
 _NULLABLE_SCHEDULE_FIELDS = {"banner_limit", "start_at"}
 
 # the request's plural names -> the schedules table's column names
-_AXIS_FIELDS = {"l1s": "l1", "l2s": "l2", "states": "state", "pincodes": "pincode"}
+_AXIS_FIELDS = {"l1s": "l1", "l2s": "l2", "states": "state", "pincodes": "pincode", "pages": "page"}
 
 
 @app.patch("/api/schedules/{schedule_id}")
@@ -568,13 +588,14 @@ def update_schedule(schedule_id: int, req: ScheduleUpdate):
     # any one axis being edited is checked against the others as they'll be, so the combo cap holds
     axes = {"l1s": db.as_list(row["l1"]), "l2s": db.as_list(row["l2"]),
             "states": db.as_list(row["state"]) or [runner.DEFAULT_STATE],
-            "pincodes": db.as_list(row["pincode"]) or [runner.DEFAULT_PINCODE]}
+            "pincodes": db.as_list(row["pincode"]) or [runner.DEFAULT_PINCODE],
+            "pages": runner._row_pages(row)}
     if any(k in fields for k in _AXIS_FIELDS):
         for k in _AXIS_FIELDS:
             if k in fields:
                 axes[k] = fields.pop(k)
-        cleaned = _clean_axes(axes["l1s"], axes["l2s"], axes["states"], axes["pincodes"])
-        for k, values in zip(_AXIS_FIELDS, cleaned):
+        cleaned = _clean_axes(axes["l1s"], axes["l2s"], axes["states"], axes["pincodes"], axes["pages"])
+        for k, values in zip(("l1s", "l2s", "states", "pincodes", "pages"), cleaned):
             fields[_AXIS_FIELDS[k]] = values
     if "start_at" in fields:
         fields["start_at"] = _parse_start_at(fields["start_at"])

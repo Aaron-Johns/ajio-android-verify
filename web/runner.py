@@ -24,6 +24,7 @@ from pathlib import Path
 
 import psutil
 
+from qa import pages as qa_pages
 from web import db
 
 log = logging.getLogger("web.runner")
@@ -89,32 +90,62 @@ def new_batch_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def expand_combos(l1s, l2s, states, pincodes) -> list[dict]:
-    """Every l1 x l2 x state x pincode combination, in that order (l1 varies slowest), duplicates dropped.
-    Each combination is one run: qa/feed_verify takes exactly one cohort per process."""
+# Only the home feed is personalised by l1/l2; every other page returns the same banners for any cohort, so
+# those pages run once per state/pincode with this fixed, neutral cohort (the baseline in qa/cohort_client.py).
+NEUTRAL_L1, NEUTRAL_L2 = "nontransacted", "unisex"
+PAGE_OPTIONS = qa_pages.PAGES
+PAGE_IDS = qa_pages.PAGE_IDS
+
+
+def count_combos(pages, l1s, l2s, states, pincodes) -> int:
+    """How many runs expand_combos would make, without building them: home is l1 x l2, any other page 1."""
+    uniq = lambda values: len(set(values))
+    per_page = sum(uniq(l1s) * uniq(l2s) if p == qa_pages.DEFAULT_PAGE else 1 for p in dict.fromkeys(pages))
+    return per_page * uniq(states) * uniq(pincodes)
+
+
+def expand_combos(l1s, l2s, states, pincodes, pages=(qa_pages.DEFAULT_PAGE,)) -> list[dict]:
+    """Every page x l1 x l2 x state x pincode combination, in that order (page, then l1, vary slowest), duplicates
+    dropped. Each combination is one run: qa/feed_verify takes exactly one cohort per process. A page other than
+    home ignores l1/l2 (see NEUTRAL_L1), so it contributes one combination per state x pincode, not l1 x l2."""
     def uniq(values):
         return list(dict.fromkeys(values))
-    return [{"l1": a, "l2": b, "state": c, "pincode": d}
-            for a, b, c, d in itertools.product(uniq(l1s), uniq(l2s), uniq(states), uniq(pincodes))]
+    out = []
+    for page in uniq(pages):
+        cohorts = itertools.product(uniq(l1s), uniq(l2s)) if page == qa_pages.DEFAULT_PAGE else [(NEUTRAL_L1, NEUTRAL_L2)]
+        out += [{"page": page, "l1": a, "l2": b, "state": c, "pincode": d}
+                for (a, b), c, d in itertools.product(cohorts, uniq(states), uniq(pincodes))]
+    return out
+
+
+def _row_pages(row) -> list[str]:
+    keys = row.keys() if hasattr(row, "keys") else ()
+    return db.as_list(row["page"] if "page" in keys else None) or [qa_pages.DEFAULT_PAGE]
 
 
 def combos_of(row) -> list[dict]:
     """The combinations a schedule row covers. Reads both storage shapes (see db.as_list); a missing
-    state/pincode means the tool's defaults."""
+    state/pincode means the tool's defaults and a missing page means home."""
     return expand_combos(db.as_list(row["l1"]), db.as_list(row["l2"]),
-                         db.as_list(row["state"]) or [DEFAULT_STATE], db.as_list(row["pincode"]) or [DEFAULT_PINCODE])
+                         db.as_list(row["state"]) or [DEFAULT_STATE], db.as_list(row["pincode"]) or [DEFAULT_PINCODE],
+                         _row_pages(row))
 
 
 def combo_label(combo: dict) -> str:
-    return f"{combo['l1']}/{combo['l2']} · {combo['state']} · {combo['pincode']}"
+    page = combo.get("page", qa_pages.DEFAULT_PAGE)
+    what = f"{combo['l1']}/{combo['l2']}" if page == qa_pages.DEFAULT_PAGE else qa_pages.label(page)
+    return f"{what} · {combo['state']} · {combo['pincode']}"
 
 
 def start_run(l1: str, l2: str, scope: str, banner_limit: int | None, workers: int,
               schedule_id: int | None = None, excluded_carousels: list[int] | None = None,
               pincode: str = DEFAULT_PINCODE, state: str = DEFAULT_STATE,
-              excluded_sections: list[str] | None = None, batch_id: str | None = None) -> str:
+              excluded_sections: list[str] | None = None, batch_id: str | None = None,
+              page: str = qa_pages.DEFAULT_PAGE) -> str:
     if l1 not in L1_OPTIONS or l2 not in L2_OPTIONS:
         raise ValueError(f"unknown l1/l2: {l1}/{l2}")
+    if page not in PAGE_IDS:
+        raise ValueError(f"unknown page: {page}")
     if scope not in SCOPES:
         raise ValueError(f"unknown scope: {scope}")
     workers = max(1, min(MAX_WORKERS, workers))
@@ -129,7 +160,9 @@ def start_run(l1: str, l2: str, scope: str, banner_limit: int | None, workers: i
         cmd += ["--exclude-carousel", str(section_index)]
     for section in excluded_sections or []:
         cmd += ["--exclude-section", section]
-    if l1 == "premium":
+    if page != qa_pages.DEFAULT_PAGE:
+        cmd += ["--page", page]
+    if l1 == "premium" and page == qa_pages.DEFAULT_PAGE:
         # FINDINGS 6.10: which asset set (standard/premium) comes back for l1:premium varies
         # per-request, even with l1/l2/device-id all held identical - so a premium run keeps
         # re-fetching the feed (cheap, no vision/listing calls) until it actually sees a premium
@@ -157,7 +190,7 @@ def start_run(l1: str, l2: str, scope: str, banner_limit: int | None, workers: i
         _procs[run_id] = proc
     db.insert_run(run_id, str(RUNS_DIR / run_id), scope, banner_limit, workers, l1, l2,
                   proc.pid, schedule_id, excluded_carousels, pincode=pincode, state=state,
-                  excluded_sections=excluded_sections, batch_id=batch_id)
+                  excluded_sections=excluded_sections, batch_id=batch_id, page=page)
     if schedule_id is not None:
         db.set_schedule_status(schedule_id, "running", f"run {run_id} in progress")
     threading.Thread(target=_watch, args=(run_id, proc), daemon=True).start()
@@ -179,7 +212,7 @@ def start_batch(combos: list[dict], scope: str, banner_limit: int | None, worker
     def start_one(combo: dict) -> str:
         return start_run(combo["l1"], combo["l2"], scope, banner_limit, workers, schedule_id=schedule_id,
                         excluded_carousels=excluded_carousels, pincode=combo["pincode"], state=combo["state"],
-                        excluded_sections=excluded_sections, batch_id=batch_id)
+                        excluded_sections=excluded_sections, batch_id=batch_id, page=combo.get("page", qa_pages.DEFAULT_PAGE))
 
     first_id = start_one(combos[0])
     rest = combos[1:]
@@ -232,7 +265,7 @@ def start_scheduled_run(row, combo: dict | None = None, batch_id: str | None = N
         return start_run(combo["l1"], combo["l2"], row["scope"], row["banner_limit"], row["workers"],
                          schedule_id=row["id"], pincode=combo["pincode"], state=combo["state"],
                          excluded_sections=[s["id"] for s in json.loads(row["excluded_sections"] or "[]")] or None,
-                         batch_id=batch_id)
+                         batch_id=batch_id, page=combo.get("page", qa_pages.DEFAULT_PAGE))
 
 
 def start_scheduled_batch(row, still_wanted=lambda: True, on_started=lambda run_id: None,
@@ -260,7 +293,7 @@ def start_scheduled_batch(row, still_wanted=lambda: True, on_started=lambda run_
 _LIST_CAROUSELS_TIMEOUT_S = 60  # a plain feed fetch (no vision/listing calls) - should take a few seconds
 
 
-def list_carousels(l1: str, l2: str, scope: str) -> list[dict]:
+def list_carousels(l1: str, l2: str, scope: str, page: str = qa_pages.DEFAULT_PAGE) -> list[dict]:
     """Fetches the feed fresh and returns every banner in scope (each with its section_index/label
     carousel grouping), without running any verification - for the "New run" form's carousel preview,
     shown before a real run starts so the user can see each carousel's actual banners and uncheck ones
@@ -269,11 +302,17 @@ def list_carousels(l1: str, l2: str, scope: str) -> list[dict]:
     is read once at import time, not passable as a plain argument."""
     if l1 not in L1_OPTIONS or l2 not in L2_OPTIONS:
         raise ValueError(f"unknown l1/l2: {l1}/{l2}")
+    if page not in PAGE_IDS:
+        raise ValueError(f"unknown page: {page}")
     if scope not in SCOPES:
         raise ValueError(f"unknown scope: {scope}")
+    if page != qa_pages.DEFAULT_PAGE:
+        l1, l2 = NEUTRAL_L1, NEUTRAL_L2
     env = {**os.environ, "AJIO_USER_GROUPS": build_user_groups(l1, l2)}
     cmd = [sys.executable, "-m", "qa.feed_verify", "--scope", scope, "--list-carousels"]
-    if l1 == "premium":
+    if page != qa_pages.DEFAULT_PAGE:
+        cmd += ["--page", page]
+    if l1 == "premium" and page == qa_pages.DEFAULT_PAGE:
         cmd += ["--confirm-asset-set", "PR"]
     proc = subprocess.run(cmd, cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=_LIST_CAROUSELS_TIMEOUT_S)
     if proc.returncode != 0:

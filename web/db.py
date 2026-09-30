@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS runs (
     l2           TEXT NOT NULL,
     pincode      TEXT NOT NULL DEFAULT '560029',  -- sent to AJIO's listing API as AJIO_PINCODE
     state        TEXT NOT NULL DEFAULT 'KARNATAKA',  -- sent in the home-feed's x-location-detail header
+    page         TEXT NOT NULL DEFAULT 'home',  -- which app page's feed (qa/pages.py); l1/l2 only mean something for home
     status       TEXT NOT NULL,           -- running | done | failed | cancelled
     pid          INTEGER,
     schedule_id  INTEGER,
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS schedules (
     l2                TEXT NOT NULL,
     pincode           TEXT NOT NULL DEFAULT '560029',
     state             TEXT NOT NULL DEFAULT 'KARNATAKA',
+    page              TEXT NOT NULL DEFAULT '["home"]',   -- JSON list of app pages (qa/pages.py); only home uses l1/l2
     start_at          TEXT,                   -- UTC ISO: the interval is anchored here; NULL = counted from when it was saved
     enabled           INTEGER NOT NULL DEFAULT 1,
     created_at        TEXT NOT NULL,
@@ -78,6 +80,7 @@ _RUN_MIGRATIONS = {
     "excluded_carousels": "excluded_carousels TEXT",
     "pincode": "pincode TEXT NOT NULL DEFAULT '560029'",
     "state": "state TEXT NOT NULL DEFAULT 'KARNATAKA'",
+    "page": "page TEXT NOT NULL DEFAULT 'home'",
     "excluded_sections": "excluded_sections TEXT",
     "diff_json": "diff_json TEXT",
     "batch_id": "batch_id TEXT",
@@ -86,6 +89,7 @@ _SCHEDULE_MIGRATIONS = {
     "start_at": "start_at TEXT",
     "pincode": "pincode TEXT NOT NULL DEFAULT '560029'",
     "state": "state TEXT NOT NULL DEFAULT 'KARNATAKA'",
+    "page": "page TEXT NOT NULL DEFAULT '[\"home\"]'",
     "excluded_sections": "excluded_sections TEXT",
     "notify_mode": "notify_mode TEXT NOT NULL DEFAULT 'new_fails'",
     "notify_toast": "notify_toast INTEGER NOT NULL DEFAULT 1",
@@ -116,7 +120,7 @@ def as_list(value) -> list[str]:
     return [text]
 
 
-_AXIS_COLUMNS = ("l1", "l2", "pincode", "state")
+_AXIS_COLUMNS = ("l1", "l2", "pincode", "state", "page")
 
 
 def connect() -> sqlite3.Connection:
@@ -146,16 +150,16 @@ def insert_run(run_id: str, out_dir: str, scope: str, banner_limit: int | None, 
                 l1: str, l2: str, pid: int | None, schedule_id: int | None,
                 excluded_carousels: list[int] | None = None, pincode: str = "560029",
                 state: str = "KARNATAKA", excluded_sections: list[str] | None = None,
-                batch_id: str | None = None) -> None:
+                batch_id: str | None = None, page: str = "home") -> None:
     with connect() as conn:
         conn.execute(
             "INSERT INTO runs (run_id, out_dir, scope, banner_limit, workers, l1, l2, pincode, state, "
-            "status, pid, schedule_id, started_at, excluded_carousels, excluded_sections, batch_id) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "status, pid, schedule_id, started_at, excluded_carousels, excluded_sections, batch_id, page) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (run_id, out_dir, scope, banner_limit, workers, l1, l2, pincode, state,
              "running", pid, schedule_id, _now(),
              json.dumps(excluded_carousels) if excluded_carousels else None,
-             json.dumps(excluded_sections) if excluded_sections else None, batch_id),
+             json.dumps(excluded_sections) if excluded_sections else None, batch_id, page),
         )
 
 
@@ -197,15 +201,15 @@ def count_running() -> int:
 
 
 def previous_done_run(schedule_id: int, before_started_at: str, l1: str, l2: str, pincode: str,
-                      state: str) -> sqlite3.Row | None:
-    """The schedule's most recent finished (status done) run of the same l1/l2/pincode/state that started
+                      state: str, page: str = "home") -> sqlite3.Row | None:
+    """The schedule's most recent finished (status done) run of the same page/l1/l2/pincode/state that started
     before this one. A schedule with several combinations runs each of them every fire, and premium/men only
     means something next to the last premium/men - never next to whichever combination happened to finish last."""
     with connect() as conn:
         return conn.execute(
             "SELECT * FROM runs WHERE schedule_id=? AND status='done' AND started_at<? "
-            "AND l1=? AND l2=? AND pincode=? AND state=? ORDER BY started_at DESC LIMIT 1",
-            (schedule_id, before_started_at, l1, l2, pincode, state)).fetchone()
+            "AND l1=? AND l2=? AND pincode=? AND state=? AND page=? ORDER BY started_at DESC LIMIT 1",
+            (schedule_id, before_started_at, l1, l2, pincode, state, page)).fetchone()
 
 
 def list_schedule_runs(schedule_id: int, limit: int = 10) -> list[sqlite3.Row]:
@@ -238,16 +242,18 @@ def insert_schedule(name: str, interval_minutes: int, scope: str, banner_limit: 
                     workers: int, l1: str | list[str], l2: str | list[str], enabled: bool,
                     pincode: str | list[str] = "560029", state: str | list[str] = "KARNATAKA",
                     excluded_sections: list[dict] | None = None, notify_mode: str = "new_fails",
-                    notify_toast: bool = True, start_at: str | None = None) -> int:
-    """l1 / l2 / pincode / state may each be one value or a list of them (one run per combination)."""
+                    notify_toast: bool = True, start_at: str | None = None,
+                    pages: str | list[str] = "home") -> int:
+    """l1 / l2 / pincode / state / pages may each be one value or a list of them (one run per combination)."""
     with connect() as conn:
         cur = conn.execute(
             "INSERT INTO schedules (name, interval_minutes, scope, banner_limit, workers, l1, l2, "
-            "pincode, state, enabled, created_at, excluded_sections, notify_mode, notify_toast, start_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "pincode, state, enabled, created_at, excluded_sections, notify_mode, notify_toast, start_at, page) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, interval_minutes, scope, banner_limit, workers, json.dumps(as_list(l1)), json.dumps(as_list(l2)),
              json.dumps(as_list(pincode)), json.dumps(as_list(state)), int(enabled), _now(),
-             json.dumps(excluded_sections) if excluded_sections else None, notify_mode, int(notify_toast), start_at),
+             json.dumps(excluded_sections) if excluded_sections else None, notify_mode, int(notify_toast), start_at,
+             json.dumps(as_list(pages))),
         )
         return cur.lastrowid
 

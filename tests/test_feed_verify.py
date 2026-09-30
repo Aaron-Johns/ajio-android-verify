@@ -1067,3 +1067,39 @@ def test_load_final_results_lays_a_later_retry_over_a_finished_runs_results_json
 def test_load_final_results_without_results_json_is_just_the_partial_log(tmp_path):
     (tmp_path / "partial.jsonl").write_text(json.dumps({"banner_id": "a", "result": "PASS", "attempts": 1}) + "\n", encoding="utf-8")
     assert fv.load_final_results(tmp_path) == {"a": {"banner_id": "a", "result": "PASS", "attempts": 1}}
+
+
+# ---- reasons for INCONCLUSIVE ------------------------------------------------------------------------------
+
+BRAND_ONLY = {"brands_mentioned": ["new balance"], "deal_offered": None, "target_gender": "men_and_women"}
+
+
+def test_a_brand_only_banner_is_inconclusive_and_says_why(tmp_path):
+    r = run([banner("b", "https://ajio.com/s/a-1")], tmp_path, Fetcher({"a-1": listing(brands={"NEW BALANCE": 5})}),
+            analyzer=lambda p: BRAND_ONLY)[0]
+    assert r["result"] == "INCONCLUSIVE"
+    assert "no deal text" in r["reason"] and "page title can't be checked" in r["reason"]
+
+
+def test_every_undecided_case_has_its_own_words():
+    assert "AJIO beauty" in fv.undecided_reason({"gender_matches": "AJIO_BEAUTY", "banner_brands": ["X"]})
+    assert "isn't a recognized audience" in fv.undecided_reason({"gender_matches": "INCONCLUSIVE", "banner_gender": "odd"})
+    assert "nothing to compare" in fv.undecided_reason({"title_matches_deal": None, "banner_brands": []})
+    assert "no deal text" in fv.undecided_reason({"title_matches_deal": None, "banner_brands": ["X"]})
+    assert "names no brand" in fv.undecided_reason({"title_matches_deal": True, "banner_brands": []})
+    assert fv.undecided_reason({}) == "" and fv.undecided_reason({"title_matches_deal": True, "banner_brands": ["X"]}) == ""
+
+
+def test_an_undecided_hotspot_gets_a_reason_too_and_a_fail_keeps_its_own():
+    check = {"title_matches_deal": None, "banner_brands": ["X"]}
+    assert "no deal text" in fv._hotspot_reason({"result": "INCONCLUSIVE", "banner_check": check})
+    assert fv._hotspot_reason({"result": "FAIL", "banner_check": {"missing_brands": ["Y"], **check}}).startswith("missing brands")
+    assert fv._hotspot_reason({"result": "PASS", "banner_check": check}) == ""
+
+
+def test_the_summary_and_an_old_result_without_a_reason_are_explained(tmp_path):
+    old = {"banner_id": "b", "alt_text": "B", "destination_raw": "https://ajio.com/s/a-1", "result": "INCONCLUSIVE", "reason": "",
+           "banner_check": {"title_matches_deal": None, "banner_brands": ["X"]}}
+    assert "no deal text" in fv.format_summary([old])
+    from qa import export_xlsx
+    assert "no deal text" in export_xlsx._cell(old, "reason")

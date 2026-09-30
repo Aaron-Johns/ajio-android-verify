@@ -52,13 +52,13 @@ def test_run_now_expands_every_selection_into_combinations(client, started):
 def test_run_now_still_accepts_the_single_value_fields_older_clients_send(client, started):
     r = client.post("/api/runs", json={"l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "400001"})
     assert r.status_code == 200 and r.json()["combos"] == 1
-    assert started[0]["combos"] == [{"l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "400001"}]
+    assert started[0]["combos"] == [{"page": "home", "l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "400001"}]
 
 
 def test_a_blank_state_and_pincode_fall_back_to_the_defaults(client, started):
     r = client.post("/api/runs", json={"l1s": ["premium"], "l2s": ["men"], "states": ["  "], "pincodes": []})
     assert r.status_code == 200
-    assert started[0]["combos"] == [{"l1": "premium", "l2": "men", "state": "KARNATAKA", "pincode": "560029"}]
+    assert started[0]["combos"] == [{"page": "home", "l1": "premium", "l2": "men", "state": "KARNATAKA", "pincode": "560029"}]
 
 
 def test_run_now_without_any_state_or_pincode_uses_the_defaults(client, started):
@@ -251,3 +251,83 @@ def test_an_alert_can_be_removed_and_all_alerts_can_be_cleared(client):
 def test_meta_tells_the_ui_the_cap_and_the_defaults(client):
     m = client.get("/api/meta").json()
     assert m["max_combos"] == runner.MAX_COMBOS and m["default_state"] == "KARNATAKA" and m["default_pincode"] == "560029"
+
+
+# ---- app pages (home + the premium / non-premium pages) ---------------------------------------------------
+
+def test_meta_lists_every_page_with_its_tier(client):
+    pages = client.get("/api/meta").json()["page_options"]
+    assert [p["id"] for p in pages] == ["home", "premium-men", "premium-women", "kids-premium-page",
+                                       "menswear", "womenswear", "kidswear"]
+    assert {p["tier"] for p in pages} == {"home", "premium", "standard"}
+
+
+def test_only_home_multiplies_by_l1_and_l2_every_other_page_is_one_run_per_state_and_pincode():
+    combos = runner.expand_combos(["premium", "nonpremium"], ["men", "women"], ["ASSAM"], ["560029", "400001"],
+                                  ["home", "menswear", "premium-women"])
+    assert [c["page"] for c in combos] == ["home"] * 8 + ["menswear"] * 2 + ["premium-women"] * 2
+    assert {(c["l1"], c["l2"]) for c in combos if c["page"] != "home"} == {(runner.NEUTRAL_L1, runner.NEUTRAL_L2)}
+    assert runner.count_combos(["home", "menswear", "premium-women"], ["premium", "nonpremium"], ["men", "women"],
+                               ["ASSAM"], ["560029", "400001"]) == len(combos) == 12
+
+
+def test_run_now_on_other_pages_starts_one_run_per_page(client, started):
+    r = client.post("/api/runs", json={"pages": ["menswear", "kidswear"], "l1s": ["premium", "nonpremium"],
+                                       "l2s": ["men", "women"]})
+    assert r.status_code == 200 and r.json()["combos"] == 2
+    assert [c["page"] for c in started[0]["combos"]] == ["menswear", "kidswear"]
+
+
+def test_a_request_without_pages_still_means_home(client, started):
+    client.post("/api/runs", json={"l1s": ["premium"], "l2s": ["men"]})
+    assert [c["page"] for c in started[0]["combos"]] == ["home"]
+
+
+def test_an_unknown_page_is_refused(client, started):
+    r = client.post("/api/runs", json={"pages": ["no-such-page"], "l1s": ["premium"], "l2s": ["men"]})
+    assert r.status_code == 422 and not started
+
+
+def test_the_combination_cap_counts_pages_correctly(client, started):
+    # 4 x 3 home l1/l2 combos + 6 other pages = 18 <= 24 is fine; adding a second state pushes it to 36
+    body = {"pages": runner.PAGE_IDS, "l1s": ["premium", "nonpremium"], "l2s": ["men", "women"]}
+    assert client.post("/api/runs", json=body).json()["combos"] == 4 + 6
+    assert client.post("/api/runs", json={**body, "states": ["ASSAM", "GOA", "BIHAR"]}).status_code == 422
+
+
+def test_a_schedule_stores_and_returns_its_pages_and_an_old_one_reads_as_home(client):
+    r = client.post("/api/schedules", json=schedule_body(pages=["home", "menswear"], l1s=["premium"], l2s=["men"]))
+    assert r.status_code == 200 and r.json()["pages"] == ["home", "menswear"] and r.json()["combo_count"] == 2
+    sid = r.json()["id"]
+    patched = client.patch(f"/api/schedules/{sid}", json={"pages": ["premium-men"]}).json()
+    assert patched["pages"] == ["premium-men"] and patched["combo_count"] == 1
+    plain = client.post("/api/schedules", json=schedule_body(l1s=["premium"], l2s=["men"])).json()
+    assert plain["pages"] == ["home"]
+
+
+def test_a_previous_run_is_only_compared_within_the_same_page(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "app.sqlite3")
+    db.init_db()
+    sid = db.insert_schedule("s", 60, "hero", None, 3, "nontransacted", "unisex", True, pages=["home", "menswear"])
+    for rid, page in (("a", "home"), ("b", "menswear")):
+        db.insert_run(rid, str(tmp_path / rid), "hero", None, 3, "nontransacted", "unisex", 1, sid, page=page)
+        db.finish_run(rid, "done")
+    later = "9999-01-01T00:00:00"
+    assert db.previous_done_run(sid, later, "nontransacted", "unisex", "560029", "KARNATAKA", "menswear")["run_id"] == "b"
+    assert db.previous_done_run(sid, later, "nontransacted", "unisex", "560029", "KARNATAKA", "home")["run_id"] == "a"
+
+
+def test_a_run_of_another_page_is_launched_with_page_and_never_waits_for_a_premium_banner(tmp_path, monkeypatch):
+    import itertools
+    import types
+    seen, pids = {}, itertools.count(1)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "app.sqlite3")
+    db.init_db()
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda cmd, **kw: (seen.update(cmd=cmd, env=kw["env"]),
+                        types.SimpleNamespace(pid=next(pids), poll=lambda: 0, communicate=lambda: ("", "")))[1])
+    monkeypatch.setattr(runner, "_FOLDER_WAIT_S", 0)
+    rid = runner.start_run(runner.NEUTRAL_L1, runner.NEUTRAL_L2, "hero", None, 1, page="premium-men")
+    assert seen["cmd"][seen["cmd"].index("--page") + 1] == "premium-men" and "--confirm-asset-set" not in seen["cmd"]
+    assert db.get_run(rid)["page"] == "premium-men"
+    runner.start_run("premium", "men", "hero", None, 1)          # home keeps its old command line exactly
+    assert "--page" not in seen["cmd"] and "--confirm-asset-set" in seen["cmd"]

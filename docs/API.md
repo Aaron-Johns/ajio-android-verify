@@ -29,9 +29,10 @@ interface, it's the whole surface.
   checked yet — you always get the full list immediately, verdicts fill in as they're computed.
 - **A schedule** is a saved run configuration that fires on a recurring interval on its own,
   independent of any manually-started run, and reports what changed since its last run.
-- **A combination** is one (l1, l2, state, pincode) tuple. A run fetches the feed as exactly one, so a
+- **A combination** is one (page, l1, l2, state, pincode) tuple. A run fetches the feed as exactly one, so a
   request that names several of any of them expands into their cross product — one run per
-  combination — capped at `/api/meta`'s `max_combos` (24). Those runs are started **one after another**,
+  combination — capped at `/api/meta`'s `max_combos` (24). **Only the `home` page uses l1/l2**: any other page
+  ignores them (it runs once per state × pincode with the neutral cohort `nontransacted` / `unisex`). Those runs are started **one after another**,
   never concurrently, and share a `batch_id`.
 
 ## Runs
@@ -41,6 +42,7 @@ interface, it's the whole surface.
 Body:
 ```json
 {
+  "pages": ["home", "menswear"],
   "l1s": ["nontransacted", "premium"],
   "l2s": ["unisex"],
   "states": ["KARNATAKA"],
@@ -52,7 +54,11 @@ Body:
   "excluded_sections": []
 }
 ```
-- `l1s` (required, ≥1) — each one of `/api/meta`'s `l1_options`.
+- `pages` — which app pages to check, each one of `/api/meta`'s `page_options[].id` (`home`, `premium-men`,
+  `premium-women`, `kids-premium-page`, `menswear`, `womenswear`, `kidswear`). Optional; left out it means
+  `["home"]`, so older clients behave as before. `home` expands over `l1s` × `l2s`; every other page is one run
+  per state × pincode. The example above is 2 × 1 × 2 = 4 Home runs plus 2 menswear runs = 6.
+- `l1s` (required, ≥1) — each one of `/api/meta`'s `l1_options` (only used for the `home` page).
 - `l2s` (required, ≥1) — each one of `/api/meta`'s `l2_options`.
 - `states` — Indian states used in the home-feed request's `x-location-detail` header. Default
   `["KARNATAKA"]`; an empty list or blank entries also mean `["KARNATAKA"]` rather than an error (a
@@ -347,11 +353,12 @@ processed (and marked `SKIPPED` for real) yet. Returns `{"requested": true}`.
 
 ## Feed preview (no verification)
 
-### `GET /api/feed-preview?l1=...&l2=...&scope=hero`
+### `GET /api/feed-preview?l1=...&l2=...&scope=hero&page=home`
 
 Fetches the feed fresh and returns every banner in scope — no vision call, no listing fetch, just the
 raw feed data, grouped implicitly by `section_index`. Use this to build a "pick which carousels to
-run" UI before calling `POST /api/runs`. `422` on a bad l1/l2/scope; `502` if the upstream feed fetch
+run" UI before calling `POST /api/runs`. `page` (default `home`) is one of `page_options`; for any page other than
+`home` l1/l2 are ignored. `422` on a bad l1/l2/scope/page; `502` if the upstream feed fetch
 itself fails.
 
 ```json
@@ -430,8 +437,9 @@ combinations the alert title names the combination.
   "latest_run": { "...the schedule's most recent run summary, or null..." }
 }
 ```
-- `l1s` / `l2s` / `states` / `pincodes` — the selections; `combo_count` is their product. (The names
-  `l1` / `l2` / `state` / `pincode` no longer appear on a schedule.)
+- `pages` / `l1s` / `l2s` / `states` / `pincodes` — the selections; `combo_count` is how many runs a fire makes
+  (l1 × l2 only for `home`; see "combination"). `pages` is `["home"]` for a schedule saved before pages existed.
+  (The names `l1` / `l2` / `state` / `pincode` no longer appear on a schedule.)
 - `start_at` — UTC ISO, or `null` (see "How it fires").
 - `excluded_sections` — carousels left out of every run, by the CMS section's stable `_id` (so they stay
   left out when the feed's order shifts) with a display `label`.
@@ -453,11 +461,11 @@ is unknown. Its runs are `GET /api/runs?schedule_id={schedule_id}`.
 
 ### `POST /api/schedules` — create
 
-Body: `{"name": str, "interval_minutes": int (≥1), "l1s": [str], "l2s": [str], "states": [str],
+Body: `{"name": str, "interval_minutes": int (≥1), "pages": [str], "l1s": [str], "l2s": [str], "states": [str],
 "pincodes": [str], "start_at": str|null, "scope": str, "banner_limit": int|null, "workers": int,
 "enabled": bool, "excluded_sections": [{"id": str, "label": str}], "notify_mode": str,
 "notify_toast": bool}`. Only `name`, `interval_minutes`, `l1s` and `l2s` are required; the rest default
-as in `POST /api/runs` (`states` → `["KARNATAKA"]`, `pincodes` → `["560029"]`), `start_at` → `null`,
+as in `POST /api/runs` (`pages` → `["home"]`, `states` → `["KARNATAKA"]`, `pincodes` → `["560029"]`), `start_at` → `null`,
 `notify_mode` → `"new_fails"`, `notify_toast` → `true`, `enabled` → `true`. The single-value names
 `l1`/`l2`/`state`/`pincode` are still accepted. `start_at` is an ISO date-time; with no timezone it's
 read as the server machine's local time (send an offset or `Z` to be exact) and it's stored as UTC.
@@ -523,6 +531,15 @@ server). Returns `{"alert_id": ..., "delivery": "ok" | "skipped: ..." | "error: 
 {
   "l1_options": ["nontransacted", "premium", "nonpremium"],
   "l2_options": ["men", "women", "unisex", "nogender"],
+  "page_options": [
+    {"id": "home", "label": "Home", "tier": "home"},
+    {"id": "premium-men", "label": "Prem men", "tier": "premium"},
+    {"id": "premium-women", "label": "Prem women", "tier": "premium"},
+    {"id": "kids-premium-page", "label": "Prem kids", "tier": "premium"},
+    {"id": "menswear", "label": "Non prem men", "tier": "standard"},
+    {"id": "womenswear", "label": "Non prem women", "tier": "standard"},
+    {"id": "kidswear", "label": "Non prem kids", "tier": "standard"}
+  ],
   "scopes": ["hero", "all"],
   "state_options": ["ANDHRA PRADESH", "ANDHRA_PRADESH", "...", "WEST BENGAL", "WEST_BENGAL"],
   "notify_modes": ["off", "new_fails", "any_change"],
@@ -565,7 +582,7 @@ CONCEPTS
   same combination, and raises an alert when there's a new FAIL (or, if asked, any change).
 
 START HERE
-1. GET /api/meta - get valid l1_options, l2_options, scopes, state_options, notify_modes, max_workers,
+1. GET /api/meta - get valid page_options, l1_options, l2_options, scopes, state_options, notify_modes, max_workers,
    max_combos.
 2. (Optional) GET /api/feed-preview?l1=..&l2=..&scope=.. to see real banners grouped by
    section_index/label/section_id before running anything - no vision/listing calls, just the raw feed.

@@ -16,10 +16,23 @@ returns after you remove the run you were viewing.
 
 ## Starting a run
 
-Four of the settings — **l1, l2, state and pincode** — are *multi-select*. Pick more than one of any
-of them and **Run now** runs every combination: 2 l1 × 2 l2 × 1 state × 3 pincodes is 12 runs. A line
-under the pincode box counts them for you ("… = 12 runs, one after another"), and the button greys out
-if the total goes over **24**.
+**Page.** The first thing in *New run* is which app page to check. There are seven buttons, all multi-select
+(at least one stays on; a ring and a tick mark the ones chosen): **Home**, **Prem men**, **Prem women** and
+**Prem kids** on the first line, **Non prem men**, **Non prem women** and **Non prem kids** under them. Home is
+black with white letters, the premium pages are gold with black letters, the non-premium pages are white with black
+letters. Behind them are seven different feeds (`home`, `premium-men`, `premium-women`, `kids-premium-page`,
+`menswear`, `womenswear`, `kidswear`). **Only Home depends on l1/l2**: the other six pages return the same banners
+whatever the cohort is, so when Home isn't chosen the l1 and l2 buttons grey out and are ignored, and each other page
+is one run per state and pincode (fixed neutral cohort). Picking Home plus other pages runs Home for every l1 × l2
+you chose and each other page once. Everything below (carousel picker, scope, retries, Excel, schedules) works the
+same for every page; a run's title, its Recent runs entry and a scheduler's card say which page it is
+(the l1/l2 pair for Home, the page name otherwise).
+
+Four of the other settings — **l1, l2, state and pincode** — are *multi-select*. Pick more than one of any
+of them and **Run now** runs every combination: 2 l1 × 2 l2 × 1 state × 3 pincodes is 12 runs (for Home; each
+other page adds 1 × states × pincodes). A line under the pincode box counts them for you ("(Home: 2 l1 × 2 l2 + 2
+other pages) × 1 state × 3 pincodes = 18 runs, one after another"), and the button greys out if the total goes
+over **24**.
 
 Each combination is its own run, because a run fetches the feed as exactly one cohort/location. The
 first starts immediately (and is opened for you); the rest **start one after another**, each as soon
@@ -29,8 +42,8 @@ queued. **Cancel run** on one of them stops the rest of that batch too (a run th
 the next combination still goes ahead). The queue lives in the server's memory: restarting the server
 mid-batch lets the run in progress carry on but forgets the combinations that hadn't started yet.
 
-**l1 / l2 segment.** These pick which user cohort the feed is fetched as (AJIO personalizes the home
-feed per cohort). They're toggle buttons: click to switch each one on or off (at least one always
+**l1 / l2 segment.** These pick which user cohort the **Home** feed is fetched as (AJIO personalizes the home
+feed per cohort; the other pages don't care). They're toggle buttons: click to switch each one on or off (at least one always
 stays on).
 
 **State.** The Indian state AJIO believes you're in, sent in the home feed's `x-location-detail`
@@ -110,7 +123,7 @@ Each card is colored and labeled by its current status:
 | **PROCESSING X/N TRIES** | Being checked right now, or waiting out the pause between automatic retry attempts (X = current attempt, N = max, always 5) | No |
 | **PASS** | The banner's claimed brand/deal/audience all matched the destination it links to | No |
 | **FAIL** | The pipeline found a concrete mismatch (wrong brand, deal text doesn't match the listing title, wrong audience) | **Yes** |
-| **INCONCLUSIVE** | The pipeline couldn't confidently resolve something — an ambiguous gender read or an AJIO Beauty banner (gender check doesn't apply) | **Yes** |
+| **INCONCLUSIVE** | The pipeline couldn't confidently resolve something — an ambiguous gender read, an AJIO Beauty banner (gender check doesn't apply), or a banner with no deal text / no brand so part of the comparison has nothing to compare (everything else it could check was fine). The reason line says which | **Yes** |
 | **UNAVAILABLE** | AJIO, Google or the network didn't answer, and the banner used up all 5 automatic tries. Says nothing about the banner itself. Slate grey with a dashed border in the classic UI; **Couldn't check** in the manager view | No - **Retry this banner** |
 | **SKIPPED** | Nothing to check (banner has no listing link at all — a webview/external/cart-type destination), it's currently hidden/out-of-schedule, or you skipped it manually | No |
 
@@ -412,8 +425,8 @@ black, glowing **Manager view** button in the original's header) switch between 
   live activity tag while a banner is in progress. Click a card for the **detail sheet**: verdict in one line, every
   field the original's popup shows, the hotspots with their crops; **left / right arrow keys** step through the
   list you came from and **Esc** closes it.
-- **New check** (button top right) opens a side drawer with the same multi-select l1 / l2 / state / pincode
-  controls, the scope, a carousel checklist (untick a carousel to leave it out) and, under *Advanced*, the banner
+- **New check** (button top right) opens a side drawer with the same page picker (Home / premium / non-premium
+  buttons, see "Starting a run") and multi-select l1 / l2 / state / pincode controls, the scope, a carousel checklist (untick a carousel to leave it out) and, under *Advanced*, the banner
   cap, parallelism and **Forget saved results** (the cache clear). **Repeat automatically...** carries these
   choices into the new-schedule form.
 - **Schedule search.** A search box beside the **Schedules** heading filters the schedule cards as you type - every

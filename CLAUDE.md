@@ -81,6 +81,12 @@ that must pass exactly), `image_segmentation_2.py` (origin of the Gemma prompt/p
 
 ## 4. Decided behaviour ([D], mostly user calls; details and dates in PROGRESS.md)
 
+- **Pages [D] (2026-09-30):** seven feeds, one Fynd theme slug each (`qa/pages.py`): `home`, `premium-men`,
+  `premium-women`, `kids-premium-page` (UI: Prem men/women/kids), `menswear`, `womenswear`, `kidswear` (Non prem
+  men/women/kids). **Only `home` depends on l1/l2**; the other six accept any cohort, so they run once per
+  state x pincode with a fixed neutral cohort and the l1/l2 buttons grey out. Page is a fifth axis (`--page` on
+  `qa.feed_verify`, `page` column on runs/schedules, `pages` in the API; absent means home). UI colours: Home black,
+  premium gold, non-premium white; Home + premium on one line, non-premium under them.
 - **Feed:** endpoint, auth and signing are in FINDINGS 6.4.1 / 6.8; no session bootstrap is needed. l1 in
   `nontransacted|premium|nonpremium`, l2 in `men|women|unisex|nogender`, plus state (default KARNATAKA) and pincode
   (default 560029), all multi-select. **`l1:premium` sometimes returns a non-premium asset set: known, ~90% fine, accepted;
@@ -122,8 +128,9 @@ category contained in the listing title [A]. A MISMATCH makes the banner FAIL (a
 the finding); untestable things are UNCHECKED, never pass or fail. It runs after the banner cache, skips hidden/skipped banners and
 ignores hotspots. Shown as a `reference_check` field, in the reason, a "Reference" row in the detail views, Excel and alert text.
 `config/reference.sample.csv` is a format example (3 stale placeholder rows), and the old Phase 4 `qa/compare.py` (URL-text based)
-plus the emulator spot-check's `--reference` still use `qa/reference.py` on their own. **No real rows exist until the user writes
-them: do not invent expectations, and do not treat placeholder rows as evidence.** Docs: `docs/UI_GUIDE.md`, "Reference data".
+plus the emulator spot-check's `--reference` still use `qa/reference.py` on their own. **No real rows exist yet: the data is held by
+a colleague of the user (2026-09-30), and the user chose to leave the check as an OPTION until it arrives, so don't chase it or
+nag. Do not invent expectations, and do not treat placeholder rows as evidence.** Docs: `docs/UI_GUIDE.md`, "Reference data".
 
 ## 7. Verification conventions
 
@@ -138,7 +145,7 @@ them: do not invent expectations, and do not treat placeholder rows as evidence.
 ## 8. Open questions (implement the default, raise with the user)
 
 1. Feed auth: **answered [D]**, no session bootstrap (static bearer + local signature; FINDINGS 6.4.1, 6.8).
-2. **Reference rows: the mechanism is built (6); the user still has to fill in real expectations.**
+2. **Reference rows: the mechanism is built (6); the real expectations are with the user's colleague. Optional until they arrive, no action needed.**
 3. Alias groups and the 3-pair dedupe: **answered [D] 2026-09-21**.
 4. Check cadence: **answered by use**, schedules are user-defined per scheduler (interval, start time, multi-select axes); no global default.
 5. Emulator spot-check: built (`qa/spotcheck/`) but **not scheduled by the web app** [A]; run it by hand when wanted.
@@ -154,3 +161,13 @@ them: do not invent expectations, and do not treat placeholder rows as evidence.
   UNAVAILABLE, not as banner findings.
 - Frida is blocked by the app's anti-tamper; use the SharedPreferences `ssl_pinning` toggle described in FINDINGS instead.
 - Verdicts describe the data behind the page (listing JSON), not the rendered page and not what the app does on tap.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

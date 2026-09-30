@@ -108,7 +108,7 @@ def test_a_new_pincode_is_its_own_baseline_not_a_comparison_with_the_old_one(tmp
     finished_run(tmp_path, "r1", sid, {"a": P})
     finished_run(tmp_path, "r2", sid, {"a": F}, pincode="400001")          # a different combination: nothing to compare to
     diff = json.loads(db.get_run("r2")["diff_json"])
-    assert diff["baseline"] and "for this l1/l2/state/pincode" in diff["baseline_reason"] and db.list_alerts() == []
+    assert diff["baseline"] and "for this page/l1/l2/state/pincode" in diff["baseline_reason"] and db.list_alerts() == []
 
 
 def test_each_combination_of_a_multi_combo_schedule_is_diffed_against_its_own_previous_run(tmp_path, toasts):
@@ -277,7 +277,7 @@ def test_a_scheduled_fire_waits_for_the_active_run_then_starts_with_the_schedule
     (args, kwargs), = started
     assert args[:5] == ("nontransacted", "unisex", "hero", None, 3)
     assert kwargs == {"schedule_id": 7, "pincode": "400001", "state": "ASSAM", "excluded_sections": ["SEC-A"],
-                      "batch_id": None}
+                      "batch_id": None, "page": "home"}
 
 
 def test_a_scheduled_fire_that_never_gets_a_free_slot_gives_up_without_starting(monkeypatch):
@@ -298,9 +298,9 @@ def test_an_idle_system_starts_a_scheduled_run_immediately(monkeypatch):
 def test_the_combinations_are_the_product_of_the_four_selections_with_l1_varying_slowest():
     combos = runner.expand_combos(["premium", "nonpremium"], ["men", "women"], ["ASSAM"], ["560029", "400001"])
     assert len(combos) == 8
-    assert combos[0] == {"l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "560029"}
-    assert combos[1] == {"l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "400001"}
-    assert combos[-1] == {"l1": "nonpremium", "l2": "women", "state": "ASSAM", "pincode": "400001"}
+    assert combos[0] == {"page": "home", "l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "560029"}
+    assert combos[1] == {"page": "home", "l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "400001"}
+    assert combos[-1] == {"page": "home", "l1": "nonpremium", "l2": "women", "state": "ASSAM", "pincode": "400001"}
 
 
 def test_repeated_selections_do_not_repeat_a_run():
@@ -309,7 +309,7 @@ def test_repeated_selections_do_not_repeat_a_run():
 
 def test_a_schedule_row_reads_as_its_combinations_whether_stored_as_a_list_or_a_plain_string():
     legacy = {"l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "560029"}
-    assert runner.combos_of(legacy) == [{"l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "560029"}]
+    assert runner.combos_of(legacy) == [{"page": "home", "l1": "premium", "l2": "men", "state": "ASSAM", "pincode": "560029"}]
     stored = {"l1": json.dumps(["premium", "nonpremium"]), "l2": json.dumps(["men"]),
               "state": json.dumps(["ASSAM", "GOA"]), "pincode": json.dumps(["560029"])}
     assert len(runner.combos_of(stored)) == 4

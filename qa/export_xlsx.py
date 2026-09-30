@@ -83,6 +83,9 @@ def _cell(r: dict, col: str):
 
 
 def _fail_reason(r: dict, c: dict) -> str:
+    if r["result"] == "INCONCLUSIVE":
+        from qa.feed_verify import undecided_reason
+        return undecided_reason(c)
     if r["result"] != "FAIL":
         return ""
     parts = []

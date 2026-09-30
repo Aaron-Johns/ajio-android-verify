@@ -20,7 +20,7 @@ log = logging.getLogger("web.alerts")
 def _config(row) -> tuple:
     """Everything that changes which banners a run covers or how they're judged. Two runs that differ here
     aren't comparable - a different cohort or pincode will legitimately look different."""
-    return (row["l1"], row["l2"], row["pincode"], row["state"], row["scope"], row["banner_limit"],
+    return (row["page"], row["l1"], row["l2"], row["pincode"], row["state"], row["scope"], row["banner_limit"],
             tuple(sorted(json.loads(row["excluded_carousels"] or "[]"))),
             tuple(sorted(json.loads(row["excluded_sections"] or "[]"))))
 
@@ -29,9 +29,10 @@ def compute_diff(row) -> dict:
     """The change vs the schedule's previous finished run of the same l1/l2/state/pincode, or a baseline
     (never alerted on) when there's nothing comparable: the first run of this combination, settings edited
     since the last one, or missing result files."""
-    prev = db.previous_done_run(row["schedule_id"], row["started_at"], row["l1"], row["l2"], row["pincode"], row["state"])
+    prev = db.previous_done_run(row["schedule_id"], row["started_at"], row["l1"], row["l2"], row["pincode"], row["state"],
+                                 row["page"])
     if prev is None:
-        return run_diff.baseline("first completed run of this schedule for this l1/l2/state/pincode")
+        return run_diff.baseline("first completed run of this schedule for this page/l1/l2/state/pincode")
     if _config(prev) != _config(row):
         return run_diff.baseline("settings changed since the previous run", prev["run_id"])
     current = runner.load_shown_results(Path(row["out_dir"]))
@@ -74,7 +75,7 @@ def after_run(run_id: str) -> None:
     name = schedule["name"] if schedule is not None else ""
     tag = ""
     if schedule is not None and len(runner.combos_of(schedule)) > 1:
-        tag = f"{row['l1']}/{row['l2']} · {row['state']} · {row['pincode']}"
+        tag = runner.combo_label(dict(row))
         name = f"{name} [{tag}]"
     if status == "done":
         diff = compute_diff(row)

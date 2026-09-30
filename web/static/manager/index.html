@@ -424,6 +424,17 @@
   .checkline b { font-weight: 600; display: block; } .checkline span { color: var(--ink-3); font-size: 12.5px; }
 
   /* multi-select controls */
+  /* Page picker: colour says what kind of page it is (home black, premium gold, non-premium white); the ring + tick say it is chosen */
+  .pg-group { display: flex; flex-direction: column; gap: 8px; }
+  .pg-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pgb { padding: 7px 15px; border-radius: 999px; border: 1.5px solid #000; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+  .pgb:hover { filter: brightness(.92); }
+  .pgb.home { background: #000; color: #fff; }
+  .pgb.premium { background: #d4af37; color: #000; }
+  .pgb.standard { background: #fff; color: #000; }
+  .pgb.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--brand); }
+  .pgb.on::before { content: "\2713\00a0"; }
+  .dim-axis { opacity: .4; pointer-events: none; }
   .tgl-group { display: flex; flex-wrap: wrap; gap: 8px; }
   .tgl { padding: 7px 15px; border-radius: 999px; border: 1.5px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 13.5px; font-weight: 550; color: var(--ink-2); transition: all .1s; }
   .tgl:hover { border-color: var(--brand); color: var(--ink); }
@@ -709,7 +720,10 @@ function pageHead({ crumbs = [], title, sub = "", actions = "" }) {
     <div class="page-head"><div><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ""}</div><div class="head-actions">${actions}</div></div>`;
 }
 const loading = () => `<div class="stack" style="gap:14px"><div class="skeleton" style="width:38%;height:28px"></div><div class="skeleton" style="width:60%"></div><div class="skeleton" style="height:150px;margin-top:8px;border-radius:14px"></div></div>`;
-const feedLabel = r => `${esc(r.l1)} / ${esc(r.l2)}`;
+const pageLabel = id => { const p = (meta && meta.page_options || []).find(x => x.id === id); return p ? p.label : id; };
+// what a check is about: the l1 / l2 feed for home, the page's name for any other page
+const feedLabel = r => (r.page || "home") === "home" ? `${esc(r.l1)} / ${esc(r.l2)}` : esc(pageLabel(r.page));
+const schedPages = s => s.pages || ["home"];
 const placeLabel = r => `${esc(r.state)} · ${esc(r.pincode)}`;
 const schedName = id => { const s = scheds.find(x => x.id === id); return s ? s.name : null; };
 function linkHtml(url) { return url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>` : ""; }
@@ -740,6 +754,26 @@ function makeToggleGroup(root, options, selected, onChange) {
     const v = b.dataset.v;
     if (chosen.includes(v)) { if (chosen.length === 1) return; chosen = chosen.filter(x => x !== v); }
     else chosen = options.filter(o => o === v || chosen.includes(o));
+    paint(); if (onChange) onChange();
+  });
+  set(selected);
+  return { get: () => chosen.slice(), set };
+}
+
+// One button per app page: home + premium pages on the first line, non-premium under them. Multi-select, never empty.
+function makePageGroup(root, options, selected, onChange) {
+  let chosen = [];
+  const btn = o => `<button type="button" class="pgb ${esc(o.tier)}" data-v="${esc(o.id)}">${esc(o.label)}</button>`;
+  root.className = "pg-group";
+  root.innerHTML = `<div class="pg-row">${options.filter(o => o.tier !== "standard").map(btn).join("")}</div><div class="pg-row">${options.filter(o => o.tier === "standard").map(btn).join("")}</div>`;
+  const ids = options.map(o => o.id), buttons = $$(".pgb", root);
+  const paint = () => buttons.forEach(b => { const on = chosen.includes(b.dataset.v); b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+  function set(list) { chosen = ids.filter(id => list.includes(id)); if (!chosen.length && ids.length) chosen = [ids[0]]; paint(); }
+  root.addEventListener("click", ev => {
+    const b = ev.target.closest(".pgb"); if (!b) return;
+    const v = b.dataset.v;
+    if (chosen.includes(v)) { if (chosen.length === 1) return; chosen = chosen.filter(x => x !== v); }
+    else chosen = ids.filter(id => id === v || chosen.includes(id));
     paint(); if (onChange) onChange();
   });
   set(selected);
@@ -830,22 +864,30 @@ function makePincodeInput(root, selected, onChange) {
 // The four selections together -> { read, count, problem, over, set }
 function makeAxes(els, initial, onChange) {
   const changed = () => { paintSummary(); if (onChange) onChange(); };
+  const pages = makePageGroup(els.page, meta.page_options, initial.pages || ["home"], changed);
   const l1 = makeToggleGroup(els.l1, meta.l1_options, initial.l1s, changed);
   const l2 = makeToggleGroup(els.l2, meta.l2_options, initial.l2s, changed);
   const state = makeStatePicker(els.state, meta.state_options, initial.states, changed, meta.default_state);
   const pin = makePincodeInput(els.pincode, initial.pincodes, changed);
-  const read = () => { const s = state.get(), p = pin.get(); return { l1s: l1.get(), l2s: l2.get(), states: s.length ? s : [meta.default_state], pincodes: p.length ? p : [meta.default_pincode] }; };
-  const count = () => { const v = read(); return v.l1s.length * v.l2s.length * v.states.length * v.pincodes.length; };
+  const read = () => { const s = state.get(), p = pin.get(); return { pages: pages.get(), l1s: l1.get(), l2s: l2.get(), states: s.length ? s : [meta.default_state], pincodes: p.length ? p : [meta.default_pincode] }; };
+  // only the home page depends on the customer type / department; every other page is one check per state x pincode
+  const count = () => { const v = read(); return v.pages.reduce((n, p) => n + (p === "home" ? v.l1s.length * v.l2s.length : 1), 0) * v.states.length * v.pincodes.length; };
   function paintSummary() {
     const v = read(), n = count(), over = n > meta.max_combos;
+    const homeOn = v.pages.includes("home"), others = v.pages.length - (homeOn ? 1 : 0);
+    for (const el of [els.l1, els.l2]) {                      // customer type / department mean nothing without the home page
+      el.classList.toggle("dim-axis", !homeOn);
+      const lb = el.previousElementSibling; if (lb && (lb.classList.contains("lbl") || lb.classList.contains("lb"))) lb.classList.toggle("dim-axis", !homeOn);
+    }
+    const what = [homeOn ? `Home: ${v.l1s.length} l1 × ${v.l2s.length} l2` : null, others ? `${others} other ${others === 1 ? "page" : "pages"}` : null].filter(Boolean).join(" + ");
     els.summary.className = "combo-hint" + (over ? " over" : "");
     els.summary.textContent = n === 1 ? "" :
-      `${v.l1s.length} l1 × ${v.l2s.length} l2 × ${plural(v.states.length, "state")} × ${plural(v.pincodes.length, "pincode")} = ${n} checks` +
+      `(${what}) × ${plural(v.states.length, "state")} × ${plural(v.pincodes.length, "pincode")} = ${n} checks` +
       (over ? ` — over the limit of ${meta.max_combos}, please narrow it down` : ", run one after another");
   }
   const problem = () => { pin.get(); const p = pin.pending(); return p ? `"${p}" in the pincode box isn't a 6-digit pincode — fix or clear it first.` : ""; };
   paintSummary();
-  return { read, count, problem, over: () => count() > meta.max_combos, set(v) { l1.set(v.l1s); l2.set(v.l2s); state.set(v.states); pin.set(v.pincodes); paintSummary(); } };
+  return { read, count, problem, over: () => count() > meta.max_combos, set(v) { pages.set(v.pages || ["home"]); l1.set(v.l1s); l2.set(v.l2s); state.set(v.states); pin.set(v.pincodes); paintSummary(); } };
 }
 
 // Carousel checklist: every carousel of a feed, checked = included. Returns { excluded(), load(), setExcluded() }.
@@ -881,8 +923,8 @@ function makeCarouselPicker(root, getFeed, initialExcluded) {
   $(".cp-load", root).addEventListener("click", async ev => {
     const btn = ev.currentTarget; btn.disabled = true;
     try {
-      const { l1, l2, scope } = getFeed();
-      const rows = await api(`/api/feed-preview?l1=${encodeURIComponent(l1)}&l2=${encodeURIComponent(l2)}&scope=${encodeURIComponent(scope)}`);
+      const { l1, l2, scope, page = "home" } = getFeed();
+      const rows = await api(`/api/feed-preview?l1=${encodeURIComponent(l1)}&l2=${encodeURIComponent(l2)}&scope=${encodeURIComponent(scope)}&page=${encodeURIComponent(page)}`);
       const groups = new Map();
       for (const b of rows) {
         if (!groups.has(b.section_id)) groups.set(b.section_id, { id: b.section_id, count: 0, image: b.image_url, label: b.label || b.alt_text || `Carousel ${b.section_index}` });
@@ -951,7 +993,7 @@ function latestPerFeed() {
   const seen = new Map();
   for (const r of runs) {
     if (r.status !== "done") continue;
-    const key = [r.l1, r.l2, r.state, r.pincode, r.scope].join("|");
+    const key = [r.page || "home", r.l1, r.l2, r.state, r.pincode, r.scope].join("|");
     if (!seen.has(key)) seen.set(key, r);
   }
   return [...seen.values()];
@@ -1131,7 +1173,19 @@ function reasonTextBase(b, short = false) {
   if (c.gender_matches === "AJIO_BEAUTY") p.push("AJIO beauty banner — the gender check doesn't apply, so please look at it");
   if (c.gender_matches === "INCONCLUSIVE") p.push(`Couldn't tell which audience the banner is for (“${c.banner_gender || ""}”)`);
   if (c.extra_brands && c.extra_brands.length) p.push(`The page also shows brands not named on the banner: ${short ? trunc(c.extra_brands) : c.extra_brands.join(", ")}`);
+  if (!p.length && b.result === "INCONCLUSIVE") p.push(undecidedReason(c));
   return p.join(". ");
+}
+// Mirrors qa/feed_verify.py undecided_reason(): why a banner with nothing wrong found is still "not sure" (also explains results saved before reasons were written).
+function undecidedReason(c) {
+  if (!c || !Object.keys(c).length) return "";
+  const hasBrands = !!(c.banner_brands && c.banner_brands.length);
+  if (c.title_matches_deal === null || c.title_matches_deal === undefined) {
+    return hasBrands ? "The banner has no deal text, so the page title can't be checked (its brands and audience are fine)"
+                     : "The banner names no brand and shows no deal text, so there is nothing to compare with the page";
+  }
+  if (!hasBrands) return "The banner names no brand, so the page's brand list can't be checked (the deal matches the page title)";
+  return "";
 }
 function hotspotReason(h) {
   if (h.reason) return h.reason;
@@ -1140,6 +1194,7 @@ function hotspotReason(h) {
   if (c.title_matches_deal === false) p.push("title doesn't match the deal");
   if (c.gender_matches === false) p.push("gender mismatch");
   if (c.extra_brands && c.extra_brands.length) p.push(`extra brands ${c.extra_brands.join(", ")}`);
+  if (!p.length && h.result === "INCONCLUSIVE") p.push(c.gender_matches === "AJIO_BEAUTY" ? "AJIO beauty banner, gender check skipped" : undecidedReason(c));
   return p.join("; ");
 }
 function activityWord(b) { return b.result === "PROCESSING" ? (b.activity || "Working") : ""; }
@@ -1382,7 +1437,8 @@ function openDrawer() {
   d.innerHTML = `
     <div class="dh"><div><h2>New check</h2><p>Compare each banner with the page it opens.</p></div><button class="icon-btn" id="dr-close" title="Close">${ico("x")}</button></div>
     <div class="db">
-      <div><div class="lbl">Which feed?</div><div class="lbl muted" style="font-weight:500;margin-bottom:8px">Customer type</div><div id="dr-l1"></div>
+      <div><div class="lbl">Which page?</div><div id="dr-page"></div></div>
+      <div><div class="lbl">Which feed?</div><div class="hint" style="margin:-2px 0 8px">Only the Home page changes with these two.</div><div class="lbl muted" style="font-weight:500;margin-bottom:8px">Customer type</div><div id="dr-l1"></div>
         <div class="lbl muted" style="font-weight:500;margin:14px 0 8px">Department</div><div id="dr-l2"></div></div>
       <div><div class="lbl">Where is the shopper?</div><div class="lbl muted" style="font-weight:500;margin-bottom:8px">State</div><div id="dr-state"></div>
         <div class="lbl muted" style="font-weight:500;margin:14px 0 8px">Pincode</div><div id="dr-pin"></div></div>
@@ -1400,9 +1456,9 @@ function openDrawer() {
     </div>
     <div class="df"><button class="btn ghost" id="dr-sched" title="Keep these settings and set it up to repeat automatically">${ico("clock", "sm")} Repeat automatically…</button><span class="grow"></span>
       <button class="btn" id="dr-cancel">Cancel</button><button class="btn primary" id="dr-run">${ico("play", "sm")} Start check</button></div>`;
-  drawerAxes = makeAxes({ l1: byId("dr-l1"), l2: byId("dr-l2"), state: byId("dr-state"), pincode: byId("dr-pin"), summary: byId("dr-combos") },
-    { l1s: [meta.l1_options[0]], l2s: [meta.l2_options[0]], states: [meta.default_state], pincodes: [meta.default_pincode] }, () => { byId("dr-run").disabled = drawerAxes.over(); });
-  drawerCars = makeCarouselPicker(byId("dr-cars"), () => { const a = drawerAxes.read(); return { l1: a.l1s[0], l2: a.l2s[0], scope: byId("dr-scope").value }; });
+  drawerAxes = makeAxes({ page: byId("dr-page"), l1: byId("dr-l1"), l2: byId("dr-l2"), state: byId("dr-state"), pincode: byId("dr-pin"), summary: byId("dr-combos") },
+    { pages: ["home"], l1s: [meta.l1_options[0]], l2s: [meta.l2_options[0]], states: [meta.default_state], pincodes: [meta.default_pincode] }, () => { byId("dr-run").disabled = drawerAxes.over(); });
+  drawerCars = makeCarouselPicker(byId("dr-cars"), () => { const a = drawerAxes.read(); return { page: a.pages[0], l1: a.l1s[0], l2: a.l2s[0], scope: byId("dr-scope").value }; });
   const settings = () => ({ ...drawerAxes.read(), scope: byId("dr-scope").value, banner_limit: byId("dr-limit").value ? parseInt(byId("dr-limit").value, 10) : null,
     workers: Math.max(1, Math.min(meta.max_workers, parseInt(byId("dr-workers").value || "3", 10))), excluded_sections: drawerCars.ids() });
   byId("dr-close").onclick = byId("dr-cancel").onclick = closeDrawer;
@@ -1465,7 +1521,7 @@ function schedCard(s) {
   return `<div class="card scard ${h}" data-id="${s.id}" tabindex="0" role="link">
     <div class="top"><div class="grow"><div class="nm">${esc(s.name)}</div><div class="cell-sub">Every ${esc(fmtInterval(s.interval_minutes))}${s.combo_count > 1 ? ` · ${s.combo_count} checks each time` : ""}</div></div>
       ${s.unread_alerts ? `<span class="pill fail plain">${plural(s.unread_alerts, "alert")}</span>` : ""}<span class="pill ${h} plain">${esc(word)}</span></div>
-    <div class="tags">${tagList(s.l1s)}${tagList(s.l2s)}<span class="muted">·</span>${tagList(s.states, 2)}${tagList(s.pincodes, 2)}</div>
+    <div class="tags">${tagList(schedPages(s).map(pageLabel))}${schedPages(s).includes("home") ? tagList(s.l1s) + tagList(s.l2s) : ""}<span class="muted">·</span>${tagList(s.states, 2)}${tagList(s.pincodes, 2)}</div>
     ${r ? `<div class="mini" style="min-width:0">${segBar(r.counts)}<div class="lab">${runLine(r)} <span class="muted">· ${esc(ago(r.started_at))}</span></div></div>` : `<div class="muted">Hasn't run yet.</div>`}
     <dl class="facts"><dt>Next check</dt><dd>${s.enabled ? esc(s.next_run_at ? `${inTime(s.next_run_at)} · ${fmtWhen(s.next_run_at)}` : "—") : "Paused — won't run on its own"}</dd>
       <dt>So far</dt><dd>${plural(s.run_count, "check")}</dd></dl>
@@ -1480,7 +1536,7 @@ const shortInterval = m => (m % 1440 === 0 ? `${m / 1440}d` : m % 60 === 0 ? `${
 function schedMatchesQuery(s, query = schedQuery) {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
-  const text = [s.name, ...s.l1s, ...s.l2s, ...s.states, ...s.pincodes, fmtInterval(s.interval_minutes), shortInterval(s.interval_minutes),
+  const text = [s.name, ...schedPages(s).map(pageLabel), ...s.l1s, ...s.l2s, ...s.states, ...s.pincodes, fmtInterval(s.interval_minutes), shortInterval(s.interval_minutes),
     s.last_status || "", s.enabled ? "enabled active" : "disabled paused"].join(" ").toLowerCase();
   return words.every(w => text.includes(w));
 }
@@ -1584,7 +1640,8 @@ async function viewSched(route, view, stale) {
     ["First run", s.start_at ? esc(fmtWhen(s.start_at)) : "When it was saved"],
     ["Next check", s.enabled && s.next_run_at ? esc(fmtWhen(s.next_run_at)) : "—"],
     ["Last check", s.last_run_at ? esc(fmtWhen(s.last_run_at)) : "Never"],
-    ["Customer types", `<div class="tags">${tagList(s.l1s, 9)}</div>`], ["Departments", `<div class="tags">${tagList(s.l2s, 9)}</div>`],
+    ["Pages", `<div class="tags">${tagList(schedPages(s).map(pageLabel), 9)}</div>`],
+    ...(schedPages(s).includes("home") ? [["Customer types", `<div class="tags">${tagList(s.l1s, 9)}</div>`], ["Departments", `<div class="tags">${tagList(s.l2s, 9)}</div>`]] : []),
     ["States", `<div class="tags">${tagList(s.states, 9)}</div>`], ["Pincodes", `<div class="tags">${tagList(s.pincodes, 9)}</div>`],
     ["Checks per fire", s.combo_count === 1 ? "1" : `${s.combo_count}, one after another`],
     ["Scope", `${s.scope === "hero" ? "Hero carousels" : "All banners"}${s.banner_limit ? ` (first ${s.banner_limit})` : ""} · ${s.workers} at a time`],
@@ -1652,7 +1709,7 @@ async function viewSchedForm(route, view, stale) {
   if (route.id != null) s = await api(`/api/schedules/${route.id}`);
   if (stale()) return;
   const draft = !s ? pendingSchedDraft : null; pendingSchedDraft = null;
-  const v = s || { name: "", interval_minutes: 120, l1s: draft ? draft.l1s : [meta.l1_options[0]], l2s: draft ? draft.l2s : [meta.l2_options[0]],
+  const v = s || { name: "", interval_minutes: 120, pages: draft ? draft.pages : ["home"], l1s: draft ? draft.l1s : [meta.l1_options[0]], l2s: draft ? draft.l2s : [meta.l2_options[0]],
     states: draft ? draft.states : [meta.default_state], pincodes: draft ? draft.pincodes : [meta.default_pincode], scope: draft ? draft.scope : meta.scopes[0],
     banner_limit: draft ? draft.banner_limit : null, workers: draft ? draft.workers : 3, enabled: 1, notify_mode: "new_fails", notify_toast: true };
   const { n, unit } = intervalParts(v.interval_minutes);
@@ -1670,6 +1727,7 @@ async function viewSchedForm(route, view, stale) {
           <div class="hint" id="sf-first"></div></div>
         <label class="checkline"><input type="checkbox" id="sf-enabled"><div><b>Active</b><span>Runs on its own at the times above. Untick to keep it saved but paused.</span></div></label>`)}
       ${sec("What to check", "Every combination you pick becomes its own check, run one after another.", `
+        <div class="field"><label class="lb">Page</label><div id="sf-page"></div></div>
         <div class="field"><label class="lb">Customer type</label><div id="sf-l1"></div></div>
         <div class="field"><label class="lb">Department</label><div id="sf-l2"></div></div>
         <div class="two"><div class="field"><label class="lb">State</label><div id="sf-state"></div></div><div class="field"><label class="lb">Pincode</label><div id="sf-pin"></div></div></div>
@@ -1706,9 +1764,9 @@ async function viewSchedForm(route, view, stale) {
   }
   byId("sf-now").onclick = () => { fillStart(new Date()); updateFirst(); };
   updateFirst();
-  const axes = makeAxes({ l1: byId("sf-l1"), l2: byId("sf-l2"), state: byId("sf-state"), pincode: byId("sf-pin"), summary: byId("sf-combos") }, { l1s: v.l1s, l2s: v.l2s, states: v.states, pincodes: v.pincodes });
+  const axes = makeAxes({ page: byId("sf-page"), l1: byId("sf-l1"), l2: byId("sf-l2"), state: byId("sf-state"), pincode: byId("sf-pin"), summary: byId("sf-combos") }, { pages: v.pages, l1s: v.l1s, l2s: v.l2s, states: v.states, pincodes: v.pincodes });
   const excludedInit = s ? s.excluded_sections.map(x => [x.id, x.label]) : draft ? draft.excluded.map(x => [x.id, x.label]) : [];
-  const cars = makeCarouselPicker(byId("sf-cars"), () => { const a = axes.read(); return { l1: a.l1s[0], l2: a.l2s[0], scope: byId("sf-scope").value }; }, excludedInit);
+  const cars = makeCarouselPicker(byId("sf-cars"), () => { const a = axes.read(); return { page: a.pages[0], l1: a.l1s[0], l2: a.l2s[0], scope: byId("sf-scope").value }; }, excludedInit);
   byId("sf-limit").value = v.banner_limit || ""; byId("sf-workers").value = v.workers;
   byId("sf-toast").checked = !!v.notify_toast; byId("sf-enabled").checked = !!v.enabled;
   byId("sf-save").onclick = async ev => {

@@ -83,7 +83,7 @@
     box-shadow: 0 0 10px #fff, 0 0 26px rgba(255,255,255,.6), inset 0 0 10px rgba(255,255,255,.35);
   }
   .layout {
-    display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px;
+    display: grid; grid-template-columns: 330px 1fr; gap: 16px; padding: 16px;
     align-items: stretch; flex: 1 1 auto; min-height: 0;
   }
   .layout > .sidebar, .layout > .main-panel { overflow-y: auto; min-height: 0; }
@@ -347,6 +347,17 @@
   }
   .tgl:hover { border-color: var(--accent); }
   .tgl.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  /* Page picker: colour says what kind of page it is (home black, premium gold, non-premium white); the ring + tick say it is chosen */
+  .pg-group { display: flex; flex-direction: column; gap: 8px; }
+  .pg-row { display: flex; flex-wrap: nowrap; gap: 4px; }   /* the sidebar is narrow: a row never wraps, its buttons just shrink */
+  .pgb { flex: 1 1 auto; min-width: 0; white-space: nowrap; padding: 5px 5px; border-radius: 999px; border: 1px solid #000; font-size: 11px; font-weight: 600; cursor: pointer; }
+  .pgb:hover { filter: brightness(.92); }
+  .pgb.home { background: #000; color: #fff; }
+  .pgb.premium { background: #d4af37; color: #000; }
+  .pgb.standard { background: #fff; color: #000; }
+  .pgb.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+  .pgb.on::before { content: "\2713"; margin-right: 2px; font-size: 10px; }
+  .dim-axis { opacity: .4; pointer-events: none; }
   .ms { position: relative; }
   .ms-btn {
     width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left;
@@ -431,6 +442,8 @@
   <div class="sidebar">
     <div class="panel">
       <h2>New run</h2>
+      <label>Page</label>
+      <div id="run-page"></div>
       <label>l1 segment</label>
       <div id="run-l1"></div>
       <label>l2 segment</label>
@@ -633,6 +646,58 @@ function makeToggleGroup(root, options, selected, onChange) {
   return { get: () => chosen.slice(), set };
 }
 
+// The page picker: one button per app page, home + premium pages on the first line, non-premium under them.
+// Like the l1/l2 buttons it is multi-select and never empty.
+function makePageGroup(root, options, selected, onChange) {
+  let chosen = [];
+  const btn = o => `<button type="button" class="pgb ${wEsc(o.tier)}" data-v="${wEsc(o.id)}">${wEsc(o.label)}</button>`;
+  root.className = "pg-group";
+  root.setAttribute("role", "group");
+  root.innerHTML = `<div class="pg-row">${options.filter(o => o.tier !== "standard").map(btn).join("")}</div>` +
+                   `<div class="pg-row">${options.filter(o => o.tier === "standard").map(btn).join("")}</div>`;
+  const ids = options.map(o => o.id);
+  const buttons = [...root.querySelectorAll(".pgb")];
+  function paint() {
+    for (const b of buttons) {
+      const on = chosen.includes(b.dataset.v);
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on);
+    }
+  }
+  function set(list) {
+    chosen = ids.filter(id => list.includes(id));
+    if (!chosen.length && ids.length) chosen = [ids[0]];
+    paint();
+  }
+  root.addEventListener("click", ev => {
+    const b = ev.target.closest(".pgb");
+    if (!b) return;
+    const v = b.dataset.v;
+    if (chosen.includes(v)) {
+      if (chosen.length === 1) return;
+      chosen = chosen.filter(x => x !== v);
+    } else {
+      chosen = ids.filter(id => id === v || chosen.includes(id));
+    }
+    paint();
+    if (onChange) onChange();
+  });
+  set(selected);
+  return { get: () => chosen.slice(), set };
+}
+
+function pageLabel(id) {
+  const p = ((typeof meta !== "undefined" && meta && meta.page_options) || []).find(x => x.id === id);
+  return p ? p.label : id;
+}
+// What a run (or a schedule) checks, in words: the l1/l2 feed for home, the page's name for any other page.
+function runWhat(r) { return (r.page || "home") === "home" ? `${r.l1}/${r.l2}` : pageLabel(r.page); }
+function schedWhat(s) {
+  const pages = s.pages || ["home"];
+  return [pages.includes("home") ? `${s.l1s.join("+")}/${s.l2s.join("+")}` : null, ...pages.filter(p => p !== "home").map(pageLabel)]
+    .filter(Boolean).join(" + ");
+}
+
 const openPickers = new Set();
 document.addEventListener("mousedown", ev => { for (const p of [...openPickers]) if (!p.root.contains(ev.target)) p.close(); });
 
@@ -763,21 +828,34 @@ function makePincodeInput(root, selected, onChange) {
 // exactly as the server treats it - and the summary line says how many runs that adds up to.
 function makeAxes(els, initial, onChange) {
   const changed = () => { paintSummary(); if (onChange) onChange(); };
+  const pages = makePageGroup(els.page, meta.page_options, initial.pages || ["home"], changed);
   const l1 = makeToggleGroup(els.l1, meta.l1_options, initial.l1s, changed);
   const l2 = makeToggleGroup(els.l2, meta.l2_options, initial.l2s, changed);
   const state = makeStatePicker(els.state, meta.state_options, initial.states, changed, meta.default_state);
   const pin = makePincodeInput(els.pincode, initial.pincodes, changed);
   function read() {
     const s = state.get(), p = pin.get();
-    return { l1s: l1.get(), l2s: l2.get(), states: s.length ? s : [meta.default_state], pincodes: p.length ? p : [meta.default_pincode] };
+    return { pages: pages.get(), l1s: l1.get(), l2s: l2.get(), states: s.length ? s : [meta.default_state], pincodes: p.length ? p : [meta.default_pincode] };
   }
-  function count() { const v = read(); return v.l1s.length * v.l2s.length * v.states.length * v.pincodes.length; }
+  // only the home page depends on l1/l2; every other page is one run per state x pincode
+  function count() {
+    const v = read();
+    const perPlace = v.pages.reduce((n, p) => n + (p === "home" ? v.l1s.length * v.l2s.length : 1), 0);
+    return perPlace * v.states.length * v.pincodes.length;
+  }
   function paintSummary() {
     const v = read(), n = count();
     const over = n > meta.max_combos;
+    const homeOn = v.pages.includes("home"), others = v.pages.length - (homeOn ? 1 : 0);
+    for (const el of [els.l1, els.l2]) {                         // l1 / l2 mean nothing without the home page
+      el.classList.toggle("dim-axis", !homeOn);
+      const lb = el.previousElementSibling;
+      if (lb && lb.tagName === "LABEL") lb.classList.toggle("dim-axis", !homeOn);
+    }
+    const what = [homeOn ? `Home: ${v.l1s.length} l1 × ${v.l2s.length} l2` : null, others ? `${others} other page${others === 1 ? "" : "s"}` : null].filter(Boolean).join(" + ");
     els.summary.className = "combo-hint" + (over ? " over" : "");
     els.summary.textContent = n === 1 ? "" :
-      `${v.l1s.length} l1 × ${v.l2s.length} l2 × ${v.states.length} state${v.states.length === 1 ? "" : "s"} × ${v.pincodes.length} pincode${v.pincodes.length === 1 ? "" : "s"} = ${n} runs` +
+      `(${what}) × ${v.states.length} state${v.states.length === 1 ? "" : "s"} × ${v.pincodes.length} pincode${v.pincodes.length === 1 ? "" : "s"} = ${n} runs` +
       (over ? ` - over the limit of ${meta.max_combos}, narrow it down` : ", one after another");
   }
   // Something to fix before this can be used: a half-typed pincode left in the box would otherwise be dropped
@@ -790,7 +868,7 @@ function makeAxes(els, initial, onChange) {
   paintSummary();
   return {
     read, count, problem, over: () => count() > meta.max_combos,
-    set(v) { l1.set(v.l1s); l2.set(v.l2s); state.set(v.states); pin.set(v.pincodes); paintSummary(); },
+    set(v) { pages.set(v.pages || ["home"]); l1.set(v.l1s); l2.set(v.l2s); state.set(v.states); pin.set(v.pincodes); paintSummary(); },
   };
 }
 
@@ -815,9 +893,9 @@ function updateRunButton() {
 async function loadMeta() {
   meta = await api("/api/meta");
   runAxes = makeAxes(
-    { l1: document.getElementById("run-l1"), l2: document.getElementById("run-l2"), state: document.getElementById("run-state"),
+    { page: document.getElementById("run-page"), l1: document.getElementById("run-l1"), l2: document.getElementById("run-l2"), state: document.getElementById("run-state"),
       pincode: document.getElementById("run-pincode"), summary: document.getElementById("run-combos") },
-    { l1s: [meta.l1_options[0]], l2s: [meta.l2_options[0]], states: [meta.default_state], pincodes: [meta.default_pincode] },
+    { pages: ["home"], l1s: [meta.l1_options[0]], l2s: [meta.l2_options[0]], states: [meta.default_state], pincodes: [meta.default_pincode] },
     updateRunButton);
 }
 
@@ -866,13 +944,13 @@ async function loadCarouselPreview() {
   const btn = document.getElementById("load-carousels-btn");
   const settings = currentSettings();
   // one feed can be previewed at a time: with several l1/l2 selected, the first of each
-  const l1 = settings.l1s[0], l2 = settings.l2s[0], scope = settings.scope;
-  const several = settings.l1s.length > 1 || settings.l2s.length > 1;
+  const l1 = settings.l1s[0], l2 = settings.l2s[0], scope = settings.scope, page = settings.pages[0];
+  const several = settings.pages.length > 1 || (page === "home" && (settings.l1s.length > 1 || settings.l2s.length > 1));
   btn.disabled = true;
   btn.textContent = "Loading…";
   closeScheduler();
   try {
-    const rows = await api(`/api/feed-preview?l1=${encodeURIComponent(l1)}&l2=${encodeURIComponent(l2)}&scope=${encodeURIComponent(scope)}`);
+    const rows = await api(`/api/feed-preview?l1=${encodeURIComponent(l1)}&l2=${encodeURIComponent(l2)}&scope=${encodeURIComponent(scope)}&page=${encodeURIComponent(page)}`);
     previewRows = rows;
     currentRunId = null;
     pickerShowing = false;
@@ -880,7 +958,7 @@ async function loadCarouselPreview() {
     setRunsBack(true);
     if (evtSource) { evtSource.close(); evtSource = null; }
     document.querySelectorAll(".run-item").forEach(el => el.classList.remove("active"));
-    document.getElementById("run-title").textContent = `Preview: ${l1}/${l2}${several ? " (first of your l1/l2 selection)" : ""} · ${scope} — uncheck a carousel to leave it out, then Run now`;
+    document.getElementById("run-title").textContent = `Preview: ${runWhat({ page, l1, l2 })}${several ? " (first of your selection)" : ""} · ${scope} — uncheck a carousel to leave it out, then Run now`;
     document.getElementById("run-counts").textContent = `${rows.length} banner${rows.length === 1 ? "" : "s"}`;
     document.getElementById("cancel-btn").style.display = "none";
     document.getElementById("export-btn").style.display = "none";
@@ -1016,7 +1094,7 @@ async function loadRuns() {
     const tally = Object.entries(c).map(([k, v]) => `${STATUS_ABBR[k] || k[0]}${v}`).join(" ");
     // with several states/pincodes per run, two runs can differ only by location - so say it whenever it isn't the default
     const loc = (r.state !== meta.default_state || r.pincode !== meta.default_pincode) ? ` · ${r.state} ${r.pincode}` : "";
-    el.innerHTML = `<div>${fmtTime(r.started_at)}<br><span style="color:var(--text-dim)">${r.l1}/${r.l2}${loc} · ${r.scope} · ${tally}</span></div>
+    el.innerHTML = `<div>${fmtTime(r.started_at)}<br><span style="color:var(--text-dim)">${escapeHtml(runWhat(r))}${loc} · ${r.scope} · ${tally}</span></div>
       <span class="status status-${r.status}">${r.status}</span>
       <button class="dismiss" title="Remove from this list (keeps the run's files on disk)">&times;</button>`;
     el.addEventListener("click", () => selectRun(r.run_id));
@@ -1190,7 +1268,20 @@ function explainReasonBase(b, { truncate = false } = {}) {
     const list = truncate ? truncatedList(c.extra_brands) : c.extra_brands.join(", ");
     parts.push(`listing has extra brands not named on the banner: ${list}`);
   }
+  if (!parts.length && b.result === "INCONCLUSIVE") parts.push(undecidedReason(c));
   return parts.join("; ");
+}
+
+// Mirrors qa/feed_verify.py undecided_reason(): why a banner with nothing wrong found is still INCONCLUSIVE (also explains results saved before reasons were written).
+function undecidedReason(c) {
+  if (!c || !Object.keys(c).length) return "";
+  const hasBrands = !!(c.banner_brands && c.banner_brands.length);
+  if (c.title_matches_deal === null || c.title_matches_deal === undefined) {
+    return hasBrands ? "banner has no deal text, so the page title can't be checked (its brands and audience are fine)"
+                     : "banner names no brand and shows no deal text, so there is nothing to compare with the page";
+  }
+  if (!hasBrands) return "banner names no brand, so the page's brand list can't be checked (the deal matches the page title)";
+  return "";
 }
 
 function hotspotReason(h) {
@@ -1201,6 +1292,10 @@ function hotspotReason(h) {
   if (c.title_matches_deal === false) parts.push("title doesn't match the deal");
   if (c.gender_matches === false) parts.push("gender mismatch");
   if (c.extra_brands && c.extra_brands.length) parts.push(`extra brands ${c.extra_brands.join(", ")}`);
+  if (!parts.length && h.result === "INCONCLUSIVE") {
+    if (c.gender_matches === "AJIO_BEAUTY") parts.push("AJIO beauty banner - gender check skipped, needs a human look");
+    else parts.push(undecidedReason(c));
+  }
   return parts.join("; ");
 }
 
@@ -1400,7 +1495,7 @@ async function selectRun(runId, origin = null) {
   // a run a scheduler made always offers the way back to it, wherever it was opened from
   setBackButton(origin || (run.schedule_id != null ? scheds.find(s => s.id === run.schedule_id) : null) || null);
   document.getElementById("run-title").textContent =
-    `${run.l1}/${run.l2} · ${run.state} · pincode ${run.pincode} · ${run.scope}${run.banner_limit ? " · limit " + run.banner_limit : ""} · started ${fmtTime(run.started_at)}`;
+    `${runWhat(run)} · ${run.state} · pincode ${run.pincode} · ${run.scope}${run.banner_limit ? " · limit " + run.banner_limit : ""} · started ${fmtTime(run.started_at)}`;
   document.getElementById("cancel-btn").style.display = run.status === "running" ? "" : "none";
   const exportBtn = document.getElementById("export-btn");
   exportBtn.style.display = "";
@@ -1585,8 +1680,8 @@ function schedRows(s) {
     ["Next run", s.enabled && s.next_run_at ? fmtWhen(s.next_run_at) : "-"],
     ["Last run", s.last_run_at ? fmtWhen(s.last_run_at) : "never"],
     ["Last result", s.last_status ? `${statusChip(s.last_status)} ${escapeHtml(s.last_message || "")}` : "-"],
-    ["l1", `<div class="tags">${tags(s.l1s, 9)}</div>`],
-    ["l2", `<div class="tags">${tags(s.l2s, 9)}</div>`],
+    ["Page", `<div class="tags">${tags((s.pages || ["home"]).map(pageLabel), 9)}</div>`],
+    ...((s.pages || ["home"]).includes("home") ? [["l1", `<div class="tags">${tags(s.l1s, 9)}</div>`], ["l2", `<div class="tags">${tags(s.l2s, 9)}</div>`]] : []),
     ["State", `<div class="tags">${tags(s.states, 6)}</div>`],
     ["Pincode", `<div class="tags">${tags(s.pincodes, 6)}</div>`],
     ["Runs per fire", s.combo_count === 1 ? "1" : `${s.combo_count}, one after another`],
@@ -1608,7 +1703,7 @@ function updateAlertBadge() {
 // state, pincode, interval ("2h"), last result or enabled / disabled. Case doesn't matter, order doesn't matter.
 let schedQuery = "";
 function schedSearchText(s) {
-  return [s.name, ...s.l1s, ...s.l2s, ...s.states, ...s.pincodes, fmtInterval(s.interval_minutes), s.last_status || "",
+  return [s.name, ...(s.pages || ["home"]).map(pageLabel), ...s.l1s, ...s.l2s, ...s.states, ...s.pincodes, fmtInterval(s.interval_minutes), s.last_status || "",
     s.enabled ? "enabled" : "disabled"].join(" ").toLowerCase();
 }
 function schedMatchesQuery(s, query = schedQuery) {
@@ -1630,7 +1725,7 @@ function renderSidebarSchedules() {
     div.innerHTML = `
       <div class="top"><div class="name">${escapeHtml(s.name)}</div>
         <span class="dot ${s.enabled ? "on" : ""}" title="${s.enabled ? "Enabled" : "Disabled"}"></span></div>
-      <div class="meta">every ${fmtInterval(s.interval_minutes)} · ${escapeHtml(s.l1s.join("+"))}/${escapeHtml(s.l2s.join("+"))}${s.combo_count > 1 ? ` · ${s.combo_count} runs` : ""}${s.last_status ? " · " + escapeHtml(s.last_status) : ""}${s.unread_alerts ? ` · ${s.unread_alerts} unread` : ""}</div>
+      <div class="meta">every ${fmtInterval(s.interval_minutes)} · ${escapeHtml(schedWhat(s))}${s.combo_count > 1 ? ` · ${s.combo_count} runs` : ""}${s.last_status ? " · " + escapeHtml(s.last_status) : ""}${s.unread_alerts ? ` · ${s.unread_alerts} unread` : ""}</div>
       <div class="actions">
         <button class="secondary" data-act="view">View</button>
         <button class="secondary danger" data-act="delete">Delete</button>
@@ -1766,8 +1861,9 @@ function schedCardHtml(s) {
         <div class="badge-row"><span class="name">${escapeHtml(s.name)}</span><span class="result-badge ${health}">${word}</span></div>
         <p class="alt">Every ${fmtInterval(s.interval_minutes)}${s.start_at ? `, started ${escapeHtml(fmtWhen(s.start_at))}` : ""}</p>
         <p class="dest">${s.enabled ? (s.next_run_at ? `Next run ${escapeHtml(fmtWhen(s.next_run_at))}` : "Next run: -") : "Disabled - it won't run on its own"}</p>
-        <div class="tags"><span class="tag">l1</span>${tags(s.l1s)}</div>
-        <div class="tags"><span class="tag">l2</span>${tags(s.l2s)}</div>
+        <div class="tags"><span class="tag">page</span>${tags((s.pages || ["home"]).map(pageLabel))}</div>
+        ${(s.pages || ["home"]).includes("home") ? `<div class="tags"><span class="tag">l1</span>${tags(s.l1s)}</div>
+        <div class="tags"><span class="tag">l2</span>${tags(s.l2s)}</div>` : ""}
         <div class="tags"><span class="tag">state</span>${tags(s.states, 3)}</div>
         <div class="tags"><span class="tag">pincode</span>${tags(s.pincodes, 3)}</div>
         <p class="reason">${plural(s.combo_count, "run")} per fire · ${plural(s.run_count, "run")} so far</p>
@@ -1855,7 +1951,7 @@ function runCardHtml(r, opts = {}) {
       <div class="body">
         <div class="badge-row"><span class="carousel-label">${escapeHtml(fmtTime(r.started_at))}</span>
           <span class="result-badge ${health}">${escapeHtml(r.status.toUpperCase())}</span></div>
-        <p class="alt"><b>${escapeHtml(r.l1)}</b> / <b>${escapeHtml(r.l2)}</b></p>
+        <p class="alt">${(r.page || "home") === "home" ? `<b>${escapeHtml(r.l1)}</b> / <b>${escapeHtml(r.l2)}</b>` : `<b>${escapeHtml(pageLabel(r.page))}</b>`}</p>
         <p class="dest">${escapeHtml(r.state)} · pincode ${escapeHtml(r.pincode)}</p>
         <div class="tally">${tallyHtml(r.counts) || '<span class="carousel-label">no results yet</span>'}</div>
         <div>${diffHtml(r.diff)}</div>
@@ -1963,7 +2059,8 @@ async function renderSchedDetail() {
       <span><b>${s.combo_count}</b> run${s.combo_count === 1 ? "" : "s"} per fire</span>
       ${s.last_status ? `<span>${statusChip(s.last_status)} ${escapeHtml(s.last_message || "")}</span>` : ""}
     </div>
-    <div class="tags" style="margin-bottom:14px"><span class="tag">l1</span>${tags(s.l1s, 9)} <span class="tag">l2</span>${tags(s.l2s, 9)}
+    <div class="tags" style="margin-bottom:14px"><span class="tag">page</span>${tags((s.pages || ["home"]).map(pageLabel), 9)}
+      ${(s.pages || ["home"]).includes("home") ? `<span class="tag">l1</span>${tags(s.l1s, 9)} <span class="tag">l2</span>${tags(s.l2s, 9)}` : ""}
       <span class="tag">state</span>${tags(s.states, 9)} <span class="tag">pincode</span>${tags(s.pincodes, 9)}</div>
     <div class="sv-section">
       <h3>Runs <span id="sd-count"></span> <span class="right"><span class="hint" style="margin:0">Click a run to see its banners</span></span></h3>
@@ -2046,7 +2143,7 @@ function updateFirstRun() {
 function renderSchedForm() {
   const s = sv.editing;
   const run = currentSettings();                      // a new scheduler starts from the New run form's settings
-  const v = s ? s : { name: "", interval_minutes: 120, l1s: run.l1s, l2s: run.l2s, states: run.states, pincodes: run.pincodes,
+  const v = s ? s : { name: "", interval_minutes: 120, pages: run.pages, l1s: run.l1s, l2s: run.l2s, states: run.states, pincodes: run.pincodes,
     scope: run.scope, banner_limit: run.banner_limit, workers: run.workers, enabled: 1,
     notify_mode: "new_fails", notify_toast: true };
   const { n, unit } = intervalParts(v.interval_minutes);
@@ -2070,6 +2167,7 @@ function renderSchedForm() {
           <button type="button" class="secondary" id="sf-now" title="Set the start to today, right now">Now</button>
         </div>
         <div class="hint" id="sf-first"></div></div>
+      <div class="full"><label>Page</label><div id="sf-page"></div></div>
       <div class="full"><label>l1 segment</label><div id="sf-l1"></div></div>
       <div class="full"><label>l2 segment</label><div id="sf-l2"></div></div>
       <div><label>State</label><div id="sf-state"></div></div>
@@ -2104,8 +2202,8 @@ function renderSchedForm() {
   }
   byId("sf-now").addEventListener("click", () => { fillStart(new Date()); updateFirstRun(); });
   updateFirstRun();
-  formAxes = makeAxes({ l1: byId("sf-l1"), l2: byId("sf-l2"), state: byId("sf-state"), pincode: byId("sf-pincode"),
-    summary: byId("sf-combos") }, { l1s: v.l1s, l2s: v.l2s, states: v.states, pincodes: v.pincodes });
+  formAxes = makeAxes({ page: byId("sf-page"), l1: byId("sf-l1"), l2: byId("sf-l2"), state: byId("sf-state"), pincode: byId("sf-pincode"),
+    summary: byId("sf-combos") }, { pages: v.pages, l1s: v.l1s, l2s: v.l2s, states: v.states, pincodes: v.pincodes });
   byId("sf-limit").value = v.banner_limit || "";
   byId("sf-workers").value = v.workers;
   byId("sf-toast").checked = !!v.notify_toast;
@@ -2159,8 +2257,8 @@ async function loadFormCarousels() {
   try {
     // one feed can be previewed at a time: the first l1/l2 selected (a carousel is left out by its own id,
     // so the choice applies to every combination that has the same carousel)
-    const { l1s, l2s } = formAxes.read();
-    const q = `l1=${encodeURIComponent(l1s[0])}&l2=${encodeURIComponent(l2s[0])}&scope=${encodeURIComponent(byId("sf-scope").value)}`;
+    const { l1s, l2s, pages } = formAxes.read();
+    const q = `page=${encodeURIComponent(pages[0])}&l1=${encodeURIComponent(l1s[0])}&l2=${encodeURIComponent(l2s[0])}&scope=${encodeURIComponent(byId("sf-scope").value)}`;
     const rows = await api(`/api/feed-preview?${q}`);
     const groups = new Map();
     for (const b of rows) {

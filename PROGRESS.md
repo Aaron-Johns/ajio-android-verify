@@ -1425,3 +1425,55 @@ latest-run logic). **Live:** the template command on a scratch copy of a real ru
 **Not verified live:** a PASS -> FAIL conversion (that banner already failed on its own; covered by unit tests); the web UI showing a
 real reference finding end to end (needs a `config/reference.csv` with real rows; none was created in the repo).
 
+## Reference data: left as an option (2026-09-30)
+
+The user confirmed the real expectations exist but are held by a colleague, and chose to leave the reference check as an
+optional feature for now. Nothing to build; with no `config/reference.csv` every check behaves exactly as before. Once the
+data arrives: run `python -m qa.reference_template`, paste the expectations into `config/reference.csv`, and the next check uses it.
+`CLAUDE.md` 6 and 8 updated so future sessions don't ask for it again. Not committed.
+
+
+## Page picker: home + six premium / non-premium pages (2026-09-30)
+
+**Ask:** check other app pages besides the home feed, with a "page" option in the UI next to the existing ones:
+prem men = `premium-men`, prem women = `premium-women`, prem kids = `kids-premium-page`, non prem men = `menswear`,
+non prem women = `womenswear`, non prem kids = `kidswear`, main page = `home`. Only home needs l1/l2 (the others accept
+any cohort). Home + premium on one line, non-premium under them; Home black/white letters/black border, non-premium
+white/black letters/black border, premium gold/black letters.
+- `qa/pages.py` (new): the seven pages (id, label, tier). `qa.feed_verify --page` (default home) picks the slug for the live fetch and for `--from-run`
+  (`<page>.response.json`).
+- `web/db.py`: `page` column on runs (`'home'`) and schedules (JSON list, `["home"]`); migrated in place, old rows read as home.
+  `previous_done_run` compares within the same page.
+- `web/runner.py`: page is the slowest-varying axis. `expand_combos(..., pages)`: home = l1 x l2, any other page = 1 x the neutral cohort
+  `nontransacted/unisex` (state x pincode still apply); `count_combos`; `start_run(page=)` passes `--page` (home's command line is unchanged) and
+  the l1:premium "wait for a premium banner" logic is home-only; `list_carousels(page=)`.
+- `web/api.py`: `pages` on run / schedule requests (absent = home), `page_options` in `/api/meta`, `page` on `/api/feed-preview`, the 24-run cap
+  counts pages correctly, Excel file name uses the page for non-home runs. Alerts/diffs treat page as part of the run's settings.
+- UIs (classic + manager, same widget): page buttons in New run / New check and in the schedule forms; l1/l2 grey out without Home; the combination
+  line explains the count; run titles, Recent runs, schedule cards/detail/search show the page. The classic sidebar went from 300 to 330 px so
+  the four top-line buttons fit without clipping. Unselected buttons keep their exact colours (selection = ring + tick).
+- Docs: UI_GUIDE ("Starting a run", manager view), API.md, CLAUDE.md (section 4).
+**Tests:** 633 pass (9 new: meta, combo expansion/count, run-now on other pages, default = home, unknown page 422, cap with pages, schedule
+round-trip + old schedule reads as home, previous-run matching per page, start_run command line); 6 older assertions updated for the new `page` key.
+**Live:** server restarted; headless Edge on both UIs 32/32 (order, one-line/two-line layout, the exact colours, no clipped labels, toggling,
+dimming, counts, ring on chosen); the pipeline on 6 menswear banners from the saved response (`--page menswear --from-run`): 2 PASS,
+1 FAIL (gender mismatch), 2 INCONCLUSIVE, 1 SKIPPED. Two scratch run folders from that are under runs/ (gitignored, not in the app's list).
+**Not verified:** a real click of Run now / Save on a non-home page from the browser (would start real runs or add a schedule); the premium-page and
+kids feeds through the full pipeline (only fetched/exported earlier for menswear and premium-men); a Home + other pages batch end to end.
+[A] a non-home page still uses the chosen state and pincode; only l1/l2 are ignored.
+
+## Reasons for INCONCLUSIVE (2026-09-30)
+
+**Ask:** "start giving reasons for inconclusive too" (after a brand-only banner, GUESS JEANS, showed INCONCLUSIVE with a blank reason).
+Cause of that one: `filters._finish` returns INCONCLUSIVE when the deal-to-title check is unknown (`title_matches_deal` None, the banner has
+no deal text) even though brand, gender and extras all checked out. Verdict rule unchanged (the user was offered making that a PASS and only
+asked for reasons).
+- `qa/feed_verify.py`: `undecided_reason(banner_check)` names the case (AJIO beauty; unrecognised gender; no deal text with/without a brand; a
+  brand-less banner whose deal matches the title). `_hotspot_reason` uses it for INCONCLUSIVE checks, which is also what `verify_banner` writes
+  as the banner-level `reason`, so **new results carry the reason in results.json** and every consumer shows it. `format_summary` and Excel
+  (`export_xlsx._fail_reason`, which had nothing at all for INCONCLUSIVE) also derive it from the saved `banner_check`, so old results are explained.
+- Classic + manager: `undecidedReason` mirrors it as a fallback in the reason text and in `hotspotReason`, so runs saved before this show it too.
+- Docs: UI_GUIDE status table. **Tests:** 637 pass (4 new). **Live:** headless Edge on the user's running premium-men run (read-only): slide 3
+  shows "banner has no deal text, ..." in both UIs and the popup, beauty slides and PASS rows unchanged, 8/8, 0 console errors.
+**Not done:** server restart (the user's premium-men run was mid-flight): Excel export of *old* results gets the fallback only after the
+next restart; cached verdicts from before this keep a blank saved reason for up to 24 h (the display fallback covers them).
