@@ -1383,6 +1383,7 @@ function paintSheet() {
           ${row("Banner brands", esc((c.banner_brands || []).join(", ")))}
           ${row("Banner deal", esc(c.banner_deal || ""))}
           ${row("Title matches deal", yn(c.title_matches_deal), c.title_matches_deal === false ? "bad" : c.title_matches_deal === true ? "good" : "")}
+          ${c.sort_check ? row("Deal works on the page", esc(c.sort_check.summary || ""), c.sort_check.status === "MISMATCH" ? "bad" : c.sort_check.status === "MATCH" ? "good" : "") : ""}
           ${row("Banner audience", esc(c.banner_gender || ""))}
           ${row("Page audience", esc((c.listing_genders || []).join(", ")))}
           ${row("Audience matches", yn(c.gender_matches), c.gender_matches === false ? "bad" : c.gender_matches === true ? "good" : "")}

@@ -91,15 +91,14 @@ that must pass exactly), `image_segmentation_2.py` (origin of the Gemma prompt/p
   `nontransacted|premium|nonpremium`, l2 in `men|women|unisex|nogender`, plus state (default KARNATAKA) and pincode
   (default 560029), all multi-select. **`l1:premium` sometimes returns a non-premium asset set: known, ~90% fine, accepted;
   do not re-flag it as a bug.**
-- **Deal-sort check [D] (2026-09-30, `qa/deal_sort_check.py`):** a banner's price/discount claim is checked against the listing sorted with
-  AJIO's own sort codes (`query=:discount-desc | :prce-asc | :prce-desc`; the app API ignores `:discount-asc`). The low-end (discount) rule is answered first from the
-  listing's own **"Discount Ranges" facet** ("40% and above" = N of the total; exact for a multiple-of-10 threshold, no extra request); only when that
-  can't settle it (no such facet, or the threshold sits between two steps) is the lowest discount read from the last page of `:discount-desc`
-  (60 a page; deep pages are refused, see below). "MIN x% OFF": lowest discount >= x-10. "x-y% OFF": the same low-end rule with x, and **no cap on y** (user, 2026-09-30).
-  "UNDER Rs x": dearest item <= x+1. "STARTING AT Rs x": the cheapest item must be **exactly** x (strict, no slack). A mismatch makes the banner FAIL (not over the
-  beauty / unrecognised-audience INCONCLUSIVE); "UP TO x%", "FLAT x%" and anything else have no rule; a sort that can't be loaded is
-  UNCHECKED, never a failure (a listing too big to page to its end keeps its PASS/FAIL from the other checks, with the reason
-  "couldn't get the minimum discount since the page was too large"). Stored as `banner_check.sort_check`; the reason text reaches the UI through the normal reason field.
+- **Deal check [D] (2026-09-30, `qa/deal_sort_check.py`):** a banner's price / discount claim is checked against the listing. **Prices** use AJIO's own sort
+  (`query=:prce-asc | :prce-desc`): "UNDER Rs x" (and "UP TO Rs x", a price cap): dearest item <= x+1; "STARTING AT Rs x": cheapest item **exactly** x. **Discounts** use the listing's
+  "Discount Ranges" filter (cumulative counts, "30% and above" = N products; steps are multiples of 10): "MIN x%" / "x-y%" (the top of a range is never checked)
+  has a floor of x-10, rounded DOWN to a step (45 -> 35 -> the 30% step); every lower step must hold the **same number** of products as the floor's step; a lower
+  step holding more means those extra products are under the floor -> mismatch [the user's rule, 2026-09-30]. [A] products under the lowest step (under 10%) are
+  in no step and are not seen. A mismatch makes the banner FAIL (not over the beauty / unrecognised-audience INCONCLUSIVE); a bare "UP TO x%" discount (user, 2026-09-30), "UP TO Rs x OFF" (an amount off), "FLAT x%" and anything else
+  have no rule; a listing that can't be sorted or has no discount filter is UNCHECKED, never a failure. There is no `:discount-asc` on the app API and no paging
+  to the last page (deep pages are refused): counts only. Stored as `banner_check.sort_check` (with a one-line `summary`); the reason reaches the UI through the normal reason field.
 - **Gender rule:** closed table over Men/Women/Boys/Girls/Infants (`qa/spotcheck/filters.py` `_BANNER_GENDER_RULES`); an
   unrecognised banner audience makes the whole banner INCONCLUSIVE; AJIO beauty banners are flagged for a human.
 - **Hidden / out-of-schedule banners** stay visible in the UI (toggle) but are never processed: always SKIPPED.

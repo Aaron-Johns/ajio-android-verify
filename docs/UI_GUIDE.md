@@ -156,13 +156,16 @@ answers a good request with an HTTP 400 (a `NullPointerException` on their side)
 retried automatically with a growing pause, like a 5xx, so most of them clear on their own and never reach this
 status.
 
-**The deal-sort check.** When a banner's deal is a discount or price claim, the tool also asks AJIO for the listing sorted by
-discount or price and compares the ends with the claim: "MIN. 40% OFF" needs the listing's lowest discount to be at least 30% (40 minus a
-10-point allowance; this is read from the listing's own "Discount Ranges" filter counts, so it works on huge listings too); "20-70% OFF" gets the same low-end test with 20 (the top of a range is never checked); "UNDER ₹799" needs the dearest item to be at most ₹800;
-"STARTING AT ₹399" needs the cheapest item to be exactly ₹399. A mismatch is a FAIL and the reason says what the sorted listing
-showed. "UP TO x%", "FLAT x%" and other wording are not checked this way, and a listing that can't be sorted or paged that far is simply
-not checked (never a failure): the banner keeps the PASS or FAIL its other checks gave it, and its reason says what couldn't be read, for example
-"couldn't get the minimum discount since the page was too large". It costs one or two extra listing requests for those banners.
+**The deal check.** When a banner's deal is a price or discount claim, the tool also checks it against the listing itself.
+*Prices:* the listing is sorted by price: "UNDER ₹799" (or "UP TO ₹799", also a price cap) needs the dearest item to be at most ₹800; "STARTING AT ₹399" needs the cheapest item to be exactly ₹399.
+*Discounts:* the listing's own "Discount Ranges" filter ("30% and above", "40% and above" ... each with a product count) is used. "MIN. 45% OFF" (or "20-70%":
+only the low end counts) has a floor of 35%, which is rounded down to the 30% step; every lower step must hold the same number of products as the 30% step. If a
+lower step holds more, those extra products are discounted less than the floor, which is a FAIL and the reason says how many. (Products discounted under
+10% are in no step, so they aren't seen.) A bare "UP TO x%" discount, "UP TO ₹x OFF" (an amount off), "FLAT x%" and other wording are not checked this way, and a listing that can't be sorted or has no
+discount filter is simply not checked (never a failure): the banner keeps the PASS or FAIL its other checks gave it.
+
+Click a banner to see the result of this check under its details, as **Deal works on the listing?** (classic) or **Deal works on the page**
+(manager): just **True**, **False** or "Couldn't check" (the reason for a False is in the banner's Reason row). Banners whose deal has no such rule (a bare "UP TO 60%") show no row.
 
 **FAIL and INCONCLUSIVE are not the same thing**, even though both need a look: FAIL means the
 pipeline made a determination and it didn't match — that's a real, specific finding you can act on.

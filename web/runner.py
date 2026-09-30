@@ -514,6 +514,7 @@ def unrequest_skip(run_id: str, banner_id: str) -> None:
 
 # ---- reading a run's output (pure reads; safe to do in-process) ---------------------------
 
+from qa.deal_sort_check import summary as deal_summary  # noqa: E402
 from qa.feed_verify import (RETRY_ROUNDS, UNAVAILABLE, _safe, undecided_reason, exclude_banners, is_retryable, load_activity,  # noqa: E402
                             load_banners, load_final_results, select_banners, shown_hotspot_result, shown_result)
 
@@ -549,7 +550,10 @@ def current_activity(entry: dict | None, now: float | None = None) -> str:
 def _explained(item: dict) -> dict:
     """An INCONCLUSIVE banner / hotspot saved before reasons were written for it gets one read off its banner_check."""
     if item["result"] == "INCONCLUSIVE" and not item.get("reason"):
-        return {**item, "reason": undecided_reason(item.get("banner_check") or {})}
+        item = {**item, "reason": undecided_reason(item.get("banner_check") or {})}
+    sort_check = (item.get("banner_check") or {}).get("sort_check")
+    if sort_check:            # the one-line summary is worked out from the saved check ("" for the discount rules that were removed)
+        item = {**item, "banner_check": {**item["banner_check"], "sort_check": {**sort_check, "summary": deal_summary(sort_check)}}}
     return item
 
 

@@ -1555,3 +1555,40 @@ then some are below the need (MISMATCH, "N of M products ... discounted less tha
 between two steps) does it fall back to the last page of `:discount-desc`. Live: the three prem kids listings that were "too large" (132k, 9k and 160k
 products) now get a real answer with no extra request (MIN 50 / MIN 70 / 50-80 MATCH; a MIN 95 claim on the 132k one MISMATCH, 117,542 products
 under 80%). Tests: 671 pass (6 new).
+
+### Detail view: "Deal works on the listing?" (2026-09-30)
+Asked: an extra detail under the banner details, when a banner is clicked, saying whether the deal works on the PLP. `deal_sort_check.check` now returns a one-line
+`summary` ("Yes: every product on the listing is discounted 40% or more (...)", "No: <reason>", "Couldn't check: <reason>"); classic popup gets a
+"Deal works on the listing?" row after "Title matches deal?", the manager sheet a "Deal works on the page" row (green / red by status). No row when the
+banner's deal wasn't checked (no price/discount rule, e.g. "UP TO 60%"). `runner._explained` gives results saved before the summary existed one too (server side,
+one copy, no JS mirror). Tests: 672 pass (+1 old-result test). Live: sample banner data in headless Edge, both UIs, 5/5 checks, 0 console errors.
+Not verified: a real run's banner popup; the server has to be restarted for old results to get the summary (a run was mid-flight, so I did not restart).
+
+### Deal-sort check: discount logic removed (2026-09-30)
+User: remove the discount logic (a 45% item is always inside "20% and above", so the Discount Ranges facet contains it and the check adds nothing); just remove
+it. Gone: the MIN x% / x-y% rules, the Discount Ranges facet parsing (`Listing.discount_ranges`), the last-page paging, the "page was too large" note and the
+10-point slack. Kept: the two price rules (UNDER x: dearest <= x+1; STARTING AT x: cheapest == x) and the "Deal works on the listing?" detail row, which now only
+appears for those. Old results that carry a discount sort_check keep whatever verdict/reason they were saved with but no longer get a summary row.
+Tests: the discount tests were replaced by "discount claims have no rule" cases.
+
+### Deal check: discount rule redone with the Discount Ranges counts (2026-09-30)
+User: change the logic. "MIN 45%" -> floor 35%; a lower range holding MORE products than the floor's range means products below the floor; if the floor's range and the
+ranges below it hold the same number, it is correct. Built: `Listing.discount_ranges` back (read from the listing's "Discount Ranges" facet), and
+`deal_sort_check._discount_floor`: floor = x-10, rounded down to a facet step (steps are 10, 20 ... 90, so 35 -> 30) [A: a floor between two steps is judged
+at the step under it, a little lenient], every lower step's count must equal the floor step's count, else MISMATCH ("N products ... discounted less than 30%
+(the 20% and above filter holds A, the 30% and above filter only B)"). No paging, no `:discount-desc`, no "page too large" note. [A] products under 10% are in no
+step and aren't seen (the rule compares steps with each other, not with the listing's total). Ranges ("x-y%") use x only. Price rules unchanged. The detail row
+is back for discounts. This replaces the removal recorded just above.
+
+### "Up to x%" gets no deal check (2026-09-30)
+User: if a banner just says "up to x%", don't check it. It already was so (`parse_deal` has no rule for "UP TO ...", including "UP TO 60% + EXTRA 30%" and "UP TO Rs 500 OFF"); added those wordings to the no-rule test so it stays that way. The listing-title comparison ("UPTO 60 PERCENT OFF" vs the deal) is a different, older check and still runs. Tests: 676 pass.
+
+### "Up to" wording, corrected (2026-09-30)
+User: "up to Rs x" should be checked; only "up to x%" (a discount) should not. `deal_sort_check` now treats "UP TO Rs/₹/INR x" (rupee marker required, not
+followed by "OFF") as a price cap, the same rule as "UNDER Rs x" (dearest item <= x+1). "UP TO x%", "UP TO Rs 500 OFF" (an amount off), "UP TO 3 ITEMS" and
+"FLAT x%" still have no rule. Tests updated; the earlier note above that put "UP TO Rs 500 OFF" in the no-check list is still right for that wording.
+
+### Detail row shortened (2026-09-30)
+User: for "deal works" just put true, no elaborate explanation. `deal_sort_check.summary` is now `True` / `False` / `Couldn't check` (the reason for a False is in the
+banner's Reason row, the observed numbers are still in `banner_check.sort_check`). The server re-works the value from the saved check when a run is read, so
+results saved with the longer sentences show the short one after a restart. Tests updated.

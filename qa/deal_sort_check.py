@@ -1,28 +1,28 @@
-"""Check a banner's price / discount claim against the listing it opens, by sorting the listing (AJIO's own sort options).
+"""Check a banner's price / discount claim against the listing it opens, using AJIO's own sort and filter data.
 
-  "MIN. 40% OFF"          the listing's lowest discount must be at least 40 - MIN_DISCOUNT_SLACK
-  "20-70% OFF" / "20% to 70%"   the same low-end rule with x = 20; the top of the range is not checked at all
-  "UNDER Rs 799"          sorted by price high to low, the first price is at most 799 + UNDER_PRICE_SLACK
-  "STARTING AT Rs 399"    sorted by price low to high, the first price is exactly 399
+Prices (the listing sorted by price, the API's `query=:prce-asc | :prce-desc`):
+  "UNDER Rs 799"          the dearest item is at most 799 + UNDER_PRICE_SLACK
+  "UP TO Rs 799"          the same (a price cap); "UP TO Rs 500 OFF" (an amount off) and "UP TO 60%" (a discount) have no rule
+  "STARTING AT Rs 399"    the cheapest item is exactly 399
 
-The low-end (discount) rule is answered from the listing's own "Discount Ranges" filter first ("40% and above" holds N of the
-total products), which comes back with the listing itself and is exact for a threshold that is a multiple of 10. Only when the
-filter can't decide (no such filter, or the threshold falls between two of its steps) is the lowest discount read from the last page
-of the sort. The sorts are the API's `query` values `:discount-desc`, `:prce-asc`, `:prce-desc` (its own spelling); there is no
-`:discount-asc`. Anything else a banner says
-("UP TO 60%", "FLAT 50%") has no rule here and is left alone; a listing that can't be sorted or paged that far is
-UNCHECKED, never a failure: the banner keeps the verdict its other checks gave it and the reason says what couldn't be
-read (e.g. "couldn't get the minimum discount since the page was too large"). The slacks are the user's numbers (2026-09-30).
+Discounts (the listing's own "Discount Ranges" filter, which comes back with the listing: "30% and above" -> N products):
+  "MIN. 45% OFF" / "20-70% OFF"   the floor is x - MIN_DISCOUNT_SLACK (35 for 45, 10 for 20); the top of a range is never checked.
+      The filter steps are multiples of 10, so the floor is rounded DOWN to the step at or under it (35 -> "30% and above").
+      The filter is cumulative, so every lower step holds at least as many products as the floor's step. If a lower step holds MORE,
+      those extra products are discounted less than the floor -> mismatch; if every lower step holds the same number, nothing is
+      below the floor -> correct. [A] products under the lowest step (under 10%) are in no step at all and are not seen.
+
+Anything else a banner says ("UP TO 60%" - user: a bare up-to discount is never checked - or "FLAT 50%") has no rule; a listing that can't be sorted, or has no discount filter, is
+UNCHECKED, never a failure: the banner keeps the verdict its other checks gave it.
 """
 from __future__ import annotations
 
-import math
 import re
 from typing import Callable
 
 from qa.listing_client import product_row
 
-MIN_DISCOUNT_SLACK = 10     # percentage points a listing's lowest discount may sit under the banner's "min x%"
+MIN_DISCOUNT_SLACK = 10     # percentage points under the banner's "min x%" that the listing's floor may sit
 UNDER_PRICE_SLACK = 1       # rupees the dearest item may sit over the banner's "under Rs x"
 PAGE_SIZE = 60              # the largest page size the API accepted (100 is refused)
 
@@ -32,97 +32,89 @@ _RULES = (
     ("min_discount", re.compile(r"\bmin(?:imum)?\.?\s*" + _NUM + r"\s*%")),
     ("discount_range", re.compile(_NUM + r"\s*%?\s*(?:-|–|—|to)\s*" + _NUM + r"\s*%")),
     ("under_price", re.compile(r"\bunder\s*" + _RUPEE + _NUM)),
+    # "UP TO Rs 999" is a price cap, like "under"; "UP TO Rs 500 OFF" is an amount off and "UP TO 60%" a discount: neither is checked
+    ("under_price", re.compile(r"\bup\s*to\s*(?:rs\.?|₹|inr)\s*" + _NUM + r"(?![\d,])(?!\s*(?:/-)?\s*off\b)")),
     ("starting_price", re.compile(r"\bstarting\s*(?:at|from)?\s*" + _RUPEE + _NUM)),
 )
+_DISCOUNT_RULES = ("min_discount", "discount_range")
 
 
-def parse_deal(text: str | None) -> tuple[str, int, int | None] | None:
-    """(rule, x, y) for a deal this module knows how to check, else None. A range keeps its y, though nothing checks it."""
+def parse_deal(text: str | None) -> tuple[str, int] | None:
+    """(rule, x) for a deal this module knows how to check (x = the first number, the "min" / the range's low end), else None."""
     t = (text or "").lower()
     for name, pattern in _RULES:
         m = pattern.search(t)
         if m:
-            nums = [int(g.replace(",", "")) for g in m.groups()]
-            return name, nums[0], nums[1] if len(nums) > 1 else None
+            return name, int(m.group(1).replace(",", ""))
     return None
 
 
-def _low_end_from_filter(need: int, total: int, ranges: dict[int, int]):
-    """Decide "every product is discounted at least `need`%" from the Discount Ranges filter. (True | False | None, detail):
-    None when the filter's steps don't settle it. A step is exact: "40% and above" counts the products discounted 40% or more."""
-    if need <= 0:
-        return True, {}
-    above = next((t for t in sorted(ranges) if t >= need), None)                # smallest step at or over the need
-    if above is not None and ranges[above] >= total:
-        return True, {"all_at_or_above": above}                                  # everything is at or over that step, so over the need
-    below = max((t for t in ranges if t <= need), default=None)                  # largest step at or under the need
-    if below is not None and ranges[below] < total:
-        return False, {"below": below, "products_below": total - ranges[below]}
-    return None, {}
+def summary(r: dict) -> str:
+    """The banner detail view's "Deal works on the listing?" answer: True, False, or "Couldn't check" (why is in the reason).
+    Works from a saved sort_check, so results saved before this existed can be given one too ("" for a shape it doesn't know)."""
+    kind = (parse_deal(r.get("deal")) or (None,))[0]
+    if kind is None or (kind in _DISCOUNT_RULES and r["status"] == "MATCH" and "step" not in (r.get("observed") or {})):
+        return ""                                       # no rule now, or saved by an earlier version of the discount check
+    return {"MATCH": "True", "MISMATCH": "False"}.get(r["status"], "Couldn't check")
 
 
-def _lowest_discount(get: Callable, total: int):
-    """The lowest discount on the listing: the last product of the last page of the discount-descending sort."""
-    last_page = max(0, math.ceil(total / PAGE_SIZE) - 1)
-    values = [product_row(p)["discount_percent"] for p in get(":discount-desc", last_page, PAGE_SIZE).products]
-    values = [v for v in values if v is not None]
-    return min(values) if values else None
-
-
-def _first(get: Callable, sort: str, field: str):
+def _first_price(get: Callable, sort: str):
     for p in get(sort, 0, PAGE_SIZE).products:
-        value = product_row(p)[field]
+        value = product_row(p)["price"]
         if value is not None:
             return value
     return None
 
 
-def check(deal: str | None, total_results: int, get: Callable, discount_ranges: dict[int, int] | None = None) -> dict | None:
-    """None if the banner's deal has no rule here. Else {"status": MATCH | MISMATCH | UNCHECKED, "rule", "observed", "reason"}.
-    `get(sort, page, page_size)` returns the listing (with its products) in that order; `discount_ranges` is the listing's
-    Discount Ranges filter ({50: count of products discounted 50% or more, ...}), tried before any sorted page is fetched."""
-    rule = parse_deal(deal)
-    if rule is None:
+def _discount_floor(x: int, ranges: dict[int, int]) -> tuple[str, dict, str]:
+    """(status, observed, reason) for a "min x%" claim from the Discount Ranges filter ({30: products discounted 30% or more, ...})."""
+    floor = x - MIN_DISCOUNT_SLACK
+    if floor <= 0:
+        return "MATCH", {"step": 0, "count": None, "lower_steps": []}, ""
+    step = max((s for s in ranges if s <= floor), default=None)
+    if step is None:
+        return "UNCHECKED", {}, f"the listing's discount filter starts above {floor}%"
+    lower = sorted(s for s in ranges if s < step)
+    observed = {"step": step, "count": ranges[step], "lower_steps": lower}
+    more = [s for s in lower if ranges[s] > ranges[step]]
+    if more:
+        s = max(more)                                   # the step just under the floor that holds extra products
+        observed.update(lower_step=s, lower_count=ranges[s])
+        return "MISMATCH", observed, (f"{ranges[s] - ranges[step]} products on the listing are discounted less than {step}% "
+                                      f"(the {s}% and above filter holds {ranges[s]}, the {step}% and above filter only {ranges[step]}); "
+                                      f"banner promises at least {x}% (allowed down to {floor}%)")
+    return "MATCH", observed, ""
+
+
+def check(deal: str | None, get: Callable, discount_ranges: dict[int, int] | None = None) -> dict | None:
+    """None if the banner's deal has no rule here. Else {"status": MATCH | MISMATCH | UNCHECKED, "rule", "observed", "reason",
+    "summary"}. `get(sort, page, page_size)` returns the listing (with its products) in that price order; `discount_ranges` is
+    the listing's Discount Ranges filter."""
+    parsed = parse_deal(deal)
+    if parsed is None:
         return None
-    kind, x, y = rule
+    kind, x = parsed
     out: dict = {"rule": kind, "deal": deal, "observed": {}}
-    problems: list[str] = []
-    try:
-        if kind in ("min_discount", "discount_range"):
-            if not total_results:
-                return {**out, "status": "UNCHECKED", "reason": "the listing has no products to sort"}
-            need = x - MIN_DISCOUNT_SLACK
-            ok, detail = _low_end_from_filter(need, total_results, discount_ranges or {})
-            if ok is not None:
-                out["observed"] = {"discount_filter": detail}
-                if not ok:
-                    problems.append(f"{detail['products_below']} of {total_results} products on the listing are discounted less than "
-                                    f"{detail['below']}%, banner promises at least {x}% (allowed down to {need}%)")
-            else:
-                low = out["observed"]["lowest_discount"] = _lowest_discount(get, total_results)
-                if low is None:
-                    return {**out, "status": "UNCHECKED", "reason": "the listing shows no discounts to compare"}
-                if low < need:
-                    problems.append(f"lowest discount on the listing is {low}%, banner promises at least {x}% "
-                                    f"(allowed down to {need}%)")
-        elif kind == "under_price":
-            top = out["observed"]["highest_price"] = _first(get, ":prce-desc", "price")
-            if top is None:
-                return {**out, "status": "UNCHECKED", "reason": "the listing shows no prices to compare"}
-            if top > x + UNDER_PRICE_SLACK:
-                problems.append(f"dearest item on the listing is Rs {top}, banner says under Rs {x}")
+    if kind in _DISCOUNT_RULES:
+        if not discount_ranges:
+            result = {**out, "status": "UNCHECKED", "reason": "the listing has no discount filter to compare"}
         else:
-            bottom = out["observed"]["lowest_price"] = _first(get, ":prce-asc", "price")
-            if bottom is None:
-                return {**out, "status": "UNCHECKED", "reason": "the listing shows no prices to compare"}
-            if bottom != x:
-                problems.append(f"cheapest item on the listing is Rs {bottom}, banner says starting at Rs {x}")
-    except Exception as exc:                 # the sorted page couldn't be loaded or paged to: not a finding about the banner
-        too_big = kind in ("min_discount", "discount_range") and "HTTP 403" in str(exc)    # the API refuses pages that deep
-        why = ("couldn't get the minimum discount since the page was too large" if too_big
-               else f"couldn't load the sorted listing: {type(exc).__name__}: {exc}"[:200])
+            status, observed, reason = _discount_floor(x, discount_ranges)
+            result = {**out, "status": status, "observed": observed, "reason": reason}
+        return {**result, "summary": summary(result)}
+    try:
+        if kind == "under_price":
+            seen = out["observed"]["highest_price"] = _first_price(get, ":prce-desc")
+            problem = f"dearest item on the listing is Rs {seen}, banner says under Rs {x}" if seen is not None and seen > x + UNDER_PRICE_SLACK else ""
+        else:
+            seen = out["observed"]["lowest_price"] = _first_price(get, ":prce-asc")
+            problem = f"cheapest item on the listing is Rs {seen}, banner says starting at Rs {x}" if seen is not None and seen != x else ""
+    except Exception as exc:                 # the sorted page couldn't be loaded: not a finding about the banner
         # note: the banner keeps the verdict its other checks gave it, but this is put beside it so the gap is visible
-        return {**out, "status": "UNCHECKED", "reason": why, "note": True}
-    if problems:
-        return {**out, "status": "MISMATCH", "reason": "; ".join(problems)}
-    return {**out, "status": "MATCH", "reason": ""}
+        result = {**out, "status": "UNCHECKED", "reason": f"couldn't load the sorted listing: {type(exc).__name__}: {exc}"[:200], "note": True}
+    else:
+        if seen is None:
+            result = {**out, "status": "UNCHECKED", "reason": "the listing shows no prices to compare"}
+        else:
+            result = {**out, "status": "MISMATCH" if problem else "MATCH", "reason": problem}
+    return {**result, "summary": summary(result)}

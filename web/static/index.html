@@ -1532,6 +1532,7 @@ function openModal(b) {
     ["Destination", linkHtml(b.destination_raw)], ["Listing title", b.listing_title],
     ["Banner brands", (c.banner_brands || []).join(", ")],
     ["Banner deal", c.banner_deal], ["Title matches deal?", c.title_matches_deal],
+    ["Deal works on the listing?", c.sort_check && c.sort_check.summary ? escapeHtml(c.sort_check.summary) : ""],
     ["Banner gender", c.banner_gender], ["Listing genders", (c.listing_genders || []).join(", ")],
     ["Gender matches?", c.gender_matches],
     ["Missing brands", (c.missing_brands || []).join(", ")],
