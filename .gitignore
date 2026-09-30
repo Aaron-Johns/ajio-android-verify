@@ -37,3 +37,11 @@ qa/.cache/
 
 # Server log written by scripts/start_server.ps1
 logs/
+
+# tooling installed into the repo (graphify, agent skills): not part of this project
+graphify-out/
+.agents/
+skills-lock.json
+.claude/skills/
+.claude/CLAUDE.md
+.claude/settings.json.graphify-bak
