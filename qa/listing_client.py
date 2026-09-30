@@ -88,7 +88,8 @@ def _path(slug: str, kind: str) -> str:
     return PATH if kind == CURATED else PATH.rsplit("/", 1)[0] + f"/{quote(slug, safe='')}"
 
 
-def _params(slug: str, page: int, page_size: int, kind: str = CURATED, store: str | None = None) -> dict[str, str]:
+def _params(slug: str, page: int, page_size: int, kind: str = CURATED, store: str | None = None,
+            sort: str | None = None) -> dict[str, str]:
     p = {"advfilter": "true", "store": "rilfnl", "fields": "FULL",
          "pageSize": str(page_size), "currentPage": str(page), "platform": "android", "displayRatings": "true",
          "pincode": os.environ.get("AJIO_PINCODE", "560029"), "latitude": os.environ.get("AJIO_LATITUDE", "12.933113"),
@@ -97,6 +98,8 @@ def _params(slug: str, page: int, page_size: int, kind: str = CURATED, store: st
         p.update({"curatedid": slug, "curated": "true"})
     if store:
         p["store"] = store
+    if sort:
+        p["query"] = sort      # ":discount-desc" | ":prce-asc" | ":prce-desc" - the API's own sort codes (see qa/deal_sort_check.py)
     return p
 
 
@@ -115,11 +118,11 @@ def parse_listing(slug: str, page: int, data: dict) -> Listing:
 
 def fetch_listing(slug: str, page: int = 0, page_size: int = PAGE_SIZE, kind: str = CURATED, run_log: RunLog | None = None,
                   timeout: float = 30.0, session: requests.Session | None = None, sleep=time.sleep,
-                  store: str | None = None) -> Listing:
-    """`store`: None for the standard store, LUXE for a luxe.ajio.com link (see listing_store)."""
+                  store: str | None = None, sort: str | None = None) -> Listing:
+    """`store`: None for the standard store, LUXE for a luxe.ajio.com link (see listing_store). `sort`: an API sort code."""
     load_env()
     http = session or requests
-    query = urlencode(_params(slug, page, page_size, kind, store))
+    query = urlencode(_params(slug, page, page_size, kind, store, sort))
     url = f"https://{HOST}{_path(slug, kind)}?{query}"
     device_id, last = _device_id(), "no attempt made"
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -130,7 +133,7 @@ def fetch_listing(slug: str, page: int = 0, page_size: int = PAGE_SIZE, kind: st
         except requests.RequestException as exc:
             last = f"{type(exc).__name__}: {exc}"
         if run_log:
-            run_log.record(f"listing_{slug}_p{page}", headers, url, resp, attempt)
+            run_log.record(f"listing_{slug}_p{page}{(sort or '').replace(':', '_')}", headers, url, resp, attempt)
         if resp is not None:
             if resp.status_code == 200:
                 return parse_listing(slug, page, resp.json())

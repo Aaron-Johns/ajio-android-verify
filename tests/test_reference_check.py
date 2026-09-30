@@ -135,7 +135,8 @@ class Fetcher:
         self.table, self.calls = table, []
 
     def __call__(self, slug, kind="curated", **k):
-        self.calls.append(slug)
+        if not k.get("sort"):            # the deal-sort check asks for sorted pages too; those aren't listing fetches
+            self.calls.append(slug)
         return self.table[slug]
 
 

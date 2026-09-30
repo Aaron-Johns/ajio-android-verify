@@ -58,10 +58,10 @@ def ok_image(url):
 
 class Fetcher:
     def __init__(self, table):
-        self.table, self.calls = table, []
+        self.table, self.calls, self.sorted_calls = table, [], []
 
     def __call__(self, slug, kind="curated", **k):
-        self.calls.append((slug, kind))
+        (self.sorted_calls if k.get("sort") else self.calls).append((slug, kind))   # calls = the plain listing fetches
         value = self.table[slug]
         if isinstance(value, Exception):
             raise value
@@ -850,7 +850,8 @@ class StoreFetcher:
         self.by_store, self.calls = by_store, []
 
     def __call__(self, slug, kind="curated", store=None, **k):
-        self.calls.append((slug, kind, store))
+        if not k.get("sort"):
+            self.calls.append((slug, kind, store))
         return self.by_store[store]
 
 

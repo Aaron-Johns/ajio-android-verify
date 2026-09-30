@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from qa import asset_set, listing_client as lc, reference_check
+from qa import asset_set, deal_sort_check, listing_client as lc, reference_check
 from qa.pages import DEFAULT_PAGE, PAGE_IDS
 from qa.banner_cache import BannerCache, dhash
 from qa.compare import AliasMap
@@ -125,13 +125,16 @@ class ListingCache:
     def __init__(self, fetcher: Callable = lc.fetch_listing, pause: float = LISTING_PAUSE):
         self.fetcher, self.pause, self._lock, self._cache = fetcher, pause, threading.Lock(), {}
 
-    def get(self, kind: str, slug: str, store: str | None = None) -> lc.Listing:
-        """`store` (lc.listing_store) is part of the key: the same slug is a different catalogue in the Luxe store."""
+    def get(self, kind: str, slug: str, store: str | None = None, sort: str | None = None, page: int = 0,
+            page_size: int | None = None) -> lc.Listing:
+        """`store` (lc.listing_store) is part of the key: the same slug is a different catalogue in the Luxe store.
+        `sort` / `page` / `page_size` ask for a sorted page instead (qa/deal_sort_check.py); each combination is cached."""
         with self._lock:
-            key = (kind, slug, store)
+            key = (kind, slug, store, sort, page, page_size)
             if key not in self._cache:
                 try:
-                    extra = {"store": store} if store else {}
+                    extra = {**({"store": store} if store else {}),
+                             **({"sort": sort, "page": page, "page_size": page_size} if sort else {})}
                     self._cache[key] = self.fetcher(slug, kind=kind, **extra)   # failures are not cached, so a retry round re-fetches
                 finally:
                     time.sleep(self.pause)
@@ -178,6 +181,13 @@ def _verify_image(image_path: Path, destination_raw: str | None, analyzer: Calla
         info = {**info, "target_gender": gender_override}
     note("Comparing")
     check = filters.verify_from_listing(info, listing.title, listing.brands, aliases, listing.genders, listing.total_results)
+    sort_check = deal_sort_check.check(info.get("deal_offered"), listing.total_results,
+                                       lambda sort, page, size: listings.get(kind, slug, store, sort, page, size))
+    if sort_check:
+        check["sort_check"] = sort_check
+        # a real mismatch is a finding; the beauty / unrecognised-audience INCONCLUSIVE is left as it is (a person looks anyway)
+        if sort_check["status"] == "MISMATCH" and not isinstance(check.get("gender_matches"), str):
+            check["result"] = "FAIL"
     return {"result": check["result"], "reason": "", "listing_kind": kind, "slug": slug, "listing_title": listing.title,
             "total_results": listing.total_results, "brands_in_filter": len(listing.brands), "banner_check": check,
             **({"listing_store": store} if store else {})}
@@ -260,7 +270,9 @@ def _hotspot_reason(h: dict) -> str:
         "title doesn't match the deal" if c.get("title_matches_deal") is False else "",
         f"banner targets {c.get('banner_gender')!r} but listing genders are {c.get('listing_genders')}"
         if c.get("gender_matches") is False else "",
-        f"extra brands in the listing: {c['extra_brands']}" if c.get("extra_brands") else ""]))
+        f"extra brands in the listing: {c['extra_brands']}" if c.get("extra_brands") else "",
+        (c.get("sort_check") or {}).get("reason") if (c.get("sort_check") or {}).get("status") == "MISMATCH" else "",
+        (c.get("sort_check") or {}).get("reason") if (c.get("sort_check") or {}).get("note") else ""]))
     if not bits and h.get("result") == "INCONCLUSIVE":
         return undecided_reason(c)
     return "; ".join(bits)

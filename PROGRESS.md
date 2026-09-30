@@ -1514,3 +1514,35 @@ View/Delete buttons, one x per row, 44 px rows, cancelling the confirm keeps it,
 User asked to replace the "never saw a 'PR' banner in N feed fetches; proceeding with the last pull anyway ..." message with just
 "Premium cannot be loaded". Changed the one print in `qa/feed_verify.py` (behaviour unchanged: the run still continues with the last pull). It is
 still only console output of the run subprocess, so the app does not show it anywhere (offered surfacing it in the UI; not asked for yet). Tests: 640 pass.
+
+## Deal-sort check: banner deal vs the sorted listing (2026-09-30)
+
+**Ask:** check the deal claim by sorting the listing. MIN x% -> lowest discount x-10; x-y% -> same logic; UNDER Rs x -> price-desc max x+1;
+STARTING Rs x -> price-asc min x. The user gave web URLs `?query=%3Adiscount-asc`, `%3Aprce-asc`, `%3Aprce-desc`.
+- **Probed the app's listing API (a few read-only GETs):** it takes `query=:prce-asc`, `:prce-desc`, `:discount-desc` (its `sorts` list is
+  relevance, discount-desc, prce-asc, newn, prce-desc, rating). `:discount-asc` (also tried as the full query form, as `sort=`, and
+  `:discountasc`) is **ignored** by this API (it answers in relevance order) although the user saw it work on the website, so the lowest
+  discount is read from the **last page of `:discount-desc`**. Limits found: pageSize 60 works, 100 is refused; very deep pages are refused
+  (403 "outside the allowed range"), so a listing too big to reach its last page is UNCHECKED.
+- `qa/deal_sort_check.py` (new): `parse_deal` (min / range / under / starting; "UP TO", "FLAT" etc. have no rule), `check`. Slacks are constants
+  (10 points, 1 rupee, 1 rupee). [A] the range's top end uses the same 10. [A] "starting at" also fails if the cheapest item is BELOW x-1.
+  Uses `price.value` (the listed price, not `offerPrice`) and `discountPercent`.
+- `listing_client`: `sort` parameter; `ListingCache.get(..., sort, page, page_size)` caches each sorted page. `_verify_image` records
+  `banner_check.sort_check`; a MISMATCH turns the result FAIL (except the beauty / unrecognised-audience INCONCLUSIVE); the reason text is in
+  `_hotspot_reason` so every UI/Excel shows it with no UI change. Applies to hotspot crops too (their own deal text).
+- **Tests:** 664 pass (24 new in tests/test_deal_sort_check.py; the fake fetchers in 3 older test files now count only plain listing fetches).
+  **Live:** the check against the real "Min 30 Percent Off" listing (363 products): MIN 40 match / MIN 50 mismatch (lowest 30), 20-70 match,
+  30-40 mismatch (highest 70), UNDER 6000 match / UNDER 799 mismatch (5760), STARTING 161 match / 399 mismatch (161).
+**Not verified:** a full web run with the check on (runs started before this keep their old verdicts; cached banners from before it, up to 24 h,
+skip it until the cache is cleared); the check on /c/ category listings and on hotspots; how ranges phrased in other ways come out of Gemma.
+
+### Deal-sort check: two rule changes (2026-09-30)
+User: a range "x-y%" now checks only the low end (lowest discount >= x-10), no cap on y at all (the second sorted request is gone too); "starting at x"
+is strict (the cheapest item must be exactly x, no slack). Code: `qa/deal_sort_check.py`; tests updated (range never caps; 160 and 162 both fail
+"starting at 161"); CLAUDE.md and UI_GUIDE match. The earlier [A] guess about the range's top end is withdrawn.
+
+### Deal-sort check: too-large listings say so (2026-09-30)
+User: when a listing is too large to page to the end, still give pass or fail, but note that the minimum discount couldn't be read. The verdict was
+already left to the other checks (UNCHECKED never changed it); what was missing was the note. Now `sort_check` carries `note: true` when a sorted page
+couldn't be loaded, and `_hotspot_reason` puts its text in the reason, also on a PASS: "couldn't get the minimum discount since the page was too
+large" (an HTTP 403 on the deep page, for min / range deals) or "couldn't load the sorted listing: ..." (any other failure). Tests: 665 pass.

@@ -91,6 +91,13 @@ that must pass exactly), `image_segmentation_2.py` (origin of the Gemma prompt/p
   `nontransacted|premium|nonpremium`, l2 in `men|women|unisex|nogender`, plus state (default KARNATAKA) and pincode
   (default 560029), all multi-select. **`l1:premium` sometimes returns a non-premium asset set: known, ~90% fine, accepted;
   do not re-flag it as a bug.**
+- **Deal-sort check [D] (2026-09-30, `qa/deal_sort_check.py`):** a banner's price/discount claim is checked against the listing sorted with
+  AJIO's own sort codes (`query=:discount-desc | :prce-asc | :prce-desc`; the app API ignores `:discount-asc`, so the lowest discount is read from
+  the last page of `:discount-desc`, 60 a page). "MIN x% OFF": lowest discount >= x-10. "x-y% OFF": the same low-end rule with x, and **no cap on y** (user, 2026-09-30).
+  "UNDER Rs x": dearest item <= x+1. "STARTING AT Rs x": the cheapest item must be **exactly** x (strict, no slack). A mismatch makes the banner FAIL (not over the
+  beauty / unrecognised-audience INCONCLUSIVE); "UP TO x%", "FLAT x%" and anything else have no rule; a sort that can't be loaded is
+  UNCHECKED, never a failure (a listing too big to page to its end keeps its PASS/FAIL from the other checks, with the reason
+  "couldn't get the minimum discount since the page was too large"). Stored as `banner_check.sort_check`; the reason text reaches the UI through the normal reason field.
 - **Gender rule:** closed table over Men/Women/Boys/Girls/Infants (`qa/spotcheck/filters.py` `_BANNER_GENDER_RULES`); an
   unrecognised banner audience makes the whole banner INCONCLUSIVE; AJIO beauty banners are flagged for a human.
 - **Hidden / out-of-schedule banners** stay visible in the UI (toggle) but are never processed: always SKIPPED.
