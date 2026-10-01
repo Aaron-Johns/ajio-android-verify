@@ -529,7 +529,8 @@ def load_final_results(out_dir: Path) -> dict[str, dict]:
     """banner_id -> the latest known result of a run folder: results.json once the run finished (its order kept), with any
     later try from partial.jsonl laid over it. A per-banner Retry only appends to partial.jsonl - it must never rewrite a
     finished run's results.json (the parent may still be alive) - so without this overlay a retry on a finished run would
-    be invisible. `attempts` only ever goes up, so "more attempts" means "newer"."""
+    be invisible. A retry starts counting its tries from 1 again, so "newer" is `tried_at` (older results, saved without
+    it, fall back to the higher `attempts`)."""
     final: dict[str, dict] = {}
     results_file = out_dir / "results.json"
     if results_file.exists():
@@ -538,7 +539,7 @@ def load_final_results(out_dir: Path) -> dict[str, dict]:
         if bid not in final:
             if not results_file.exists():
                 final[bid] = r
-        elif r.get("attempts", 1) > final[bid].get("attempts", 1):
+        elif (r.get("tried_at", 0), r.get("attempts", 1)) > (final[bid].get("tried_at", 0), final[bid].get("attempts", 1)):
             final[bid] = r
     return final
 
@@ -606,6 +607,8 @@ def run_feed_verify(banners: list[Banner], out_dir: Path, analyzer: Callable | N
         cache = None
     previous = previous or {}
     attempts = {bid: r.get("attempts", 1) for bid, r in previous.items()}
+    for bid in only or ():          # an explicit per-banner Retry is a fresh start: its tries count from 1 again, not on from the old run's
+        attempts[bid] = 0
 
     def verify_one(b: Banner, retries_so_far: int = 0, prior: dict | None = None) -> dict:
         # Checked twice: before, so a banner still queued (no work started) is never sent at all; and
@@ -625,6 +628,7 @@ def run_feed_verify(banners: list[Banner], out_dir: Path, analyzer: Callable | N
                 note("Reference check")
                 r = _apply_reference(r, b, reference.get(b.banner_id), listings, aliases)
         attempts[b.banner_id] = r["attempts"] = attempts.get(b.banner_id, 0) + 1
+        r["tried_at"] = time.time()
         if retries_so_far and not is_retryable(r):
             r["recovered_in_retry_round"] = retries_so_far
         if on_result:

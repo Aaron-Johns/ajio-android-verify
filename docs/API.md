@@ -1,7 +1,7 @@
 # API Reference
 
 For anyone building their own UI (or script, or agent) against this tool instead of using the bundled
-`web/static/index.html` or the manager view at `web/static/manager/index.html`. This is the same API those UIs talk to — nothing here is a special/hidden
+`web/static/index.html` or the manager view in `web/static/manager/`. This is the same API those UIs talk to — nothing here is a special/hidden
 interface, it's the whole surface.
 
 ## Base URL, auth, CORS
@@ -316,6 +316,12 @@ running (either already finished, or — see `docs/UI_GUIDE.md`'s "things to con
 track of it after a server restart, in which case the subprocess is likely still alive but can't be
 cancelled through this endpoint anymore).
 
+### `DELETE /api/runs/{run_id}` — delete a run for good
+
+Removes the run's database row **and its whole folder under `runs/`** (banner images, results, everything); alerts about it stay, without their `run_id`. This is the
+Delete button on a run card in both UIs, and unlike `hide` below it cannot be undone. `404` for an unknown run, `409` while the run is `running` (stop it first) or if the folder could not be removed
+(a file in it may be open; nothing is deleted then). Returns `{"deleted": true}`. Save the run as Excel first (`GET .../export.xlsx`) if the results are wanted.
+
 ### `POST /api/runs/{run_id}/hide` — dismiss from the run history list
 
 UI-only bookkeeping — the run's folder on disk is never touched. Returns `{"hidden": true}`.
@@ -330,11 +336,14 @@ Redoes just this one banner in place, without touching anything else in the run.
 banner where `can_retry == true` on its `/banners` row, though nothing stops you calling it on any banner_id.
 It is a **fresh check**: the subprocess runs with `--no-cache` (no cross-run cached verdict is reused), redoes the
 banner whatever its previous result was (FAIL and non-temporary INCONCLUSIVE included) and re-checks every hotspot
-rather than reusing the earlier ones. It counts as one more attempt and is one try, not five. The new result is
+rather than reusing the earlier ones. Its tries count from 1 again (a banner that had used all 5 shows "1 of 5", never "6 of 5"), and like any
+banner it is retried automatically, up to 5 tries, if it hits a temporary error. The new result is
 appended to `partial.jsonl` and overlays the run's `results.json` when read (`results.json` itself is not
 rewritten). Fire-and-forget: returns `{"started": true}` immediately, the actual recheck runs in
-the background — poll `GET /api/runs/{run_id}/banners` afterward and watch for that banner's
-`attempts` field to increase to know when it's done. `409` if a retry for this exact banner is already
+the background. While it runs, that banner's row on `GET /api/runs/{run_id}/banners` is `PROCESSING` with its
+`try_number` (this is held by the server, so every client and tab sees it, not just the one that clicked): poll that
+endpoint until the row is no longer `PROCESSING`. A result saved by a retry carries `tried_at` (epoch seconds), which is
+how a newer result is told from the run's older one now that tries restart at 1. `409` if a retry for this exact banner is already
 in flight (a double-click guard, not a hard limit — try again once the first one finishes).
 
 ### `POST /api/runs/{run_id}/banners/{banner_id}/skip`

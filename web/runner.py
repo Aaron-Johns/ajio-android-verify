@@ -424,7 +424,7 @@ def cancel_run(run_id: str) -> bool:
     return True
 
 
-_retrying: set[tuple[str, str]] = set()
+_retrying: dict[tuple[str, str], float] = {}     # (run folder name, banner_id) -> when that manual Retry started
 
 
 def retry_banner(run_id: str, banner_id: str) -> bool:
@@ -439,12 +439,12 @@ def retry_banner(run_id: str, banner_id: str) -> bool:
     row = db.get_run(run_id)
     if not row:
         raise ValueError(f"unknown run_id: {run_id}")
-    key = (run_id, banner_id)
+    out_dir = row["out_dir"]
+    key = (Path(out_dir).name, banner_id)
     with _lock:
         if key in _retrying:
             return False
-        _retrying.add(key)
-    out_dir = row["out_dir"]
+        _retrying[key] = time.time()
     env = {**os.environ, "AJIO_PINCODE": row["pincode"]}
     # --no-cache: a retry is "look at this banner again", so it never reuses an earlier verdict for the same artwork + link
     cmd = [sys.executable, "-m", "qa.feed_verify", "--resume-from", out_dir, "--only-banner", banner_id, "--workers", "1", "--no-cache"]
@@ -456,7 +456,7 @@ def retry_banner(run_id: str, banner_id: str) -> bool:
 def _watch_retry(key: tuple[str, str], proc: subprocess.Popen) -> None:
     proc.communicate()
     with _lock:
-        _retrying.discard(key)
+        _retrying.pop(key, None)
 
 
 _skip_lock = threading.Lock()
@@ -593,14 +593,20 @@ def run_view(out_dir: Path, scope: str, banner_limit: int | None, is_live: bool 
     chosen = chosen_banners(out_dir, scope, banner_limit, excluded_carousels, excluded_sections)
     results = load_results(out_dir)
     skip_ids = _read_skip_requests(out_dir / "skip_requests.json")
-    activity = load_activity(out_dir) if is_live else {}
+    with _lock:
+        retrying = {bid: since for (rid, bid), since in _retrying.items() if rid == out_dir.name}   # manual Retries in flight
+    activity = load_activity(out_dir) if is_live or retrying else {}
     rows = []
     for b in chosen:
         r = results.get(b.banner_id)
+        since = retrying.get(b.banner_id)
+        if since is not None:          # a manual Retry counts its tries from 1 and shows as in progress in every view (and tab)
+            if r is not None and r.get("tried_at", 0) < since:
+                r = None               # it hasn't recorded anything yet: not the old verdict
         if r is None:
-            if is_live:
+            if is_live or since is not None:
                 # a banner a worker has reported on is in progress even before its image is on disk (Downloading)
-                started = b.banner_id in activity or _is_processing(out_dir, b.banner_id)
+                started = since is not None or b.banner_id in activity or _is_processing(out_dir, b.banner_id)
                 placeholder = "PROCESSING" if started else "PENDING"
                 r = {"banner_id": b.banner_id, "alt_text": b.alt_text, "destination_raw": b.destination_raw,
                      "image_url": b.image_url, "result": placeholder, "reason": "",
@@ -613,7 +619,7 @@ def run_view(out_dir: Path, scope: str, banner_limit: int | None, is_live: bool 
                      "try_number": 0, "max_tries": MAX_TRIES, "retries_exhausted": True}
         else:
             attempts = r.get("attempts", 1)
-            if is_live and is_retryable(r) and attempts < MAX_TRIES:
+            if (is_live or since is not None) and is_retryable(r) and attempts < MAX_TRIES:
                 r = {**r, "result": "PROCESSING", "try_number": attempts + 1, "max_tries": MAX_TRIES}
             else:
                 exhausted = is_retryable(r) and (attempts >= MAX_TRIES or not is_live)
@@ -632,7 +638,10 @@ def run_view(out_dir: Path, scope: str, banner_limit: int | None, is_live: bool 
                     r["hotspot_checks"] = [_explained({**h, "result": shown_hotspot_result(h)}) for h in r["hotspot_checks"]]
                 r = _explained(r)
         if r["result"] == "PROCESSING":
-            r = {**r, "activity": current_activity(activity.get(b.banner_id))}
+            entry = activity.get(b.banner_id)
+            if since is not None and entry and entry.get("at", 0) < since:
+                entry = None           # left over from the original run, before this Retry began
+            r = {**r, "activity": current_activity(entry)}
         # Retry is offered on a FAIL / INCONCLUSIVE / UNAVAILABLE banner. While the run is still going only when its automatic
         # tries are spent: a retry writes next to the live run, whose own final write would otherwise overwrite it.
         r = {**r, "can_retry": r["result"] in ("FAIL", "INCONCLUSIVE", UNAVAILABLE) and (bool(r.get("retries_exhausted")) or not is_live)}

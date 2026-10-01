@@ -101,3 +101,36 @@ def test_the_server_schedules_the_clean_up_when_it_starts(env):
     finally:
         api.scheduler.remove_all_jobs()
         api._shutdown()
+
+
+# ---- deleting one run by hand (the Delete button, DELETE /api/runs/{id}) ----
+
+def test_delete_run_removes_the_row_and_the_folder_and_unlinks_its_alerts(env):
+    add_run(env, "mine", 1)
+    alert_id = db.insert_alert("regression", "t", "m", None, "mine")
+    assert retention.delete_run("mine") == "deleted"
+    assert db.get_run("mine") is None and not (env / "mine").exists()
+    assert next(a for a in db.list_alerts() if a["id"] == alert_id)["run_id"] is None
+
+
+def test_delete_run_refuses_a_running_run_and_an_unknown_one(env):
+    add_run(env, "live", 1, status="running")
+    assert retention.delete_run("live") == "running" and db.get_run("live") and (env / "live").exists()
+    assert retention.delete_run("nope") == "unknown"
+
+
+def test_delete_run_keeps_the_row_when_the_folder_cannot_be_removed(env, monkeypatch):
+    add_run(env, "busy", 1)
+    monkeypatch.setattr(retention.shutil, "rmtree", lambda p: (_ for _ in ()).throw(PermissionError("in use")))
+    assert retention.delete_run("busy") == "stuck" and db.get_run("busy")
+
+
+def test_the_delete_endpoint_answers_200_404_and_409(env):
+    from fastapi.testclient import TestClient
+    from web import api
+    client = TestClient(api.app)
+    add_run(env, "gone", 1)
+    add_run(env, "live", 1, status="running")
+    assert client.delete("/api/runs/gone").json() == {"deleted": True} and not (env / "gone").exists()
+    assert client.delete("/api/runs/gone").status_code == 404
+    assert client.delete("/api/runs/live").status_code == 409 and (env / "live").exists()

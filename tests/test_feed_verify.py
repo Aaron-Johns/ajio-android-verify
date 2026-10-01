@@ -413,7 +413,7 @@ def test_only_restricts_a_resume_to_one_banner_leaving_the_rest_untouched(tmp_pa
     assert fetcher.calls == [("a-1", "curated")]              # only the requested banner's link was ever refetched
     assert by["a"] == previous["a"]                           # untouched, not even a retryable one
     assert by["flaky_c"] == previous["flaky_c"]                # also retryable, but not the one asked for
-    assert by["flaky_b"]["result"] == "INCONCLUSIVE" and by["flaky_b"]["attempts"] == 2   # still fails (fetcher always 500s), attempt counted
+    assert by["flaky_b"]["result"] == "INCONCLUSIVE" and by["flaky_b"]["attempts"] == 1   # still fails (fetcher always 500s); a manual retry counts its tries from 1
 
 
 def test_banner_list_round_trips_so_a_resume_needs_no_live_feed(tmp_path):
@@ -1012,7 +1012,17 @@ def test_only_banner_redoes_a_fail_that_the_automatic_retry_would_have_left_alon
     plain = run([b], tmp_path, fetcher, previous={"a": first})[0]      # a normal resume leaves a settled FAIL as it is
     assert plain["result"] == "FAIL" and fetcher.calls == []
     forced = run([b], tmp_path, fetcher, previous={"a": first}, only={"a"})[0]
-    assert forced["result"] == "PASS" and forced["attempts"] == 2      # redone, and counted as another try
+    assert forced["result"] == "PASS" and forced["attempts"] == 1      # redone, and its tries count from 1 again
+
+
+def test_a_forced_retry_of_an_exhausted_banner_counts_its_tries_from_one_and_wins_over_the_old_result(tmp_path):
+    b = banner("a", "https://ajio.com/s/a-1")
+    old = {**run([b], tmp_path, _fail_listing_fetcher())[0], "attempts": fv.RETRY_ROUNDS + 1, "tried_at": 100.0}   # all five tries spent
+    got = run([b], tmp_path, Fetcher({"a-1": listing()}), previous={"a": old}, only={"a"})[0]
+    assert got["attempts"] == 1 and got["tried_at"] > old["tried_at"]
+    (tmp_path / "results.json").write_text(json.dumps([old]), encoding="utf-8")        # the finished run's own file...
+    (tmp_path / "partial.jsonl").write_text(json.dumps(got) + "\n", encoding="utf-8")  # ...and the retry's line next to it
+    assert fv.load_final_results(tmp_path)["a"]["result"] == "PASS"
 
 
 def test_a_forced_retry_of_a_fail_is_one_try_not_five(tmp_path):

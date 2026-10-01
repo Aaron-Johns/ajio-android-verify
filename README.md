@@ -82,10 +82,9 @@ once the run finishes, **Download Excel** gives you every result in a spreadshee
 images embedded.
 
 There are **two interfaces on the same server and data**: the one above at `http://127.0.0.1:8000/`, and a
-simpler, presentation-style **manager view** at **http://127.0.0.1:8000/manager/** (an overview with a health
-headline, the banners that need a look, checks, schedules and alerts). Switch with the black glowing **Manager
-view** button in the original's header, or **Classic view** at the bottom of the manager's sidebar. A run started
-in one shows up in the other.
+newer **manager view** at **http://127.0.0.1:8000/manager/** (runs as a contact sheet with a verdict strip, a
+says-and-shows detail panel, schedules and alerts). Switch with the black glowing **Manager view** button in the original's
+header, or **Classic view** in the manager's left rail. A run started in one shows up in the other.
 
 Optionally you can tell the tool what each banner is *supposed* to lead to: `python -m qa.reference_template` writes a fill-in
 `config/reference.csv` from your latest run, and every later check compares the banners you filled in against it (see

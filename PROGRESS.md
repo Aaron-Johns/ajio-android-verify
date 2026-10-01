@@ -1625,3 +1625,73 @@ sets `alerts.run_id` NULL so the alert stays but its "Open run" button goes). Al
 Scheduled in `web/api.py` `_startup`: once 2 minutes after every start (the PC may be off at any fixed hour), then every 24 h. [A] Uses the run's start time, not its finish time; hidden and failed runs
 are deleted too. Nothing is old enough today (the oldest run is 2026-09-24, the oldest stray folder 2026-09-21), so the first deletions happen from 2026-10-24. Tests: 9 new (`tests/test_retention.py`), 586 pass.
 Not verified: a real deletion of real runs (none are old enough yet).
+
+### Prototype front end in proto/ (2026-09-30)
+User: use the frontend-design skill to create a new frontend and save it under /proto. `proto/index.html` (one file, vanilla JS, no server change): a "proof desk" on the existing API. Rail of runs with a
+mini verdict bar each; the run header is a proportional verdict strip (click a segment to filter); banners as a contact sheet grouped by carousel with a verdict edge; a right-hand detail
+panel with a "the banner says / the listing has" ledger (brands, deal, audience, the deal-on-listing check) and a "check this banner again" button; carousel / search / hidden filters; live
+updates over the run's SSE stream; Excel download; a "Start a check" dialog (page pills, l1/l2 only for Home, state, pincode, scope). Type: Bricolage Grotesque + Newsreader italic for the banner's own
+words; light and dark by system setting. Opens straight from disk (talks to 127.0.0.1:8000, CORS is open) or via `?api=`. Verified live in headless Edge (9 checks, no console errors; desktop, phone width,
+light and dark screenshots). Not verified: pressing Start check or Check again on real runs (would start real runs), the SSE stream on a run in progress. Not built: schedules, alerts, carousel picker,
+skip, cache, diffs, reference data. Not part of the two UIs kept at parity.
+
+### Prototype front end brought up to the classic UI's detail (2026-09-30)
+User: lots of details missing, use the original UI as inspiration for all of them. `proto/` is now `index.html` + `style.css` + `app.js` with hash routes (runs, one run, schedules, schedule, new / edit).
+Ported from the classic UI: runs cards and rail (hide), stop / Excel (+ open folder) / remove, activity tag, PROCESSING x/N tries, MU and H tags, Retry and Skip, the full detail rows (reason with the reference finding,
+hidden reason, deal-works-on-the-listing, hotspot blocks with crops), diff line and list, carousel titles, show-hidden; the New check controls (pages, l1/l2, searchable state picker, pincode chips, run-count and 24 cap,
+scope / limit / workers, carousel checklist, forget saved results, repeat automatically); schedules (list, alerts, chips, search, detail with date range and fire grouping and per-run Excel, create / edit form with start
+time and first-run line, carousels to leave out, Run now / Enable / Disable / Delete). States are shown in capitals as AJIO spells them (user, same day). Verified in headless Edge against the live server: 31 checks, no
+console errors, phone width, light and dark; the schedule screens used a throwaway `ZZ proto test` schedule (disabled, notify off) that was deleted afterwards. Not verified by clicking: Start check, Save schedule, Run now,
+Stop run, Retry, Skip, Delete (each would start or change something real), the Windows test notification, and the live stream on a running run.
+
+### The new UI replaces the manager view (2026-09-30)
+User: replace the manager view with the prototype, evaporate the old manager UI. `web/static/manager/` now holds the "banner proof desk" (`index.html` + `style.css` + `app.js`, moved from `proto/`, which is gone);
+the old 1,819-line manager page is deleted (git history has it). It is served at `/manager/` as before, so the classic UI's "Manager view" button and `/manager/#/runs/<id>` links keep working; no server restart needed.
+Changes on the way: the Manager link in its own rail is removed, the theme toggle now shares the classic UI's `theme` localStorage key, the classic button's tooltip reads "The newer view of the same data".
+Docs rewritten to match (UI_GUIDE last section, README, CLAUDE.md layout and the logo line, API.md). Lost with the old page: its overview page (pass-rate ring, four tiles, "latest check of each feed") and its
+schedule search box in the sidebar; old browser bookmarks such as `#/checks` no longer resolve. Verified live at `/manager/` in headless Edge; the same not-clicked list as the prototype applies.
+
+### Delete and Save as Excel on run cards (2026-09-30)
+User: add delete and Excel save buttons to the overall run view in both UIs (two buttons). New `DELETE /api/runs/{run_id}` (`retention.delete_run`, sharing the folder-safety check with the 30-day clean-up): removes the row and the whole
+`runs/<id>` folder; 404 unknown, 409 while running or if the folder can't be removed (nothing deleted then). Classic: the run-picker cards (`runCardHtml(r, {manage: true})`) get **Save as Excel** and **Delete**
+(confirm first, then a "Run deleted." notice and a refresh); also fixed the picker card's Enter / Space handler opening the run when pressed on a nested button. Manager: All runs cards get the same two buttons.
+Save as Excel shows for a run that isn't running and has results; Delete for any run that isn't running. The x in the rail / "Remove from list" still only hides. Tests: 4 new in `tests/test_retention.py`. Verified live in headless
+Edge with two throwaway `ZZ_delete_test_*` runs (created in the real database and folder, then deleted through each UI's button; nothing left behind); confirm dialog Cancel keeps the run; real runs were never clicked.
+Server restarted for the new endpoint.
+
+### Says and shows: same type in both columns (2026-09-30)
+User: make the banner-says rows the same font and size as the listing-has rows. In the manager view's detail table both columns now use the interface font at the same size; the Newsreader italic for the banner's words is gone
+(css variable and the font link removed), so the manager view uses Bricolage Grotesque only. UI_GUIDE updated.
+
+### Desktop shortcut for run.bat (2026-10-01)
+User asked for a shortcut instead of an exe (an exe wrapper adds nothing: it still needs the .venv and project folder, and unsigned wrappers get flagged). Created `scripts/feedverify.ico` (the manager view's blue-and-white mark) and `Desktop\AJIO Feed Verify.lnk` -> `D:\ajio-feed-verify\run.bat`, working folder the project, that icon. Not launched (it would try a second server; with the autostart server already on port 8000 run.bat reports the port in use, and the browser tab it opens still shows the running server).
+
+### Manager view: slide count beside the verdict strip (2026-10-01)
+User asked for the slide number at the top right next to the progress line; the manager view has no per-run progress line, so asked where. Answer: next to the verdict strip. Added a count at the right end of the strip row:
+"13 slides", or "5 of 13 slides" while a filter is on (it follows the verdict / carousel / search filters and the show-hidden switch, like the strip). A per-banner slide number is unchanged (still on each card's caption and in the detail panel).
+
+### A manual Retry restarts at try 1 and shows in both views (2026-10-01)
+User: a retry should reflect in the manager and the classic view, and "6 out of 5 tries" should reset to 1 and start again.
+Cause: a retry carried on from the old attempt count (5 + 1 = 6), and the "retrying" state lived only in the browser tab that clicked.
+- `qa/feed_verify.py`: for the banners in `only` the attempt counter starts at 0, so a manual retry is try 1 of 5 (and is retried automatically
+  on a temporary error up to 5, as before). Every result now carries `tried_at`; `load_final_results` decides which result is newer by
+  `(tried_at, attempts)` (old results without it fall back to attempts), since attempts no longer only go up.
+- `web/runner.py`: `_retrying` is a dict (run folder, banner) -> start time; `run_view` shows a banner with a retry in flight as PROCESSING
+  (try 1 until the retry records something, then its own try number; the original run's leftover activity is ignored), for any client.
+- Both UIs: after Retry they poll `/banners` until the server stops saying PROCESSING (`watchRetry`), and opening a finished run with a banner
+  still PROCESSING resumes that watching, so a retry started in the other view or tab shows up and settles on its own.
+- Tests: 593 pass (new: retry restarts at 1 and beats the older result; run_view shows an in-flight retry from try 1 / 2 / settled; two
+  existing expectations changed from attempts 2 to 1). Verified live in headless Edge on a throwaway `ZZ_retry_test` run (a copy of a real one with
+  a banner put back to 5/5 spent), one real retry: manager "Checking, try 1 of 5" on click, the classic view opened mid-retry showed
+  "PROCESSING 1/5 TRIES", a manager reload mid-retry still showed it, both settled to Pass with attempts 1; the run was deleted afterwards. Server restarted.
+- Not verified: a retry that itself hits temporary errors and walks try 2..5 on a live server (covered by the unit test only).
+
+### Autostart test, and a wrong claim found (2026-10-01)
+User asked how to test the scheduler's autostart. New `scripts/test_autostart.ps1`: default mode only reads (task installed, logon trigger with 30 s delay, this user, no admin, launcher
+exists and is this repo's, running the launcher twice starts no second server, enabled schedules have a next run); `-Restart` stops the server and starts it through the task (what the logon does)
+and checks it comes back, logs one start, and that the same schedules are enabled with a next run; `-Crash` also kills it and reports whether anything restarts it; `-AfterLogon` is run right
+after a real sign-out/in and checks the task ran about 30 s after sign-in and the server and schedules are up. Refuses while a check is running; always leaves the server running.
+Run here (with a throwaway ZZ schedule, deleted): everything passes except crash recovery. **The task does not restart a killed server**, although autostart.ps1 / UI_GUIDE said it would: even with the
+launcher reporting failure (task result -1) Windows did not restart it; the restart-on-failure setting only covers a task that fails to launch. Corrected the claims (autostart.ps1, UI_GUIDE) and dropped
+RestartCount from autostart.ps1 (the installed task keeps its old setting until autostart.ps1 is run again; it does nothing). Not built: a loop in start_server.ps1 that relaunches uvicorn on a non-zero exit
+(the user's call; it would also respawn after the manual stop-the-process restart). Not verified: the real logon trigger (needs a sign-out; use -AfterLogon).

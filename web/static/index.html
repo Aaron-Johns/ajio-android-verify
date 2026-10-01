@@ -434,7 +434,7 @@
 <header>
   <div style="display:flex;align-items:center;gap:12px"><span class="logo-mark" aria-hidden="true">A</span><h1>AJIO Feed Verify <span class="sub">no-emulator banner &rarr; listing check</span></h1></div>
   <div style="display:flex;gap:8px;align-items:center">
-    <a class="theme-btn mgr-btn" href="/manager/" title="A simpler, presentation-style view of the same data">Manager view</a>
+    <a class="theme-btn mgr-btn" href="/manager/" title="The newer view of the same data">Manager view</a>
     <button class="theme-btn" id="theme-toggle">Toggle theme</button>
   </div>
 </header>
@@ -1349,10 +1349,34 @@ function upsertCard(b) {
   renderStatusFilters();
 }
 
+// Follows a banner's manual Retry until the server stops reporting it as PROCESSING. The server knows a retry is in flight
+// (web/runner.py), so this also picks one up that was started from the other view or another tab, and shows its real try.
+const retryWatch = new Set();
+function watchRetry(bannerId) {
+  const runId = currentRunId, key = runId + "/" + bannerId;
+  if (retryWatch.has(key)) return;
+  retryWatch.add(key);
+  let ticks = 0;
+  const poll = setInterval(async () => {
+    ticks++;
+    const stop = () => { clearInterval(poll); retryWatch.delete(key); };
+    if (runId !== currentRunId || ticks > 300) return stop();   // ~15 min safety cap, or the user switched runs
+    let rows;
+    try {
+      rows = await api(`/api/runs/${runId}/banners`);
+    } catch (e) {
+      return;   // transient fetch error while polling - just try again next tick
+    }
+    const row = rows.find(r => r.banner_id === bannerId);
+    if (!row) return;
+    upsertCard(row);
+    if (row.result !== "PROCESSING") stop();
+  }, 3000);
+}
+
 async function retryBanner(bannerId, btn) {
   const runId = currentRunId;
   const prior = currentBanners.get(bannerId) || {};
-  const startAttempts = prior.attempts || 0;
   btn.disabled = true;
   btn.textContent = "Retrying…";
   try {
@@ -1365,27 +1389,10 @@ async function retryBanner(bannerId, btn) {
   }
   // Show the card as a normal in-progress banner (like an automatic retry round) instead of
   // leaving the old exhausted verdict + a disabled button on screen while the retry subprocess runs.
-  upsertCard({ ...prior, result: "PROCESSING", reason: "", try_number: startAttempts + 1,
+  // A retry starts again at try 1 of the usual number.
+  upsertCard({ ...prior, result: "PROCESSING", reason: "", try_number: 1, max_tries: prior.max_tries || 5,
               retries_exhausted: false, can_retry: false });
-  let ticks = 0;
-  const poll = setInterval(async () => {
-    ticks++;
-    if (runId !== currentRunId || ticks > 200) {   // ~13 min safety cap, or the user switched runs
-      clearInterval(poll);
-      return;
-    }
-    let rows;
-    try {
-      rows = await api(`/api/runs/${runId}/banners`);
-    } catch (e) {
-      return;   // transient fetch error while polling - just try again next tick
-    }
-    const row = rows.find(r => r.banner_id === bannerId);
-    if (row && (row.attempts || 0) > startAttempts) {
-      clearInterval(poll);
-      if (runId === currentRunId) upsertCard(row);
-    }
-  }, 4000);
+  watchRetry(bannerId);
 }
 
 // Skip only ever shows on a still-PENDING card (nothing has started for it), so unlike retry this is
@@ -1454,15 +1461,39 @@ function showRunPicker() {
   paintRunPicker();
 }
 
+function downloadXlsx(runId) {
+  const a = document.createElement("a");
+  a.href = `/api/runs/${encodeURIComponent(runId)}/export.xlsx`;
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+// Deletes a run for good (its row and its whole folder), unlike the x in Recent runs, which only hides it from the list.
+async function deleteRun(runId) {
+  if (!confirm("Delete this run for good? Its banners, images and results are removed and cannot be brought back. Save it as Excel first if you want to keep it.")) return;
+  try {
+    await api(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+  } catch (e) {
+    alert("Could not delete the run: " + errText(e));
+    return;
+  }
+  flash("Run deleted.");
+  await loadRuns();
+}
+
 function paintRunPicker() {
   const grid = document.getElementById("grid");
   if (!lastRuns.length) { grid.innerHTML = '<div class="empty">No runs yet - set one up on the left and hit Run now.</div>'; return; }
-  grid.innerHTML = `<div class="sv-cards" style="grid-column:1/-1">${lastRuns.map(runCardHtml).join("")}</div>`;
+  grid.innerHTML = `<div class="sv-cards" style="grid-column:1/-1">${lastRuns.map(r => runCardHtml(r, { manage: true })).join("")}</div>`;
   grid.querySelectorAll(".run-card").forEach(card => {
     const open = () => selectRun(card.dataset.run);
     card.addEventListener("click", open);
-    card.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
+    card.addEventListener("keydown", ev => { if (ev.target === card && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); open(); } });
   });
+  grid.querySelectorAll("[data-xlsx]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); downloadXlsx(b.dataset.xlsx); }));
+  grid.querySelectorAll("[data-delrun]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); deleteRun(b.dataset.delrun); }));
 }
 
 async function selectRun(runId, origin = null) {
@@ -1483,6 +1514,7 @@ async function selectRun(runId, origin = null) {
   exportBtn.disabled = run.status === "running";
   const banners = await api(`/api/runs/${runId}/banners`);
   renderGrid(banners);
+  if (run.status !== "running") banners.filter(b => b.result === "PROCESSING").forEach(b => watchRetry(b.banner_id));   // a Retry still going
   await loadRuns();
   if (run.status === "running") {
     evtSource = new EventSource(`/api/runs/${runId}/stream`);
@@ -1934,7 +1966,11 @@ function runCardHtml(r, opts = {}) {
         <div class="tally">${tallyHtml(r.counts) || '<span class="carousel-label">no results yet</span>'}</div>
         <div>${diffHtml(r.diff)}</div>
         <div class="tags"><span class="tag">${total} banner${total === 1 ? "" : "s"}</span>${took ? `<span class="tag">took ${took}</span>` : ""}${left ? `<span class="tag">${left} carousel${left === 1 ? "" : "s"} left out</span>` : ""}</div>
-        ${opts.excel && r.status === "done" ? `<div class="sv-actions-row"><button type="button" class="secondary" data-xlsx="${escapeHtml(r.run_id)}" title="Download this run's results as an Excel file">Download Excel</button></div>` : ""}
+        ${(() => {
+          const canXlsx = (opts.excel && r.status === "done") || (opts.manage && r.status !== "running" && total > 0);
+          const canDelete = opts.manage && r.status !== "running";
+          return canXlsx || canDelete ? `<div class="sv-actions-row">${canXlsx ? `<button type="button" class="secondary" data-xlsx="${escapeHtml(r.run_id)}" title="Save this run's results as an Excel file">Save as Excel</button>` : ""}${canDelete ? `<button type="button" class="secondary danger" data-delrun="${escapeHtml(r.run_id)}" title="Delete this run and its files for good">Delete</button>` : ""}</div>` : "";
+        })()}
       </div>
     </div>`;
 }

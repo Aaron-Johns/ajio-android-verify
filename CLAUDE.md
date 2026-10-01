@@ -54,7 +54,7 @@ qa/
   spotcheck/               vision.py (Gemma + shared pacer), hero.py (hero-slide picker, retrying vision call), filters.py (gender/brand rules)
 web/                       FastAPI + APScheduler + SQLite (web/app.sqlite3, gitignored). api.py runner.py db.py alerts.py notify.py
   static/index.html        classic UI at /   (the default; do not replace it)
-  static/manager/index.html  manager UI at /manager/ (same API, alternate face; keep the two at feature parity)
+  static/manager/          manager UI at /manager/ (index.html + style.css + app.js; the newer "banner proof desk", same API; keep it and the classic UI at feature parity)
 scripts/                   autostart.ps1 (Windows logon task "AJIO Feed Verify server"), start_server.ps1; run.bat
 tests/                     ~600 tests (qa/ logic, API, run view); web pages are verified live in headless Edge (selenium)
 runs/  logs/  data/        generated, gitignored
@@ -104,13 +104,14 @@ that must pass exactly), `image_segmentation_2.py` (origin of the Gemma prompt/p
   unrecognised banner audience makes the whole banner INCONCLUSIVE; AJIO beauty banners are flagged for a human.
 - **Hidden / out-of-schedule banners** stay visible in the UI (toggle) but are never processed: always SKIPPED.
 - **Retry:** automatic retries only for temporary errors. The per-banner **Retry** button (FAIL, INCONCLUSIVE, UNAVAILABLE)
-  is a fresh, cache-free check (`--only-banner --no-cache`); offered while a run is going only once tries are spent.
+  is a fresh, cache-free check (`--only-banner --no-cache`) whose tries count from 1 again (never "6 of 5"); the server holds
+  the in-flight retry (`runner._retrying`), so run_view shows it PROCESSING in both UIs and every tab; a result's `tried_at`, not `attempts`,
+  says which is newer; offered while a run is going only once tries are spent.
   A FAIL with an unchecked hotspot stays FAIL; only that hotspot is UNAVAILABLE. AJIO's intermittent `400 NullPointerException`
   is retried like a 5xx.
 - **UI:** finished runs are blue, running purple, cancelled grey, a run that itself failed red. UNAVAILABLE never counts as
-  "needs a look" and never raises an alert. Logos: manager = white A in a black
-  square with a white border, classic = the opposite.
-- **Retention [D] (2026-09-30):** runs older than 30 days (`started_at`) are deleted, row and `runs/<id>` folder, by a job in `web/api.py` (2 min after each server start, then every 24 h; `web/retention.py`, `RETENTION_DAYS`). Never a `running` run; alerts about it are kept with `run_id` NULL; stray `runs/<stamp>*` folders with no row go by their name's timestamp; loose files in `runs/` stay. Anything that keeps a run's data past 30 days must export it first.
+  "needs a look" and never raises an alert. The manager view (rebuilt 2026-09-30) has no logo mark; its name is the words "Banner proof desk".
+- **Retention [D] (2026-09-30):** runs older than 30 days (`started_at`) are deleted, row and `runs/<id>` folder, by a job in `web/api.py` (2 min after each server start, then every 24 h; `web/retention.py`, `RETENTION_DAYS`). Never a `running` run; alerts about it are kept with `run_id` NULL; stray `runs/<stamp>*` folders with no row go by their name's timestamp; loose files in `runs/` stay. Anything that keeps a run's data past 30 days must export it first. A run can also be deleted by hand: `DELETE /api/runs/{id}` (`retention.delete_run`), the Delete button on a run card in the overall runs view of both UIs (next to Save as Excel); refused while it is running; unlike Hide (the x), it removes the folder.
 - **Not tracked on purpose:** Gemma token usage (the user declined).
 
 ## 5. Destination resolution and brand matching [D] (Phase 4)

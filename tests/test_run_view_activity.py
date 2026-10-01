@@ -160,9 +160,27 @@ def test_the_web_retry_launches_the_check_with_no_cache(tmp_path, monkeypatch):
     seen = {}
     monkeypatch.setattr(runner.db, "get_run", lambda rid: {"out_dir": str(tmp_path), "pincode": "560029"})
     monkeypatch.setattr(runner.subprocess, "Popen", lambda cmd, **kw: seen.setdefault("cmd", cmd) and types.SimpleNamespace(communicate=lambda: ("", "")))
-    monkeypatch.setattr(runner, "_retrying", set())
+    monkeypatch.setattr(runner, "_retrying", {})
     assert runner.retry_banner("r", "b1") is True
     assert "--no-cache" in seen["cmd"] and "--only-banner" in seen["cmd"] and "--resume-from" in seen["cmd"]
+
+
+def test_a_manual_retry_in_flight_shows_as_processing_from_try_one_in_every_view(tmp_path, monkeypatch):
+    run_dir(tmp_path)
+    write_results(tmp_path, res("a", "INCONCLUSIVE", "listing_fetch_failed: x", attempts=runner.MAX_TRIES, tried_at=100.0), res("b", "PASS"))
+    fv.ActivityLog(tmp_path / "activity.jsonl")("a", "Comparing")        # the original run's last step: not this retry's
+    since = time.time() + 1
+    monkeypatch.setattr(runner, "_retrying", {(tmp_path.name, "a"): since})
+    got = {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=False)}
+    assert (got["a"]["result"], got["a"]["try_number"], got["a"]["max_tries"]) == ("PROCESSING", 1, runner.MAX_TRIES)
+    assert got["a"]["activity"] == "Working" and got["a"]["can_retry"] is False and got["b"]["result"] == "PASS"
+    # its first try fails on a temporary error: try 2 of 5 is next, not "6 of 5"
+    (tmp_path / "partial.jsonl").write_text(json.dumps(res("a", "INCONCLUSIVE", "vision_failed: 503", attempts=1, tried_at=since + 10)) + "\n", encoding="utf-8")
+    got = {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=False)}
+    assert (got["a"]["result"], got["a"]["try_number"]) == ("PROCESSING", 2)
+    # it settles: shown as it is, with the retry no longer in flight
+    (tmp_path / "partial.jsonl").write_text(json.dumps(res("a", "PASS", attempts=2, tried_at=since + 20)) + "\n", encoding="utf-8")
+    assert {r["banner_id"]: r for r in runner.run_view(tmp_path, "hero", None, is_live=False)}["a"]["result"] == "PASS"
 
 
 def test_a_running_runs_total_counts_banners_that_have_no_result_yet(tmp_path):

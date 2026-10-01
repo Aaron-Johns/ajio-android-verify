@@ -417,6 +417,19 @@ def unskip_banner(run_id: str, banner_id: str):
     return {"requested": True}
 
 
+@app.delete("/api/runs/{run_id}")
+def delete_run(run_id: str):
+    """Deletes a run for good: its database row and its whole folder under runs/ (images, results, everything). Not for a running run."""
+    result = retention.delete_run(run_id)
+    if result == "unknown":
+        raise HTTPException(404, "unknown run_id")
+    if result == "running":
+        raise HTTPException(409, "this run is still running: stop it first")
+    if result == "stuck":
+        raise HTTPException(409, "the run's folder could not be removed (a file in it may be open), so nothing was deleted")
+    return {"deleted": True}
+
+
 @app.post("/api/runs/{run_id}/hide")
 def hide_run(run_id: str):
     """Dismisses a run from the Recent runs list only - its folder under runs/ is left exactly as is."""

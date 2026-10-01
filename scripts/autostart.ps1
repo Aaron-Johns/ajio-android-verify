@@ -8,7 +8,8 @@
 
   It registers one per-user scheduled task ("AJIO Feed Verify server"): 30 s after you log in it runs
   scripts\start_server.ps1 in a hidden window. It runs as you, only while you're logged in (the Windows
-  notifications need your desktop), needs no admin rights, and restarts the server if it crashes.
+  notifications need your desktop), needs no admin rights. It does NOT bring the server back after a crash or a kill (the task's restart setting only covers a
+  task that fails to launch): that needs the next logon, or  Start-ScheduledTask "AJIO Feed Verify server".
   A time that comes and goes while the PC is off is simply skipped - the server rebuilds every schedule
   from the database on start and waits for each one's next slot.
 #>
@@ -38,8 +39,7 @@ $action = New-ScheduledTaskAction -Execute "powershell.exe" `
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $me
 $trigger.Delay = "PT30S"
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-    -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
-    -MultipleInstances IgnoreNew
+    -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
     -Description "Starts the AJIO Feed Verify web server (scheduled QA runs) when you log in." -Force | Out-Null

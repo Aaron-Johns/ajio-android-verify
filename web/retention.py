@@ -1,4 +1,4 @@
-"""Automatic deletion of old runs: a run (its database row and its folder under runs/) is removed once it started
+"""Deletion of runs, by hand (delete_run, the Delete button) and automatically: a run (its database row and its folder under runs/) is removed once it started
 more than RETENTION_DAYS ago. Runs that are still running are never touched. Alerts about a deleted run stay,
 minus their "Open run" link. Folders in runs/ that no database row owns (command-line pulls, older builds) are
 removed by the timestamp in their name; loose files in runs/ are left alone."""
@@ -32,6 +32,20 @@ def _remove_run_dir(path: Path) -> bool:
         log.warning("could not delete %s (%s); will try again at the next clean-up", path, exc)
         return False
     return True
+
+
+def delete_run(run_id: str) -> str:
+    """Delete one run for good: its folder under runs/ and its database row (alerts about it stay, minus the link).
+    Returns "deleted", "unknown" (no such run), "running" (refused, stop it first) or "stuck" (the folder could not be removed, so nothing was deleted)."""
+    row = db.get_run(run_id)
+    if not row:
+        return "unknown"
+    if row["status"] == "running":
+        return "running"
+    if not _remove_run_dir(Path(row["out_dir"])):
+        return "stuck"
+    db.delete_run(run_id)
+    return "deleted"
 
 
 def purge_old_runs(now: datetime | None = None, days: int = RETENTION_DAYS) -> dict:

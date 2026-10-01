@@ -5,7 +5,7 @@ things worth knowing before you trust what it tells you. For getting the tool in
 in the first place, see the main `README.md`.
 
 > **Two interfaces, one server.** This guide describes the original interface at `http://127.0.0.1:8000/`. A second,
-> presentation-style **manager view** lives at `http://127.0.0.1:8000/manager/` (see the last section). Both read the
+> newer **manager view** (the "banner proof desk") lives at `http://127.0.0.1:8000/manager/` (see the last section). Both read the
 > same API and the same data, so a run started in one shows up in the other, and the original is never replaced.
 
 The page has two halves: a **left sidebar** (start/schedule runs, recent run history) and a **main
@@ -13,6 +13,10 @@ panel** on the right. When you open the page the main panel shows **every run as
 finished, purple = running, red = the run itself crashed, grey = cancelled; its PASS/FAIL tally is on the card) instead of opening the last run's banners; click a card, or a run under
 *Recent runs*, to see its banners. **&larr; All runs** at the top of the panel brings the list back, and it also
 returns after you remove the run you were viewing.
+
+Every run card in that list (a finished, failed or cancelled run) has two buttons: **Save as Excel** (downloads the run's spreadsheet; shown when the run has any results) and
+**Delete**, which asks first and then removes the run for good, its entry and its whole folder on disk. That is different from the x in *Recent runs*, which only hides a run from the list and keeps its files.
+A run that is still going has neither button (stop it first). Runs are also deleted automatically after 30 days (see below).
 
 ## Starting a run
 
@@ -98,7 +102,7 @@ not even a placeholder in the results).
 
 A bar above the carousels has **Select all** and **Deselect all**, so to check just a few you can untick everything
 in one click and tick the ones you want. The same two buttons are on the carousel list in the scheduler form (and in
-the manager view's New check drawer and schedule form). Run now, Start check and Save all refuse when every carousel is
+the manager view's Start a check dialog and schedule form). Run now, Start check and Save all refuse when every carousel is
 unticked, since that would be a run with nothing in it.
 
 **When this is worth using:** you know a particular carousel is noisy, irrelevant to what you're
@@ -165,7 +169,7 @@ floor step must also hold *fewer* products than it (some product has to sit betw
 10% are in no step, so they aren't seen.) A bare "UP TO x%" discount, "UP TO ₹x OFF" (an amount off), "FLAT x%" and other wording are not checked this way, and a listing that can't be sorted or has no
 discount filter is simply not checked (never a failure): the banner keeps the PASS or FAIL its other checks gave it.
 
-Click a banner to see the result of this check under its details, as **Deal works on the listing?** (classic) or **Deal works on the page**
+Click a banner to see the result of this check under its details, as **Deal works on the listing?** (classic) or **Deal on the listing** and **Deal works on the listing**
 (manager): just **True**, **False** or "Couldn't check" (the reason for a False is in the banner's Reason row). Banners whose deal has no such rule (a bare "UP TO 60%") show no row.
 
 The carousel filter above the banners lists each carousel by number and, beside it, the carousel's own title from the feed (for example
@@ -211,9 +215,11 @@ button (now labeled Unskip) to undo, as long as it hasn't already been processed
 **Retry this banner** — on every **FAIL**, **INCONCLUSIVE** and **UNAVAILABLE** card (and in the card's
 detail popup). It checks that one banner again **from scratch**: the image and its links are looked at
 again, nothing is taken from the saved-results cache (it runs with the cache off) and nothing from the previous try
-is carried over. The rest of the run is untouched, the retry counts as one more try, and its result replaces the old
-one on the card, in the run's tally and in the Excel export. It is one check, not five: a FAIL that comes back FAIL
-stays FAIL. While a run is still going, Retry is only offered on a banner that has used up its automatic tries (a
+is carried over. The rest of the run is untouched, its tries start again at 1 of 5 (never "6 of 5"), and its result
+replaces the old one on the card, in the run's tally and in the Excel export. A temporary error is tried again
+automatically, up to 5 tries, like in a normal run; a FAIL that comes back FAIL stays FAIL. The card shows "PROCESSING 1/5
+TRIES" (classic) or "Checking, try 1 of 5" (manager) in **both views, and in any other tab**, because the server knows the
+retry is going: open the run in the other view mid-retry and it is shown there too, and settles on its own. While a run is still going, Retry is only offered on a banner that has used up its automatic tries (a
 retry writes next to the live run, whose own final write would overwrite it); once the run has finished every FAIL /
 INCONCLUSIVE / UNAVAILABLE card has it. For UNAVAILABLE, consider *why* it failed 5 times first — a genuinely
 transient AJIO-side hiccup is worth retrying and will often resolve; a consistently-reproducing error probably
@@ -340,9 +346,10 @@ Everything opens *inside the main window* and drills down the same way the rest 
   of the start-time-anchored schedule). To have it start by itself whenever you log in to Windows, run
   `powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1` once (`-Status` to check, `-Remove` to
   undo; no admin rights needed). It registers a per-user task that starts the server hidden 30 s after
-  logon, restarts it if it crashes, never starts a second copy if one is already listening on port 8000,
+  logon, never starts a second copy if one is already listening on port 8000,
   and logs to `logs\server.log`. It runs only while you're logged in - that's also what lets the Windows
-  notifications appear. **A time that passes while the PC is off is ignored**, not run late: on the next
+  notifications appear. If the server itself crashes or is killed, nothing restarts it until the next logon (or
+`Start-ScheduledTask "AJIO Feed Verify server"`). **A time that passes while the PC is off is ignored**, not run late: on the next
   start every schedule waits for its next slot. (A run that was *in progress* when the PC shut down is
   not resumed - it's marked failed on the next start, with what it had checked kept in its folder.) A restart while a run is in progress is fine: the run keeps
   going, and the server re-adopts it on startup (so it can be cancelled again and its diff and alerts
@@ -432,47 +439,31 @@ example, not data.
 
 ## The manager view (`/manager/`)
 
-A second face for the same tool, built for someone who wants to know *is the feed OK, what needs a look, when is the
-next check* rather than tune workers. It needs no restart or install - it is one static page served next to the
-original, calling the same `/api/...` endpoints. The **Classic view** link at the bottom of its sidebar (and the
-black, glowing **Manager view** button in the original's header) switch between the two.
+The newer face of the same tool, at `http://127.0.0.1:8000/manager/` (three static files: `web/static/manager/index.html`, `style.css`, `app.js`; no restart or
+install; it calls the same `/api/...` endpoints, so a run started in one view shows in the other). The **Manager view** button in the original's header and **Classic view** in
+the manager's left rail switch between the two. Light / dark follows the system and shares the original's toggle setting. Links are `#/`-based, so the back button and bookmarks work:
+`#/runs`, `#/runs/<run id>`, `#/schedules`, `#/schedules/new`, `#/schedules/<id>`, `#/schedules/<id>/edit`.
 
-- **Overview.** A pass-rate ring and one plain sentence ("67 banners need a human look"), four tiles (passing,
-  need a look, active schedules, next scheduled check), the latest check of each feed, the banners that need a
-  look with their reason (click one to open it), your schedules and recent alerts. A live strip appears while a
-  check is running. Numbers come from the **latest finished check of each feed** (l1 / l2 / state / pincode /
-  scope), so older repeats of the same feed don't double-count.
-- **Checks.** Every run as a row with a segmented result bar; filter by need-a-look / running / scheduled / manual.
-  The x removes a run from the list (its files stay on disk), same as the original.
-- **One check.** A segmented bar and clickable status chips (click to filter), a carousel filter, **Problems
-  first** ordering, the show-hidden switch, **Excel report**, **Stop**, per-card **Retry** / **Skip**, and the
-  live activity tag while a banner is in progress. Click a card for the **detail sheet**: verdict in one line, every
-  field the original's popup shows, the hotspots with their crops; **left / right arrow keys** step through the
-  list you came from and **Esc** closes it.
-- **New check** (button top right) opens a side drawer with the same page picker (Home / premium / non-premium
-  buttons, see "Starting a run") and multi-select l1 / l2 / state / pincode controls, the scope, a carousel checklist (untick a carousel to leave it out) and, under *Advanced*, the banner
-  cap, parallelism and **Forget saved results** (the cache clear). **Repeat automatically...** carries these
-  choices into the new-schedule form.
-- **Schedule search.** A search box beside the **Schedules** heading filters the schedule cards as you type - every
-  word has to appear in the schedule's name, customer type / department, state, pincode, interval (`2 hours` or
-  `2h`), last result or active / paused, in any order. It works together with the All / Active / Paused / Needs
-  attention tabs (their counts follow the search), Esc clears it, and it is remembered when you come back to the page.
-- **A schedule's checks** get the same two extras as the original's runs page: **From / to date pickers** (checks
-  that *started* between those days, both included, this PC's local time; one-sided, single-day and reversed ranges
-  all work; **Clear dates** resets; kept across the page's live refresh) and a **Download Excel** button on every
-  completed check's tile (status complete - not a cancelled or stopped one), which downloads without opening the
-  check. As in the original, only the latest 120 checks are loaded.
-- **Schedules** and **Alerts** have everything the original's scheduler has: create / edit (start date + time,
-  every N minutes/hours/days, multi-select axes, carousels to leave out, alert mode + Windows notification),
-  pause / resume, run now, delete, a schedule's checks grouped by the fire that made them, and mark read / remove /
-  clear all / send a test notification.
+- **Layout.** A left rail (Runs / Schedules with an unread-alert badge, *Start a check*, the recent runs each with a small result bar and an x that removes it from the list, theme
+  and Classic view) and the main area. Type is Bricolage Grotesque throughout.
+- **All runs.** Every run as a card: page, when, cohort (l1/l2 for Home), state and pincode (states in capitals, as AJIO spells them), result bar and tally, what changed since the schedule's
+  previous run, how long it took, carousels left out, and two buttons on a run that isn't running: **Save as Excel** and **Delete** (asks first, then removes the run and its folder for good; the x in the rail only hides it).
+- **One run.** A **verdict strip** across the top: one segment per result with its count; click a segment to show only those banners (click again to clear). At the right end of the strip is the **slide count**: "13 slides", or "5 of 13 slides" while a verdict, carousel or search filter is on. Under it: a carousel filter (number and the
+  carousel's own title), a search box (brand, deal, link, reason), a *Show hidden and out-of-schedule banners* switch (the counts follow it; the classic view always counts them) and the banners as a contact sheet
+  grouped by carousel. Each card shows the artwork with a coloured edge, the verdict word (*Checking, try 2 of 5* while retrying), the alt text and slide, the destination link, the reason (FAIL / INCONCLUSIVE / UNAVAILABLE),
+  the brand and deal tags, **MU** (several links) and **H** (hidden, hover for why) tags, the live activity tag while a banner is in progress, and **Retry this banner** / **Skip** / **Unskip** where they apply.
+  Above: **Stop run** (while running), **Download Excel** (also opens the run's folder; disabled while running), **Remove from list**, and for a scheduled run the diff line with **Show what changed**.
+- **Banner detail** (click a card; left / right arrow keys step through the list, Esc closes): the verdict, the reason, a **Says and shows** table (brands, deal, audience, *Deal on the listing*, reference) with a tick or
+  cross per row, then every field the classic popup has (hidden reason, carousel and slide, position in the feed, destination, listing title and size, brands, deal, title matches deal, *Deal works on the listing*,
+  audience, missing and extra brands, tries) and one block per link inside a multi-link banner with its crop.
+- **Start a check** (rail button): the page buttons (Home black, premium gold, non-premium plain), l1 / l2 (greyed out without Home), a searchable multi-select **State** list with chips, **Pincode** chips
+  (6 digits, Enter to add), the run-count line and the 24-run cap, scope, number of banners, banners at a time, **Load carousels** (a checklist with pictures; untick to leave one out, Select all / Deselect all),
+  *Advanced* > **Forget saved results** (the cache clear) and **Repeat automatically** (opens a new schedule with these choices).
+- **Schedules.** The list has a summary, the alerts (*Mark all read*, *Clear all*, *Send test notification*, each alert's x and *Open run*), All / Enabled / Disabled / Needs attention chips, a search box
+  (every word must appear in the name, page, state, pincode, interval or last result) and a card per schedule with **View / Edit / Run now / Enable or Disable / Delete**. A schedule's page shows its runs grouped
+  by the fire that made them, **From / to** date pickers (both days included, this PC's local time), Download Excel on each finished run, and folded *Settings* and *Alerts*. The form has name, runs every,
+  start date and time with a *Now* button and the "First run" line, the same axes as *Start a check*, scope, banner count, workers, *Alert me on* (Off / New fails only / Any change), the Windows notification, Enabled,
+  and *Carousels to leave out*.
 
-**Wording differs on purpose.** PASS / FAIL / INCONCLUSIVE / PROCESSING / PENDING / SKIPPED read as *Passed /
-Failed / Inconclusive / Checking / Queued / Skipped*. "Need a look" = Failed + Inconclusive, the same set the
-original calls "human verification needed". A check that was **stopped early** (cancelled or crashed) is labelled
-so instead of counting the banners it never reached as needing review. Banners the feed marks hidden are left out
-of a check's counts unless you switch them on (the original counts them).
-
-Links are `#/`-based (`/manager/#/runs/<run id>`, `#/schedules/3`), so the browser's back button and bookmarks work.
-Light / dark follows the system and shares the original's toggle setting.
-
+**Wording differs on purpose.** Results read as *Pass / Fail / Inconclusive / Unavailable / Skipped / Waiting / Checking*. A run that was stopped early is labelled so instead of counting the banners it never
+reached as needing a look. Not in this view: the classic view's sidebar list of schedules, and the old overview page.
