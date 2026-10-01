@@ -40,8 +40,9 @@ If PowerShell refuses to run the activation script, run this once in that termin
 
 ## 3. Set up `.env`
 
-Secrets are never committed to the repo (`.env` is gitignored) — you need your own copy. Create a
-file named `.env` in the repo root with these keys:
+Secrets are never committed to the repo (`.env` is gitignored) — you need your own copy. Copy
+`.env.example` to `.env` in the repo root (it lists every key, with the required ones first) and fill in
+these two:
 
 ```
 AJIO_THEME_BEARER=<required - the app's static theme bearer token>

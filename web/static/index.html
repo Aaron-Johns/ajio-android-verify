@@ -105,6 +105,7 @@
   }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .hint { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .run-warn { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: var(--inconclusive-bg); border: 1px solid var(--inconclusive-border); color: var(--inconclusive-text); font-size: 13px; font-weight: 600; }
   button.primary {
     width: 100%; margin-top: 12px; padding: 9px; border: none; border-radius: 8px;
     background: var(--accent); color: var(--accent-text); font-weight: 600; font-size: 13px; cursor: pointer;
@@ -512,6 +513,7 @@
       <button class="secondary" id="export-btn" style="display:none" disabled>Download Excel</button>
       <button class="secondary danger" id="cancel-btn" style="display:none">Cancel run</button>
     </div>
+    <div class="run-warn" id="run-warn" style="display:none"></div>
     <div class="filter-row" id="filter-row" style="display:none">
       <span class="filter-hint">Filter:</span>
       <div class="counts" id="status-filters"></div>
@@ -1476,6 +1478,7 @@ async function deleteRun(runId) {
 }
 
 function paintRunPicker() {
+  document.getElementById("run-warn").style.display = "none";
   const grid = document.getElementById("grid");
   if (!lastRuns.length) { grid.innerHTML = '<div class="empty">No runs yet - set one up on the left and hit Run now.</div>'; return; }
   grid.innerHTML = `<div class="sv-cards" style="grid-column:1/-1">${lastRuns.map(r => runCardHtml(r, { manage: true })).join("")}</div>`;
@@ -1504,6 +1507,9 @@ async function selectRun(runId, origin = null) {
   const exportBtn = document.getElementById("export-btn");
   exportBtn.style.display = "";
   exportBtn.disabled = run.status === "running";
+  const warn = document.getElementById("run-warn");
+  warn.textContent = (run.warnings || []).join(" ");
+  warn.style.display = warn.textContent ? "" : "none";
   const banners = await api(`/api/runs/${runId}/banners`);
   renderGrid(banners);
   if (run.status !== "running") banners.filter(b => b.result === "PROCESSING").forEach(b => watchRetry(b.banner_id));   // a Retry still going

@@ -123,6 +123,7 @@ minus any dismissed with `POST .../hide`.
   "excluded_carousels": [2, 15, 21, 34, 42, 45, 72, 89],
   "excluded_sections": [],
   "counts": {"FAIL": 2, "SKIPPED": 1, "PASS": 10, "INCONCLUSIVE": 3},
+  "warnings": [],
   "diff": null
 }
 ```
@@ -135,6 +136,8 @@ minus any dismissed with `POST .../hide`.
 - `counts` — a tally of `result` values across every banner that has one so far (missing/PENDING/
   PROCESSING banners aren't counted; a banner still inside its automatic retries counts as `PROCESSING`, and one
   that spent them on a server/network error as `UNAVAILABLE`). Recomputed fresh on every call, not cached.
+- `warnings` — things the run flagged for a person, as plain sentences (from `warnings.json` in the run folder); empty when none. Today: "Premium cannot be loaded: ..." when AJIO kept returning the
+  regular banner set for a Premium check, so the run checked that set. Both UIs show it above the banners.
 - `excluded_sections` — CMS section ids left out of the run (a schedule's saved carousel exclusions, or
   the ids the UI sent). Empty when none.
 - `diff` — only for a *finished run that belongs to a schedule*, else `null`: the headline of what

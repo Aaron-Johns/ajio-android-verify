@@ -1717,3 +1717,16 @@ User: remove what other people don't need from GitHub, keep it locally. Untracke
 `home_theme_response_sample.json`, stays tracked), `.claude/commands/` and `.claude/settings.json` (personal; its graphify hooks would fail for anyone without graphify). Kept tracked because the tests load them: `inputs/brand_verify_combined.py`,
 `inputs/image_segmentation_2.py`, `inputs/resolver_fixtures.json`, `inputs/ajio_brand_names_fixed.json`, the sample json. Not done: rewriting git history, so the removed files stay in old commits (the request dump included).
 FINDINGS.md still cites the request dump (kept locally). Not committed or pushed yet.
+
+### Live manager check, premium warning, Clear cache tile, .env.example and CI (2026-10-01)
+User asked for four things (the live run check, repo files for other people, the premium warning in the UI, a visible Clear cache button), then for the rail buttons to become three big square icon tiles.
+- **Live run in the manager (real server, real AJIO + Gemma, throwaway runs that I deleted):** a check started from the Start dialog (Prem kids, 4 banners, 1 at a time) opened its page and showed "4 slides", Stop run and "Still running";
+  cards changed state live with no reload (3 of 4 changed while watching), Skip on a Pending card marked it "(will be skipped)" and it ended Skipped; a one-banner run's page noticed the finish by itself (Stop hid, Excel enabled, note gone, 111 s);
+  Stop on an uncached run cancelled it and the page said so. Lesson: Gemma pacing + latency makes a 4-banner run take 5+ minutes; a run whose banners are cached finishes in seconds (so it cannot be stopped).
+- **Premium warning:** `qa/feed_verify.py` writes `warnings.json` in the run folder when a Premium pull is not confirmed (`PREMIUM_WARNING`); `runner.load_warnings`; `warnings` on the run summary (API.md); shown highlighted above the banners in the manager
+  (note) and the classic UI (under the run header). Tests: 4 new (597 pass). Shown live with a hand-written warnings.json in a throwaway run (both views); the real trigger (AJIO returning the regular set) was not reproduced.
+- **Clear cache:** the classic UI already had a visible button; the manager's was hidden under Start a check > Advanced. Now a tile in the rail footer, the Advanced block is gone, and the confirm wording says "Clear". Clicking it was only tested to the confirm (dismissed): the real cache was not cleared.
+- **Rail tiles:** Switch theme, Clear cache and Classic view are three 86 px square tiles in one row (an icon over the label), also at phone width. Tested in headless Edge (one row, square, icons, theme switches, Classic link, Clear cache asks first).
+- **Repo files for other people:** `.env.example` (key names only) and `.github/workflows/tests.yml` (windows-latest, Python 3.14, `pip install -r requirements.txt`, `pytest tests`). The tests were run on a copy of only the tracked files: 597 pass, so they need nothing local.
+  The workflow itself has not run on GitHub; its YAML parses. README section 3 points to `.env.example`. No LICENSE file was added (the user's call).
+- Not done / not verified: nothing committed or pushed yet.

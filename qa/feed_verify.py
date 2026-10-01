@@ -34,6 +34,7 @@ log = logging.getLogger("qa.feed_verify")
 
 WORKERS = 3            # [A] banners verified in parallel (mostly waiting on the vision model)
 LISTING_PAUSE = 0.3    # [A] seconds between listing fetches; they are serialized to stay gentle on the API
+PREMIUM_WARNING = "Premium cannot be loaded: AJIO kept returning the regular banner set, so this run checked that set instead."
 RETRY_ROUNDS = 4       # [A] extra tries per banner that fails on a temporary error (Gemini 5xx, network, listing API)
 RETRY_PAUSE = 10.0     # [A] seconds a failed banner cools down before a free worker may retry it (was 60 s per whole retry pass)
 CONFIRM_ATTEMPTS = 8   # [A] max feed re-fetches while waiting for a target asset_set (FINDINGS 6.10 - per-request, not
@@ -775,6 +776,7 @@ def main() -> None:
     if args.list_carousels and args.resume_from:
         ap.error("--list-carousels fetches a fresh feed and can't be combined with --resume-from")
 
+    warnings: list[str] = []      # things the person running the check should see; saved as warnings.json in the run folder
     if args.resume_from:
         out_dir, banners, previous = args.resume_from, load_banners(args.resume_from), load_partial(args.resume_from)
         print(f"resuming {out_dir}: {len(previous)} banner results already saved")
@@ -789,7 +791,8 @@ def main() -> None:
                 if confirmed:
                     print(f"confirmed a {args.confirm_asset_set!r} banner after {attempts} feed fetch(es)")
                 else:
-                    print("Premium cannot be loaded")     # the run still goes on with the last pull; only the wording is short
+                    print("Premium cannot be loaded")     # the run still goes on with the last pull
+                    warnings.append(PREMIUM_WARNING)
         if args.list_carousels:
             rows = [{"banner_id": b.banner_id, "alt_text": b.alt_text, "destination_raw": b.destination_raw,
                     "image_url": b.image_url, "section_index": b.section_index, "section_id": section_id(b),
@@ -801,6 +804,8 @@ def main() -> None:
             return
         out_dir.mkdir(parents=True, exist_ok=True)
         save_banners(out_dir, banners)
+        if warnings:
+            (out_dir / "warnings.json").write_text(json.dumps(warnings), encoding="utf-8")
         previous = None
     reference, ref_path = ({}, None) if args.no_reference else reference_check.load_default(args.reference)
     if ref_path:

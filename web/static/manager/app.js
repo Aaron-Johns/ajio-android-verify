@@ -310,7 +310,8 @@ function upsert(row) {
 }
 function paintRunNote() {
   const r = S.run, el = $("note"); if (!r || !el) return;
-  const hidden = S.banners.filter((b) => b.hidden).length, bits = [];
+  const hidden = S.banners.filter((b) => b.hidden).length, bits = [...(r.warnings || [])];
+  el.classList.toggle("warn", !!(r.warnings || []).length);
   if (r.status === "running") { const d = S.banners.filter((b) => !["PENDING", "PROCESSING"].includes(verdictOf(b))).length; bits.push(`Still running: ${d} of ${S.banners.length} done. Results appear as they finish.`); }
   else if (r.status === "cancelled") bits.push("This run was cancelled, so some banners were never checked.");
   else if (r.status === "failed") bits.push("This run itself failed: " + (r.error ? String(r.error).slice(-300) : "no reason recorded") + ".");
@@ -939,9 +940,9 @@ $("dlg-form").addEventListener("submit", dlgStart);
 $("dlg-close").addEventListener("click", () => $("dlg").close());
 $("d-load-car").addEventListener("click", dlgLoadCars);
 $("d-scope").addEventListener("change", () => { S.dlgCars = null; S.dlgExcluded.clear(); carouselChecklist($("d-cars"), null, S.dlgExcluded, D.labels); });
-$("d-clear-cache").addEventListener("click", async () => {
-  if (!ask("Forget every saved verdict? The next checks will do every banner fresh.")) return;
-  try { const { cleared } = await post("/api/cache/clear"); toast(cleared ? `Forgot ${plural(cleared, "saved verdict")}.` : "There were no saved verdicts."); } catch (e) { toast("Couldn't clear the saved results: " + e.message, true); }
+$("clear-cache").addEventListener("click", async () => {
+  if (!ask("Clear the saved verdicts? Banners seen before will be checked fresh the next time.")) return;
+  try { const { cleared } = await post("/api/cache/clear"); toast(cleared ? `Cleared ${plural(cleared, "saved verdict")}.` : "The cache was already empty."); } catch (e) { toast("Couldn't clear the cache: " + e.message, true); }
 });
 $("d-repeat").addEventListener("click", () => {
   const p = dlgSettings(); if (S.dlgAxes.problem()) { dlgMsg(S.dlgAxes.problem(), true); return; }

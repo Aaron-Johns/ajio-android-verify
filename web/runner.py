@@ -561,6 +561,14 @@ def load_results(out_dir: Path) -> dict[str, dict]:
     return load_final_results(out_dir)
 
 
+def load_warnings(out_dir: Path) -> list[str]:
+    """What the run itself flagged (qa/feed_verify.py writes warnings.json), e.g. that Premium could not be loaded. [] when none."""
+    try:
+        return json.loads((out_dir / "warnings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
 def chosen_banners(out_dir: Path, scope: str, banner_limit: int | None, excluded_carousels: set[int] | None = None,
                    excluded_sections: set[str] | None = None) -> list:
     """The banners a run covers (its scope, carousel exclusions and banner limit applied), whether or not any has a result yet."""

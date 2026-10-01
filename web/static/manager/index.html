@@ -24,8 +24,12 @@
     <button class="new-check" id="new-check" type="button">Start a check</button>
     <div class="runs" id="runs" aria-label="Recent runs"></div>
     <div class="rail-foot">
-      <button class="ghost sm" id="theme-toggle" type="button">Switch theme</button>
-      <a class="ghost sm" id="link-classic" href="/">Classic view</a>
+      <button class="tile" id="theme-toggle" type="button" title="Switch between the light and the dark look">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><span>Switch theme</span></button>
+      <button class="tile" id="clear-cache" type="button" title="Forget every saved verdict so the next checks do every banner fresh, for example after a matching rule changed">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.9 12.5h9.2L17.5 7M10 11v5M14 11v5"/></svg><span>Clear cache</span></button>
+      <a class="tile" id="link-classic" href="/" title="The original view of the same data">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 10h17M9 10v9"/></svg><span>Classic view</span></a>
     </div>
   </aside>
 
@@ -60,10 +64,6 @@
       </div>
       <div id="d-cars"></div>
     </fieldset>
-    <details class="adv"><summary>Advanced</summary>
-      <p class="hint">Repeat banners normally reuse their earlier verdict. Forget saved results so the next check does everything fresh, for example after a matching rule changed.</p>
-      <button class="ghost" type="button" id="d-clear-cache">Forget saved results</button>
-    </details>
     <div class="dlg-foot">
       <span class="msg" id="d-msg"></span>
       <button class="ghost" type="button" id="d-repeat" title="Carry these choices into a new schedule">Repeat automatically</button>

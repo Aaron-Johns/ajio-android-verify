@@ -387,6 +387,8 @@ gets adjusted) and you want old verdicts recomputed under the new rules rather t
 - **`l1:premium` currently doesn't reliably get you AJIO's real premium-tier hero banners** — a
   premium run's *hero carousel* results specifically should be treated as suspect right now (see
   `PROGRESS.md` for the details); this doesn't affect non-hero carousels the same way.
+  When AJIO keeps returning the regular banner set for a Premium check, the run says so itself: a highlighted line, **"Premium cannot be loaded: ..."**, above the banners in both views (the classic
+  UI under the run header, the manager view in the note above the sheet). The run still goes on with the set it got; the line is there so those results aren't read as Premium ones.
 - **Restarting the server during a run is safe, but it costs the queue.** The run keeps going and the
   server re-adopts it on startup (cancel works again, and it's marked done when it finishes), but a
   multi-select **Run now** forgets the combinations that hadn't started yet — start them again if you
@@ -444,8 +446,8 @@ install; it calls the same `/api/...` endpoints, so a run started in one view sh
 the manager's left rail switch between the two. Light / dark follows the system and shares the original's toggle setting. Links are `#/`-based, so the back button and bookmarks work:
 `#/runs`, `#/runs/<run id>`, `#/schedules`, `#/schedules/new`, `#/schedules/<id>`, `#/schedules/<id>/edit`.
 
-- **Layout.** A left rail (Runs / Schedules with an unread-alert badge, *Start a check*, the recent runs each with a small result bar and an x that removes it from the list, theme
-  and Classic view) and the main area. Type is Bricolage Grotesque throughout.
+- **Layout.** A left rail (Runs / Schedules with an unread-alert badge, *Start a check*, the recent runs each with a small result bar and an x that removes it from the list, then three square
+  tiles in one row: Switch theme, Clear cache and Classic view) and the main area. Type is Bricolage Grotesque throughout.
 - **All runs.** Every run as a card: page, when, cohort (l1/l2 for Home), state and pincode (states in capitals, as AJIO spells them), result bar and tally, what changed since the schedule's
   previous run, how long it took, carousels left out, and two buttons on a run that isn't running: **Save as Excel** and **Delete** (asks first, then removes the run and its folder for good; the x in the rail only hides it).
 - **One run.** A **verdict strip** across the top: one segment per result with its count; click a segment to show only those banners (click again to clear). At the right end of the strip is the **slide count**: "13 slides", or "5 of 13 slides" while a verdict, carousel or search filter is on. Under it: a carousel filter (number and the
@@ -458,7 +460,7 @@ the manager's left rail switch between the two. Light / dark follows the system 
   audience, missing and extra brands, tries) and one block per link inside a multi-link banner with its crop.
 - **Start a check** (rail button): the page buttons (Home black, premium gold, non-premium plain), l1 / l2 (greyed out without Home), a searchable multi-select **State** list with chips, **Pincode** chips
   (6 digits, Enter to add), the run-count line and the 24-run cap, scope, number of banners, banners at a time, **Load carousels** (a checklist with pictures; untick to leave one out, Select all / Deselect all),
-  *Advanced* > **Forget saved results** (the cache clear) and **Repeat automatically** (opens a new schedule with these choices).
+  and **Repeat automatically** (opens a new schedule with these choices). **Clear cache** is one of the three square tiles at the bottom of the left rail, with **Switch theme** and **Classic view**: it forgets every saved verdict so the next checks do every banner fresh.
 - **Schedules.** The list has a summary, the alerts (*Mark all read*, *Clear all*, *Send test notification*, each alert's x and *Open run*), All / Enabled / Disabled / Needs attention chips, a search box
   (every word must appear in the name, page, state, pincode, interval or last result) and a card per schedule with **View / Edit / Run now / Enable or Disable / Delete**. A schedule's page shows its runs grouped
   by the fire that made them, **From / to** date pickers (both days included, this PC's local time), Download Excel on each finished run, and folded *Settings* and *Alerts*. The form has name, runs every,

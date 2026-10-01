@@ -245,6 +245,7 @@ def _run_summary(row) -> dict:
     for r in results.values():
         counts[r["result"]] = counts.get(r["result"], 0) + 1
     d["counts"] = counts
+    d["warnings"] = runner.load_warnings(out_dir)
     if d["status"] == "running":     # counts only holds banners with a result so far; "x of n done" needs n
         d["total"] = len(runner.chosen_banners(out_dir, d["scope"], d["banner_limit"], _excluded_carousels(row),
                                                _run_excluded_sections(row)))

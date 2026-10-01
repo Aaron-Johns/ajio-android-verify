@@ -209,3 +209,25 @@ def test_every_banner_row_carries_its_carousels_title(tmp_path):
     fv.save_banners(tmp_path, [replace(make_banner("a", 0), label="MAIN SECTION 25TH"), replace(make_banner("b", 1), label="")])
     r = rows(tmp_path)
     assert r["a"]["carousel_label"] == "MAIN SECTION 25TH" and r["b"]["carousel_label"] == ""
+
+
+# ---- warnings.json: what a run flags for a person (Premium could not be loaded) ----
+
+def test_a_runs_warnings_are_read_from_its_folder_and_empty_when_there_are_none(tmp_path):
+    assert runner.load_warnings(tmp_path) == []
+    (tmp_path / "warnings.json").write_text(json.dumps(["Premium cannot be loaded: x"]), encoding="utf-8")
+    assert runner.load_warnings(tmp_path) == ["Premium cannot be loaded: x"]
+    (tmp_path / "warnings.json").write_text("{not json", encoding="utf-8")
+    assert runner.load_warnings(tmp_path) == []
+
+
+def test_the_run_summary_carries_the_runs_warnings(tmp_path, monkeypatch):
+    from web import api, db
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "app.sqlite3")
+    db.init_db()
+    (tmp_path / "run").mkdir()
+    out = run_dir(tmp_path / "run", ids=("a",))
+    db.insert_run("r1", str(out), "hero", None, 3, "premium", "men", 1, None)
+    assert api._run_summary(db.get_run("r1"))["warnings"] == []
+    (out / "warnings.json").write_text(json.dumps([fv.PREMIUM_WARNING]), encoding="utf-8")
+    assert api._run_summary(db.get_run("r1"))["warnings"] == [fv.PREMIUM_WARNING]

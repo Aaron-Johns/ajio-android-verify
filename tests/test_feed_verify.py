@@ -1121,3 +1121,24 @@ def test_an_old_undecided_result_and_its_hotspots_are_explained_when_the_run_is_
     assert "no deal text" in runner._explained(old)["reason"]
     assert runner._explained({**old, "reason": "already has one"})["reason"] == "already has one"
     assert runner._explained({"result": "PASS", "reason": "", "banner_check": check})["reason"] == ""
+
+
+# ---- the CLI records "Premium cannot be loaded" in the run folder so the UIs can show it ----
+
+def _run_main(tmp_path, monkeypatch, confirmed):
+    import sys
+    monkeypatch.setattr(fv, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(fv, "fetch_confirmed_banners", lambda *a, **k: ([banner("a", "https://ajio.com/s/a-1")], 8, confirmed))
+    monkeypatch.setattr(fv, "run_feed_verify", lambda *a, **k: [])
+    monkeypatch.setattr(sys, "argv", ["feed_verify", "--page", "home", "--confirm-asset-set", "PR", "--no-reference"])
+    fv.main()
+    return next(tmp_path.glob("*_feedverify"))
+
+
+def test_an_unconfirmed_premium_pull_leaves_a_warning_in_the_run_folder(tmp_path, monkeypatch):
+    out = _run_main(tmp_path, monkeypatch, confirmed=False)
+    assert json.loads((out / "warnings.json").read_text(encoding="utf-8")) == [fv.PREMIUM_WARNING]
+
+
+def test_a_confirmed_premium_pull_leaves_no_warning(tmp_path, monkeypatch):
+    assert not (_run_main(tmp_path, monkeypatch, confirmed=True) / "warnings.json").exists()
