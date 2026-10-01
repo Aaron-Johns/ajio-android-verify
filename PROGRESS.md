@@ -1695,3 +1695,7 @@ Run here (with a throwaway ZZ schedule, deleted): everything passes except crash
 launcher reporting failure (task result -1) Windows did not restart it; the restart-on-failure setting only covers a task that fails to launch. Corrected the claims (autostart.ps1, UI_GUIDE) and dropped
 RestartCount from autostart.ps1 (the installed task keeps its old setting until autostart.ps1 is run again; it does nothing). Not built: a loop in start_server.ps1 that relaunches uvicorn on a non-zero exit
 (the user's call; it would also respawn after the manual stop-the-process restart). Not verified: the real logon trigger (needs a sign-out; use -AfterLogon).
+
+### README: how to set up autostart (2026-10-01)
+User asked where autostart setup is documented: only docs/UI_GUIDE.md and the script headers, not the README. Added a short "Start the server when you log in" section to README.md section 4
+(the one command, -Status / -Remove, no second copy, no restart after a crash, and the test script). Docs only; nothing tested.

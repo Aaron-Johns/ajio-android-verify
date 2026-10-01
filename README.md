@@ -74,6 +74,20 @@ machine (127.0.0.1) — nothing here is exposed to the network.
 
 Leave that terminal window open while you work; closing it (or `Ctrl+C` inside it) stops the server.
 
+### Start the server when you log in (optional, for scheduled runs)
+
+Scheduled checks only fire while the server is running. To have Windows start it for you, run this once:
+```
+powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1
+```
+It registers a per-user task, "AJIO Feed Verify server", that starts the server hidden 30 seconds after you log in (no admin
+rights needed; logs go to `logs\server.log`). `-Status` shows whether it is installed and running, `-Remove` undoes it. It
+never starts a second copy if the server is already up. If the server itself crashes or is killed, nothing restarts it until the
+next logon, or run `Start-ScheduledTask "AJIO Feed Verify server"`.
+
+To test it: `scripts\test_autostart.ps1` checks the task is set up right and, with `-Restart`, that the server comes back
+through it. For the real proof, sign out and in, then run `scripts\test_autostart.ps1 -AfterLogon` (details in the script's header).
+
 ## 5. Using it
 
 Quick start: pick an **l1 / l2 segment** and a **scope** in the left panel, then hit **Run now**. The
