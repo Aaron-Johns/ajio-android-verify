@@ -1,9 +1,7 @@
 """qa/banner_cache.py: the cross-run cache that lets a repeat banner (same image, same link) skip
 straight to its earlier verdict instead of redoing the vision+listing check."""
-import io
 import time
 
-import pytest
 from PIL import Image as PILImage
 
 from qa.banner_cache import BannerCache, clear_cache, dhash

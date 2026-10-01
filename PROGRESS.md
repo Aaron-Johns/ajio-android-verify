@@ -1707,3 +1707,7 @@ User asked for the autostart section to point to docs/UI_GUIDE.md and docs/API.m
 Removed: `selenium` from requirements.txt (nothing in the repo imports it; install ad hoc for live browser checks, CLAUDE.md says so); the finished-phase slash commands phase1-4 and phase6 (checkpoint and
 phase5-spotcheck kept, the latter at the user's request); the unused `hotspotSummary()` in the classic UI; the dead `.ms-opt.active` selector in the manager CSS. Left alone on purpose: the small helpers repeated in the two
 UIs, and `BrandResolver` (tests only, but [!] must not change). Tests re-run; classic and manager scripts syntax-checked.
+
+### Third ponytail audit, applied (2026-10-01)
+Removed `results.csv` (CSV_COLUMNS, `_flat`; `_hotspot_summary` stays, the Excel export uses it; the web tool only reads results.json and the Excel export; the CLI's closing line no longer mentions it) and the unused imports / variables pyright found in
+the tests and web/api.py. test_outputs_and_summary now asserts on the results themselves instead of the CSV. Existing results.csv files in old run folders stay (they go with the 30-day clean-up).

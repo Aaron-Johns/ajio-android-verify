@@ -1,5 +1,4 @@
 """Brand-filter reading on a real dump, deal/title matching, and the banner-vs-listing verdict."""
-from pathlib import Path
 
 import pytest
 

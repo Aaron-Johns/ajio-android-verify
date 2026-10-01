@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import csv
 import json
 import logging
 import re
@@ -41,11 +40,7 @@ CONFIRM_ATTEMPTS = 8   # [A] max feed re-fetches while waiting for a target asse
 CONFIRM_PAUSE = 2.0    # [A] per-identity, so re-fetching is the only lever); this is a plain feed fetch, not the full check
 _EXT = {"image/webp": ".webp", "image/png": ".png", "image/jpeg": ".jpg"}
 
-CSV_COLUMNS = ["banner_id", "alt_text", "destination_raw", "result", "reason", "banner_brands", "banner_deal",
-               "listing_title", "title_matches_deal", "missing_brands", "partial_matches", "brand_list_exhaustive",
-               "extra_brands", "banner_gender", "listing_genders", "gender_matches", "total_results",
-               "brands_in_filter", "attempts", "asset_set", "section_index", "block_index", "position",
-               "hotspot_results", "image_file"]
+
 
 
 def _safe(name: str) -> str:
@@ -708,30 +703,8 @@ def _hotspot_summary(h: dict) -> str:
     return f"{h['hotspot_index']}:{h['url']}:{shown_hotspot_result(h)}" + (f" ({why})" if why else "")
 
 
-def _flat(r: dict) -> dict:
-    c = r.get("banner_check") or {}
-    return {"banner_id": r["banner_id"], "alt_text": r.get("alt_text", ""), "destination_raw": r.get("destination_raw", ""),
-            "result": r["result"], "reason": r.get("reason", ""), "banner_brands": " | ".join(c.get("banner_brands", [])),
-            "banner_deal": c.get("banner_deal") or "", "listing_title": r.get("listing_title") or "",
-            "title_matches_deal": c.get("title_matches_deal"), "missing_brands": " | ".join(c.get("missing_brands", [])),
-            "partial_matches": " | ".join(f"{b['brand']}->{b['matched_as']}" for b in c.get("brand_checks", []) if b.get("match") == "partial"),
-            "brand_list_exhaustive": c.get("brand_list_exhaustive"), "extra_brands": " | ".join(c.get("extra_brands", [])),
-            "banner_gender": c.get("banner_gender") or "", "listing_genders": " | ".join(c.get("listing_genders", [])),
-            "gender_matches": c.get("gender_matches"),
-            "total_results": r.get("total_results", ""), "brands_in_filter": r.get("brands_in_filter", ""),
-            "attempts": r.get("attempts", ""), "asset_set": r.get("asset_set") or "",
-            "section_index": r.get("section_index", ""), "block_index": r.get("block_index", ""),
-            "position": r.get("position", ""),
-            "hotspot_results": " | ".join(_hotspot_summary(h) for h in r.get("hotspot_checks", [])),
-            "image_file": r.get("image_file", "")}
-
-
 def write_outputs(results: list[dict], out_dir: Path) -> None:
     (out_dir / "results.json").write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
-    with open(out_dir / "results.csv", "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
-        writer.writeheader()
-        writer.writerows(_flat(r) for r in results)
 
 
 def format_summary(results: list[dict]) -> str:
@@ -850,7 +823,7 @@ def main() -> None:
         # it back. The one retried banner is already durably saved via on_result's PartialLog append.
         write_outputs(results, out_dir)
     print(format_summary(results))
-    print(f"\n{time.time() - started:.0f}s | results.json, results.csv and images: {out_dir}")
+    print(f"\n{time.time() - started:.0f}s | results.json and images: {out_dir}")
 
 
 if __name__ == "__main__":

@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from qa.compare import AliasMap
 from qa.spotcheck import vision
 
 ORIGINAL = Path(__file__).resolve().parent.parent / "inputs" / "image_segmentation_2.py"

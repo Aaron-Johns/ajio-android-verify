@@ -480,7 +480,7 @@ def _apscheduler_job(schedule_id: int) -> None:
         return bool(current and current["enabled"])
 
     try:
-        started, skipped = runner.start_scheduled_batch(
+        _, skipped = runner.start_scheduled_batch(
             row, still_wanted, on_started=lambda run_id: db.touch_schedule(schedule_id, run_id))
     except Exception as exc:
         log.exception("schedule %s: could not start its runs", schedule_id)

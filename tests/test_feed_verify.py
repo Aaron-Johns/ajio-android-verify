@@ -1,5 +1,4 @@
 """Emulator-free banner verification: banner image + listing from the server, with everything faked."""
-import csv
 import dataclasses
 import io
 import json
@@ -193,10 +192,9 @@ def test_outputs_and_summary(tmp_path):
     results = run(feed, tmp_path, fetcher, analyzer=analyzer)
     fv.write_outputs(results, tmp_path)
     assert json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))[0]["banner_id"] == "good"
-    with open(tmp_path / "results.csv", encoding="utf-8-sig") as f:
-        rows = {r["banner_id"]: r for r in csv.DictReader(f)}
-    assert rows["good"]["result"] == "PASS" and rows["good"]["partial_matches"] == "kiana->Kiana House Of Fashion"
-    assert rows["bad"]["result"] == "FAIL" and rows["bad"]["missing_brands"] == "Guess"
+    by = {r["banner_id"]: r for r in results}
+    assert by["good"]["result"] == "PASS" and [b["matched_as"] for b in by["good"]["banner_check"]["brand_checks"] if b.get("match") == "partial"] == ["Kiana House Of Fashion"]
+    assert by["bad"]["result"] == "FAIL" and by["bad"]["banner_check"]["missing_brands"] == ["Guess"]
     text = fv.format_summary(results)
     assert "PASS=1" in text and "FAIL=1" in text and "missing brands ['Guess']" in text
 
@@ -450,7 +448,7 @@ def test_no_target_asset_set_fetches_exactly_once():
 
 
 def test_returns_immediately_once_the_target_set_is_seen():
-    banners, attempts, confirmed = fv.fetch_confirmed_banners(target_asset_set="PR", fetcher=pr_pull, sleep=lambda s: None)
+    _, attempts, confirmed = fv.fetch_confirmed_banners(target_asset_set="PR", fetcher=pr_pull, sleep=lambda s: None)
     assert attempts == 1 and confirmed is True
 
 
@@ -462,7 +460,7 @@ def test_keeps_retrying_until_the_target_set_shows_up():
         return pr_pull() if calls["n"] == 3 else st_pull()
 
     sleeps = []
-    banners, attempts, confirmed = fv.fetch_confirmed_banners(target_asset_set="PR", max_attempts=8, fetcher=flaky,
+    _, attempts, confirmed = fv.fetch_confirmed_banners(target_asset_set="PR", max_attempts=8, fetcher=flaky,
                                                                sleep=lambda s: sleeps.append(s))
     assert attempts == 3 and confirmed is True
     assert len(sleeps) == 2   # one pause between each of the 2 misses and the next attempt, none after the hit
