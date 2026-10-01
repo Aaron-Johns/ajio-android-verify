@@ -213,7 +213,7 @@ details.fold > summary { cursor: pointer; font-weight: 700; font-size: 16px; }
 .ms-list { max-height: 210px; overflow: auto; }
 .ms-opt { display: flex; gap: 8px; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
 .ms-opt .ck { visibility: hidden; color: var(--pass); font-weight: 700; } .ms-opt.sel .ck { visibility: visible; }
-.ms-opt:hover, .ms-opt.active { background: color-mix(in srgb, var(--loupe) 12%, transparent); }
+.ms-opt:hover { background: color-mix(in srgb, var(--loupe) 12%, transparent); }
 .ms-foot { display: flex; gap: 6px; align-items: center; justify-content: space-between; margin-top: 6px; font-size: 13px; color: var(--ink-2); }
 .pin { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 8px; }
 .pin input { border: 0; outline: 0; background: transparent; min-width: 8em; flex: 1; padding: 4px 2px; }

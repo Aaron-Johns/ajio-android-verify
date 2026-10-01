@@ -9,6 +9,5 @@ openpyxl==3.1.5
 pillow==12.3.0
 psutil==7.2.2
 google-genai==2.24.0
-# development / live browser checks
+# development
 pytest==9.1.1
-selenium==4.49.0

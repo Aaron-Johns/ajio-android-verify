@@ -1702,3 +1702,8 @@ User asked where autostart setup is documented: only docs/UI_GUIDE.md and the sc
 
 ### README: autostart section points to the UI guide and API docs (2026-10-01)
 User asked for the autostart section to point to docs/UI_GUIDE.md and docs/API.md as well; added a closing line with links (both were already in section 6). Docs only.
+
+### Second ponytail audit, applied (2026-10-01)
+Removed: `selenium` from requirements.txt (nothing in the repo imports it; install ad hoc for live browser checks, CLAUDE.md says so); the finished-phase slash commands phase1-4 and phase6 (checkpoint and
+phase5-spotcheck kept, the latter at the user's request); the unused `hotspotSummary()` in the classic UI; the dead `.ms-opt.active` selector in the manager CSS. Left alone on purpose: the small helpers repeated in the two
+UIs, and `BrandResolver` (tests only, but [!] must not change). Tests re-run; classic and manager scripts syntax-checked.

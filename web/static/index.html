@@ -1280,14 +1280,6 @@ function hotspotReason(h) {
   return parts.join("; ");
 }
 
-function hotspotSummary(b) {
-  // Mirrors qa/feed_verify.py's _hotspot_summary() - one line per hotspot: index, link, verdict, why.
-  return (b.hotspot_checks || []).map(h => {
-    const why = hotspotReason(h);
-    return `${h.hotspot_index}: ${statusLabel(h.result)} - ${h.url}${why ? ` (${why})` : ""}`;
-  }).join("<br>");
-}
-
 function carouselLabel(b) {
   if (b.section_index === undefined || b.section_index === null) return "";
   return b.block_index === undefined || b.block_index === null

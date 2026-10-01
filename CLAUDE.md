@@ -56,9 +56,9 @@ web/                       FastAPI + APScheduler + SQLite (web/app.sqlite3, giti
   static/index.html        classic UI at /   (the default; do not replace it)
   static/manager/          manager UI at /manager/ (index.html + style.css + app.js; the newer "banner proof desk", same API; keep it and the classic UI at feature parity)
 scripts/                   autostart.ps1 (Windows logon task "AJIO Feed Verify server"), start_server.ps1; run.bat
-tests/                     ~600 tests (qa/ logic, API, run view); web pages are verified live in headless Edge (selenium)
+tests/                     ~600 tests (qa/ logic, API, run view); web pages are verified live in headless Edge (selenium, installed ad hoc: `pip install selenium`; not in requirements.txt)
 runs/  logs/  data/        generated, gitignored
-.claude/commands/          phase slash commands and /checkpoint (historical; the phases are done)
+.claude/commands/          /checkpoint, and phase5-spotcheck (kept on purpose; the other phase commands were removed 2026-10-01)
 ```
 
 - **How it runs:** the server (`uvicorn web.api:app`, 127.0.0.1 only [!]) starts each check as a `qa.feed_verify`
