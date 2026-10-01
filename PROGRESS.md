@@ -1699,3 +1699,6 @@ RestartCount from autostart.ps1 (the installed task keeps its old setting until 
 ### README: how to set up autostart (2026-10-01)
 User asked where autostart setup is documented: only docs/UI_GUIDE.md and the script headers, not the README. Added a short "Start the server when you log in" section to README.md section 4
 (the one command, -Status / -Remove, no second copy, no restart after a crash, and the test script). Docs only; nothing tested.
+
+### README: autostart section points to the UI guide and API docs (2026-10-01)
+User asked for the autostart section to point to docs/UI_GUIDE.md and docs/API.md as well; added a closing line with links (both were already in section 6). Docs only.

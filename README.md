@@ -88,6 +88,9 @@ next logon, or run `Start-ScheduledTask "AJIO Feed Verify server"`.
 To test it: `scripts\test_autostart.ps1` checks the task is set up right and, with `-Restart`, that the server comes back
 through it. For the real proof, sign out and in, then run `scripts\test_autostart.ps1 -AfterLogon` (details in the script's header).
 
+More on schedules and autostart: **[`docs/UI_GUIDE.md`](docs/UI_GUIDE.md)** (the scheduler section: how schedules run, what happens
+to times missed while the PC is off) and **[`docs/API.md`](docs/API.md)** (the schedules and alerts endpoints).
+
 ## 5. Using it
 
 Quick start: pick an **l1 / l2 segment** and a **scope** in the left panel, then hit **Run now**. The
