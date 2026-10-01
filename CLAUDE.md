@@ -42,7 +42,7 @@ a banner's URL is only used to extract the listing slug.
 
 ```
 inputs/                    read-only originals (see 3)            config/: ajio_brand_names_deduped.json, reference.csv (yours), reference.sample.csv (format example)
-analysis/FINDINGS.md       API facts (read 6.x first); traffic_capture/ holds captures (gitignored raw flows)
+analysis/FINDINGS.md       API facts (read 6.x first); traffic_capture/ is local-only (gitignored) except home_theme_response_sample.json, which the tests read
 qa/
   feed_client.py fp_signer.py cohort_client.py   home feed: Fynd "theme" endpoint, static bearer + local x-fp-signature,
                                                  cohort (l1/l2/state/pincode) via a cached guest token in qa/.cache/
@@ -55,10 +55,10 @@ qa/
 web/                       FastAPI + APScheduler + SQLite (web/app.sqlite3, gitignored). api.py runner.py db.py alerts.py notify.py
   static/index.html        classic UI at /   (the default; do not replace it)
   static/manager/          manager UI at /manager/ (index.html + style.css + app.js; the newer "banner proof desk", same API; keep it and the classic UI at feature parity)
-scripts/                   autostart.ps1 (Windows logon task "AJIO Feed Verify server"), start_server.ps1; run.bat
+scripts/                   autostart.ps1 (Windows logon task "AJIO Feed Verify server"), test_autostart.ps1, start_server.ps1; run.bat
 tests/                     ~600 tests (qa/ logic, API, run view); web pages are verified live in headless Edge (selenium, installed ad hoc: `pip install selenium`; not in requirements.txt)
 runs/  logs/  data/        generated, gitignored
-.claude/commands/          /checkpoint, and phase5-spotcheck (kept on purpose; the other phase commands were removed 2026-10-01)
+.claude/commands/          /checkpoint, phase5-spotcheck: local-only (gitignored, like .claude/settings.json)
 ```
 
 - **How it runs:** the server (`uvicorn web.api:app`, 127.0.0.1 only [!]) starts each check as a `qa.feed_verify`

@@ -40,8 +40,15 @@ logs/
 
 # tooling installed into the repo (graphify, agent skills): not part of this project
 graphify-out/
+scripts/graph3d.py
 .agents/
 skills-lock.json
 .claude/skills/
 .claude/CLAUDE.md
 .claude/settings.json.graphify-bak
+
+# Local-only: capture helper scripts and request dumps (the one sample the tests read stays tracked), personal Claude Code commands and settings
+analysis/traffic_capture/*
+!analysis/traffic_capture/home_theme_response_sample.json
+.claude/commands/
+.claude/settings.json

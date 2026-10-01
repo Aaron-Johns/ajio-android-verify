@@ -1711,3 +1711,9 @@ UIs, and `BrandResolver` (tests only, but [!] must not change). Tests re-run; cl
 ### Third ponytail audit, applied (2026-10-01)
 Removed `results.csv` (CSV_COLUMNS, `_flat`; `_hotspot_summary` stays, the Excel export uses it; the web tool only reads results.json and the Excel export; the CLI's closing line no longer mentions it) and the unused imports / variables pyright found in
 the tests and web/api.py. test_outputs_and_summary now asserts on the results themselves instead of the CSV. Existing results.csv files in old run folders stay (they go with the 30-day clean-up).
+
+### Fewer files on GitHub (2026-10-01)
+User: remove what other people don't need from GitHub, keep it locally. Untracked with `git rm --cached` (the files stay on disk) and gitignored: the 8 capture helper scripts and the request dump in `analysis/traffic_capture/` (the one sample the tests read,
+`home_theme_response_sample.json`, stays tracked), `.claude/commands/` and `.claude/settings.json` (personal; its graphify hooks would fail for anyone without graphify). Kept tracked because the tests load them: `inputs/brand_verify_combined.py`,
+`inputs/image_segmentation_2.py`, `inputs/resolver_fixtures.json`, `inputs/ajio_brand_names_fixed.json`, the sample json. Not done: rewriting git history, so the removed files stay in old commits (the request dump included).
+FINDINGS.md still cites the request dump (kept locally). Not committed or pushed yet.
