@@ -429,12 +429,46 @@
   .start-row input[type=text] { width: 54px; text-align: center; }
   .start-row select { width: 72px; }
   .back-btn { margin-right: 8px; }
+  /* Menu: runs that only fetch pictures and details (top / bottom navigation, ads, trending) */
+  /* the Menu parts get their own block: a label, then big buttons two to a line (four in one line were unreadably small in the narrow sidebar) */
+  .pg-row.pg-menu-row { flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .pg-lab { flex: 0 0 100%; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+  .pg-menu-row .pgb { flex: 1 1 calc(50% - 3px); font-size: 14px; padding: 11px 8px; }
+  .pg-menu-row .pgb.on::before { margin-right: 5px; font-size: 13px; }
+  .pgb.menu { background: var(--surface-2); color: var(--text); border-color: var(--accent); }
+  .panel.menu-only :is(#scope, #limit, #workers, #load-carousels-btn) { opacity: .4; pointer-events: none; }
+  .main-panel.menu-open > .main-head, .main-panel.menu-open > .filter-row, .main-panel.menu-open > .grid, .main-panel.menu-open > .run-warn { display: none !important; }
+  #menu-view { display: none; }
+  .main-panel.menu-open > #menu-view { display: block; }
+  .mn-kinds { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+  .mn-kind { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 150px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; }
+  .mn-kind b { font-size: 14px; } .mn-kind small { color: var(--text-dim); font-size: 11px; }
+  .mn-kind[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); } .mn-kind[aria-pressed="true"] small { color: inherit; opacity: .85; }
+  .mn-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 4px 0 10px; font-size: 12px; color: var(--text-dim); }
+  .mn-meta select { max-width: 100%; }
+  .mn-level { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0 0 calc(var(--d) * 16px); padding: 8px 0 8px 12px; border-left: 3px solid var(--border); }
+  .mn-lead { flex: none; width: 96px; font-weight: 600; font-size: 12px; color: var(--text-dim); padding-top: 8px; overflow-wrap: anywhere; }
+  .mn-tiles { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; min-width: 0; }
+  .mn-cell { display: flex; flex-direction: column; gap: 3px; max-width: 220px; } .mn-cell.off { opacity: .55; }
+  .mn-tile { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); min-width: 90px; max-width: 220px; cursor: pointer; }
+  .mn-tile:hover { border-color: var(--text-dim); } .mn-tile[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+  .mn-tile img { height: 48px; max-width: 140px; object-fit: contain; }
+  .k-trending .mn-tile img { height: 90px; }
+  /* an ad: the tile is exactly as wide as its picture, the picture fills it edge to edge, and the link under it stays inside that width */
+  .mn-cell.ad { width: 300px; max-width: 100%; }
+  .mn-cell.ad .mn-tile { width: 100%; max-width: none; padding: 0 0 8px; gap: 5px; overflow: hidden; }
+  .mn-cell.ad .mn-tile img { width: 100%; height: auto; max-width: none; }
+  .mn-cell.ad .mn-link { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .mn-t { font-weight: 600; font-size: 12.5px; text-align: center; overflow-wrap: anywhere; } .mn-d { font-size: 11px; color: var(--text-dim); text-align: center; }
+  .mn-k { font-size: 11px; color: var(--accent); font-weight: 700; } .mn-i { font-size: 10.5px; color: var(--text-dim); }
+  .mn-link, .mn-opens { font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; padding: 0 3px; } .mn-link { color: var(--accent); }
 </style>
 </head>
 <body>
 <header>
   <div style="display:flex;align-items:center;gap:12px"><span class="logo-mark" aria-hidden="true">A</span><h1>AJIO Feed Verify <span class="sub">no-emulator banner &rarr; listing check</span></h1></div>
   <div style="display:flex;gap:8px;align-items:center">
+    <button class="theme-btn" id="menu-btn" title="What the app shows besides its banners: the menus, ads and trending">Menu</button>
     <a class="theme-btn mgr-btn" href="/manager/" title="The newer view of the same data">Manager view</a>
     <button class="theme-btn" id="theme-toggle">Toggle theme</button>
   </div>
@@ -525,6 +559,19 @@
       </label>
     </div>
     <div class="grid" id="grid"><div class="empty">Start a run, or pick one from the left, to see banners here.</div></div>
+
+    <div id="menu-view">
+      <div class="sv-head">
+        <div class="sv-title">Menu <span class="filter-hint">what the app shows apart from its banners</span></div>
+        <button class="secondary" id="mn-xlsx" title="One workbook with the newest fetch of each part">Download Excel</button>
+        <button class="secondary" id="mn-part-xlsx" style="display:none">This part as Excel</button>
+        <button class="secondary" id="mn-start" title="Tick a Menu part under New run, on the left">Start a check</button>
+        <button class="secondary" id="mn-close">Close</button>
+      </div>
+      <div class="mn-kinds" id="mn-kinds" role="group" aria-label="Menu parts"></div>
+      <div class="mn-meta" id="mn-meta"></div>
+      <div id="mn-body"></div>
+    </div>
 
     <div id="scheduler-view">
       <div class="sv-head">
@@ -656,8 +703,10 @@ function makePageGroup(root, options, selected, onChange) {
   const btn = o => `<button type="button" class="pgb ${wEsc(o.tier)}" data-v="${wEsc(o.id)}">${wEsc(o.label)}</button>`;
   root.className = "pg-group";
   root.setAttribute("role", "group");
-  root.innerHTML = `<div class="pg-row">${options.filter(o => o.tier !== "standard").map(btn).join("")}</div>` +
-                   `<div class="pg-row">${options.filter(o => o.tier === "standard").map(btn).join("")}</div>`;
+  const menu = options.filter(o => o.tier === "menu");
+  root.innerHTML = `<div class="pg-row">${options.filter(o => o.tier !== "standard" && o.tier !== "menu").map(btn).join("")}</div>` +
+                   `<div class="pg-row">${options.filter(o => o.tier === "standard").map(btn).join("")}</div>` +
+                   (menu.length ? `<div class="pg-row pg-menu-row"><span class="pg-lab" title="Only fetches the pictures and details, nothing is checked">Menu</span>${menu.map(btn).join("")}</div>` : "");
   const ids = options.map(o => o.id);
   const buttons = [...root.querySelectorAll(".pgb")];
   function paint() {
@@ -689,12 +738,22 @@ function makePageGroup(root, options, selected, onChange) {
   return { get: () => chosen.slice(), set };
 }
 
+function menuInfo(id) { return ((typeof meta !== "undefined" && meta && meta.menu_options) || []).find(x => x.id === id); }   // a menu part, or undefined
 function pageLabel(id) {
-  const p = ((typeof meta !== "undefined" && meta && meta.page_options) || []).find(x => x.id === id);
+  const p = ((typeof meta !== "undefined" && meta && meta.page_options) || []).find(x => x.id === id) || menuInfo(id);
   return p ? p.label : id;
 }
 // What a run (or a schedule) checks, in words: the l1/l2 feed for home, the page's name for any other page.
-function runWhat(r) { return (r.page || "home") === "home" ? `${r.l1}/${r.l2}` : pageLabel(r.page); }
+function runWhat(r) {
+  const m = menuInfo(r.page);
+  if (m) return m.label + (m.by_l1 ? ` · ${r.l1}` : "") + (m.by_state ? ` · ${r.state}` : "");
+  return (r.page || "home") === "home" ? `${r.l1}/${r.l2}` : pageLabel(r.page);
+}
+// A run opens where it belongs: banners on the banner sheet, a menu run on the Menu view.
+function openRun(runId) {
+  const r = lastRuns.find(x => x.run_id === runId);
+  if (r && r.kind === "menu") openMenu(runId); else selectRun(runId);
+}
 
 const openPickers = new Set();
 document.addEventListener("mousedown", ev => { for (const p of [...openPickers]) if (!p.root.contains(ev.target)) p.close(); });
@@ -824,9 +883,9 @@ function makePincodeInput(root, selected, onChange) {
 // The four selections together. els = { l1, l2, state, pincode, summary } (elements to fill); initial =
 // { l1s, l2s, states, pincodes }. read() gives the lists to send - an empty state/pincode means the default,
 // exactly as the server treats it - and the summary line says how many runs that adds up to.
-function makeAxes(els, initial, onChange) {
+function makeAxes(els, initial, onChange, opts = {}) {
   const changed = () => { paintSummary(); if (onChange) onChange(); };
-  const pages = makePageGroup(els.page, meta.page_options, initial.pages || ["home"], changed);
+  const pages = makePageGroup(els.page, opts.menu ? meta.page_options.concat(meta.menu_options) : meta.page_options, initial.pages || ["home"], changed);
   const l1 = makeToggleGroup(els.l1, meta.l1_options, initial.l1s, changed);
   const l2 = makeToggleGroup(els.l2, meta.l2_options, initial.l2s, changed);
   const state = makeStatePicker(els.state, meta.state_options, initial.states, changed, meta.default_state);
@@ -838,21 +897,26 @@ function makeAxes(els, initial, onChange) {
   // only the home page depends on l1/l2; every other page is one run per state x pincode
   function count() {
     const v = read();
-    const perPlace = v.pages.reduce((n, p) => n + (p === "home" ? v.l1s.length * v.l2s.length : 1), 0);
-    return perPlace * v.states.length * v.pincodes.length;
+    // the same arithmetic as the server's expand_combos: a menu part never varies by pincode or l2, by l1 only if its content does, by state only for Ads
+    return v.pages.reduce((n, p) => {
+      const mi = menuInfo(p);
+      return n + (mi ? (mi.by_l1 ? v.l1s.length : 1) * (mi.by_state ? v.states.length : 1) : (p === "home" ? v.l1s.length * v.l2s.length : 1) * v.states.length * v.pincodes.length);
+    }, 0);
   }
   function paintSummary() {
     const v = read(), n = count();
     const over = n > meta.max_combos;
-    const homeOn = v.pages.includes("home"), others = v.pages.length - (homeOn ? 1 : 0);
-    for (const el of [els.l1, els.l2]) {                         // l1 / l2 mean nothing without the home page
-      el.classList.toggle("dim-axis", !homeOn);
+    const homeOn = v.pages.includes("home"), menuN = v.pages.filter(menuInfo).length, others = v.pages.length - (homeOn ? 1 : 0) - menuN;
+    const l1On = homeOn || v.pages.some(pg => (menuInfo(pg) || {}).by_l1);
+    for (const [el, on] of [[els.l1, l1On], [els.l2, homeOn]]) {   // l2 means nothing without Home; l1 also drives the menu parts that change with it
+      el.classList.toggle("dim-axis", !on);
       const lb = el.previousElementSibling;
-      if (lb && lb.tagName === "LABEL") lb.classList.toggle("dim-axis", !homeOn);
+      if (lb && lb.tagName === "LABEL") lb.classList.toggle("dim-axis", !on);
     }
-    const what = [homeOn ? `Home: ${v.l1s.length} l1 × ${v.l2s.length} l2` : null, others ? `${others} other page${others === 1 ? "" : "s"}` : null].filter(Boolean).join(" + ");
+    const what = [homeOn ? `Home: ${v.l1s.length} l1 × ${v.l2s.length} l2` : null, others ? `${others} other page${others === 1 ? "" : "s"}` : null, menuN ? `${menuN} menu part${menuN === 1 ? "" : "s"}` : null].filter(Boolean).join(" + ");
     els.summary.className = "combo-hint" + (over ? " over" : "");
-    els.summary.textContent = n === 1 ? "" :
+    els.summary.textContent = n === 1 ? "" : menuN ?
+      `${n} runs: ${what}. Menu parts ignore the pincode, and only Ads uses the state` + (over ? ` - over the limit of ${meta.max_combos}, narrow it down` : ", one after another") :
       `(${what}) × ${v.states.length} state${v.states.length === 1 ? "" : "s"} × ${v.pincodes.length} pincode${v.pincodes.length === 1 ? "" : "s"} = ${n} runs` +
       (over ? ` - over the limit of ${meta.max_combos}, narrow it down` : ", one after another");
   }
@@ -886,6 +950,8 @@ let runAxes = null;   // the New run panel's l1 / l2 / state / pincode widgets
 
 function updateRunButton() {
   document.getElementById("run-btn").disabled = !runAxes || runAxes.over();
+  // only menu parts picked: scope, banner count, workers and carousels do not apply
+  if (runAxes) document.querySelector(".sidebar .panel").classList.toggle("menu-only", runAxes.read().pages.every(menuInfo));
 }
 
 async function loadMeta() {
@@ -894,7 +960,8 @@ async function loadMeta() {
     { page: document.getElementById("run-page"), l1: document.getElementById("run-l1"), l2: document.getElementById("run-l2"), state: document.getElementById("run-state"),
       pincode: document.getElementById("run-pincode"), summary: document.getElementById("run-combos") },
     { pages: ["home"], l1s: [meta.l1_options[0]], l2s: [meta.l2_options[0]], states: [meta.default_state], pincodes: [meta.default_pincode] },
-    updateRunButton);
+    updateRunButton, { menu: true });
+  updateRunButton();
 }
 
 // ---- runs ----------------------------------------------------------------
@@ -1044,7 +1111,7 @@ document.getElementById("run-btn").addEventListener("click", async () => {
     });
     if (queued) flash(`Started run 1 of ${combos}. The other ${queued} start one after another as each finishes - they'll appear under Recent runs.`);
     await loadRuns();
-    selectRun(run_id);
+    openRun(run_id);
   } catch (e) {
     alert("Could not start run: " + errText(e));
   } finally {
@@ -1089,13 +1156,14 @@ async function loadRuns() {
     el.className = "run-item" + (r.run_id === currentRunId ? " active" : "");
     const c = r.counts || {};
     // Not just the first letter: PASS/PENDING/PROCESSING all start with "P" and would collide.
-    const tally = Object.entries(c).map(([k, v]) => `${STATUS_ABBR[k] || k[0]}${v}`).join(" ");
+    const menuRun = r.kind === "menu";
+    const tally = menuRun ? (r.status === "running" ? "fetching" : `${(r.menu || {}).items || 0} items`) : Object.entries(c).map(([k, v]) => `${STATUS_ABBR[k] || k[0]}${v}`).join(" ");
     // with several states/pincodes per run, two runs can differ only by location - so say it whenever it isn't the default
     const loc = (r.state !== meta.default_state || r.pincode !== meta.default_pincode) ? ` · ${r.state} ${r.pincode}` : "";
-    el.innerHTML = `<div>${fmtTime(r.started_at)}<br><span style="color:var(--text-dim)">${escapeHtml(runWhat(r))}${loc} · ${r.scope} · ${tally}</span></div>
+    el.innerHTML = `<div>${fmtTime(r.started_at)}<br><span style="color:var(--text-dim)">${escapeHtml(runWhat(r))}${menuRun ? "" : loc + " · " + r.scope} · ${tally}</span></div>
       <span class="status status-${r.status}">${r.status}</span>
       <button class="dismiss" title="Remove from this list (keeps the run's files on disk)">&times;</button>`;
-    el.addEventListener("click", () => selectRun(r.run_id));
+    el.addEventListener("click", () => openRun(r.run_id));
     el.querySelector(".dismiss").addEventListener("click", async (e) => {
       e.stopPropagation();
       try {
@@ -1483,7 +1551,7 @@ function paintRunPicker() {
   if (!lastRuns.length) { grid.innerHTML = '<div class="empty">No runs yet - set one up on the left and hit Run now.</div>'; return; }
   grid.innerHTML = `<div class="sv-cards" style="grid-column:1/-1">${lastRuns.map(r => runCardHtml(r, { manage: true })).join("")}</div>`;
   grid.querySelectorAll(".run-card").forEach(card => {
-    const open = () => selectRun(card.dataset.run);
+    const open = () => openRun(card.dataset.run);
     card.addEventListener("click", open);
     card.addEventListener("keydown", ev => { if (ev.target === card && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); open(); } });
   });
@@ -1755,8 +1823,123 @@ async function refreshScheduler() {
   if (sv.mode === "list" || sv.mode === "detail") renderScheduler();   // never while a form is being filled in
 }
 
+
+// ---- Menu view: top / bottom navigation, ads and trending (runs that only fetch pictures and details, qa/app_menus.py) ----
+// The first row holds the four parts; picking a tile opens the next row with its sub-entries, and so on.
+const MENU_KINDS = ["top-nav", "bottom-nav", "ads", "trending"];
+const MN = { kind: null, runId: null, data: null, error: "", path: [], timer: null };      // path[depth] = the id picked in that row
+const menuRunsOf = kind => lastRuns.filter(r => r.kind === "menu" && (menuInfo(r.page) || {}).kind === kind);   // newest first, like the list
+function menuKindLabel(kind) { const p = ((meta && meta.menu_options) || []).find(x => x.kind === kind); return p ? p.label : kind; }
+function bestMenuRun(kind) { const rs = menuRunsOf(kind); return rs.find(r => r.status === "done") || rs.find(r => r.status === "running") || rs[0] || null; }
+function menuImg(it, i = 0) {
+  const f = (it.image_files || [])[i];
+  return f ? `/api/runs/${encodeURIComponent(MN.runId)}/images/${encodeURIComponent(f)}` : (it.images || [])[i] || "";
+}
+const shortLink = u => String(u).replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+
+async function loadMenuData() {
+  MN.data = null; MN.error = "";
+  const run = lastRuns.find(r => r.run_id === MN.runId);
+  if (!run || run.status === "running") return;
+  if (run.status !== "done") { MN.error = run.status === "cancelled" ? "That run was stopped before it fetched anything." : "That run failed, so there is nothing to show."; return; }
+  const id = MN.runId;
+  try { const d = await api(`/api/runs/${encodeURIComponent(id)}/menu`); if (id === MN.runId) MN.data = d; }
+  catch (e) { if (id === MN.runId) MN.error = errText(e); }
+}
+function menuTilesHtml(depth, row, kids) {
+  const picked = MN.path[depth];
+  return row.map(it => {
+    const img = menuImg(it), n = (kids.get(it.id) || []).length;
+    const label = it.title || (it.description ? `Ad, ${it.description}` : "Ad");
+    const link = it.link ? `<a class="mn-link" href="${escapeHtml(it.link)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(it.link)}">${escapeHtml(shortLink(it.link))}</a>`
+      : it.opens ? `<span class="mn-opens">${escapeHtml(it.opens)}</span>` : "";
+    return `<div class="mn-cell${it.active === false ? " off" : ""}${img && MN.kind === "ads" ? " ad" : ""}"><button type="button" class="mn-tile" data-id="${it.id}" data-depth="${depth}" aria-pressed="${picked === it.id}">
+      ${img ? `<img src="${escapeHtml(img)}" alt="">` : ""}<span class="mn-t">${escapeHtml(label)}</span>${it.description && it.title ? `<span class="mn-d">${escapeHtml(it.description)}</span>` : ""}${n ? `<span class="mn-k">${n} &rsaquo;</span>` : ""}${it.active === false ? '<span class="mn-i">inactive</span>' : ""}</button>${link}</div>`;
+  }).join("");
+}
+function menuLevelsHtml() {
+  if (!MN.data) return "";
+  const kids = new Map(), byId = new Map(MN.data.items.map(i => [i.id, i]));
+  for (const it of MN.data.items) { const k = it.parent == null ? -1 : it.parent; if (!kids.has(k)) kids.set(k, []); kids.get(k).push(it); }
+  let html = "", parent = -1;
+  for (let depth = 0; kids.get(parent); depth++) {
+    const lead = parent === -1 ? menuKindLabel(MN.kind) : (byId.get(parent).title || "Ads");
+    html += `<div class="mn-level" style="--d:${depth}"><span class="mn-lead">${escapeHtml(lead)}</span><div class="mn-tiles">${menuTilesHtml(depth, kids.get(parent), kids)}</div></div>`;
+    const picked = MN.path[depth];
+    if (picked == null || !kids.get(picked)) break;
+    parent = picked;
+  }
+  return html;
+}
+function paintMenuView() {
+  const body = byId("mn-body"); if (!body) return;
+  const finished = lastRuns.some(r => r.kind === "menu" && r.status === "done");
+  byId("mn-xlsx").disabled = !finished;
+  byId("mn-kinds").innerHTML = MENU_KINDS.map(k => {
+    const r = bestMenuRun(k);
+    const note = !r ? "Nothing fetched yet" : r.status === "running" ? "Fetching..." : r.status === "done" ? `${(r.menu || {}).items || 0} items, ${fmtTime(r.started_at)}` : "Last try failed";
+    return `<button type="button" class="mn-kind" data-kind="${k}" aria-pressed="${MN.kind === k}"><b>${escapeHtml(menuKindLabel(k))}</b><small>${escapeHtml(note)}</small></button>`;
+  }).join("");
+  const partBtn = byId("mn-part-xlsx");
+  if (!MN.kind) { byId("mn-meta").innerHTML = ""; partBtn.style.display = "none"; body.innerHTML = '<div class="empty">Pick a part above to see what the app shows there.</div>'; return; }
+  const runs = menuRunsOf(MN.kind), run = lastRuns.find(r => r.run_id === MN.runId);
+  byId("mn-meta").innerHTML = runs.length ? `<label>Showing <select id="mn-run">${runs.map(r => `<option value="${escapeHtml(r.run_id)}" ${r.run_id === MN.runId ? "selected" : ""}>${escapeHtml(fmtTime(r.started_at))} · ${escapeHtml(runWhat(r))}${r.status === "done" ? ` · ${(r.menu || {}).items || 0} items` : ` · ${escapeHtml(r.status)}`}</option>`).join("")}</select></label>` : "";
+  partBtn.style.display = run && run.status === "done" ? "" : "none";
+  if (!run) { body.innerHTML = `<div class="empty">No ${escapeHtml(menuKindLabel(MN.kind))} fetched yet. Tick it under Menu in New run, on the left, and hit Run now. It only fetches the pictures and details, nothing is checked.</div>`; return; }
+  if (run.status === "running") { body.innerHTML = '<div class="empty">Fetching it now. This fills in by itself.</div>'; return; }
+  if (MN.error) { body.innerHTML = `<div class="empty">${escapeHtml(MN.error)}</div>`; return; }
+  body.innerHTML = MN.data ? `<div class="k-${MN.kind}">${menuLevelsHtml()}</div>` : '<div class="empty">Loading.</div>';
+}
+async function selectMenuRun(runId) {
+  clearTimeout(MN.timer);
+  MN.runId = runId; MN.path = []; MN.data = null; MN.error = "";        // clear the old data first: its pictures belong to another run
+  paintMenuView(); await loadMenuData(); paintMenuView();
+  const run = lastRuns.find(r => r.run_id === runId);
+  if (run && run.status === "running") MN.timer = setTimeout(async () => { try { await loadRuns(); } catch (e) { /* next tick */ } if (document.querySelector(".main-panel").classList.contains("menu-open") && MN.runId === runId) selectMenuRun(runId); }, 3000);
+}
+function pickMenuKind(kind) {
+  MN.kind = kind; MN.path = [];
+  const run = bestMenuRun(kind);
+  if (run) selectMenuRun(run.run_id); else { clearTimeout(MN.timer); MN.runId = null; MN.data = null; MN.error = ""; paintMenuView(); }
+}
+async function openMenu(runId = null) {
+  closeScheduler();
+  const panel = document.querySelector(".main-panel");
+  panel.classList.add("menu-open"); panel.scrollTop = 0;
+  try { await loadRuns(); } catch (e) { /* the list may be a little old */ }
+  const wanted = runId ? lastRuns.find(r => r.run_id === runId) : null;
+  if (wanted && wanted.kind === "menu") MN.kind = menuInfo(wanted.page).kind;
+  const run = wanted && wanted.kind === "menu" ? wanted : (MN.kind ? bestMenuRun(MN.kind) : null);
+  if (run) await selectMenuRun(run.run_id); else paintMenuView();
+}
+function closeMenu() {
+  clearTimeout(MN.timer);
+  document.querySelector(".main-panel").classList.remove("menu-open");
+}
+byId("menu-btn").addEventListener("click", () => openMenu());
+byId("mn-close").addEventListener("click", closeMenu);
+byId("mn-start").addEventListener("click", () => { document.querySelector(".sidebar").scrollTop = 0; flash("Tick a Menu part under New run on the left, then Run now."); });
+byId("mn-xlsx").addEventListener("click", () => downloadFile("/api/menu/export.xlsx"));
+byId("mn-part-xlsx").addEventListener("click", () => { if (MN.runId) downloadFile(`/api/runs/${encodeURIComponent(MN.runId)}/export.xlsx`); });
+byId("menu-view").addEventListener("click", ev => {
+  const k = ev.target.closest(".mn-kind[data-kind]"); if (k) { pickMenuKind(k.dataset.kind); return; }
+  const t = ev.target.closest(".mn-tile[data-id]");
+  if (t) {
+    const depth = Number(t.dataset.depth), id = Number(t.dataset.id);
+    if (MN.path[depth] === id) MN.path.length = depth; else { MN.path[depth] = id; MN.path.length = depth + 1; }
+    paintMenuView();
+  }
+});
+byId("menu-view").addEventListener("change", ev => { if (ev.target.id === "mn-run") selectMenuRun(ev.target.value); });
+function downloadFile(url) {
+  const a = document.createElement("a");
+  a.href = url; a.download = "";
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
 // ---- the sub-window ----
 function openScheduler(mode, id = null, editing = null) {
+  closeMenu();
   sv = { mode, id, editing };
   if (mode === "form") {
     formExcluded = new Map(((editing && editing.excluded_sections) || []).map(x => [x.id, x.label]));
@@ -1769,6 +1952,7 @@ function openScheduler(mode, id = null, editing = null) {
 }
 
 function closeScheduler() {
+  closeMenu();
   sv.mode = "closed";
   renderToken++;
   clearTimeout(detailTimer);
@@ -1954,18 +2138,19 @@ function runCardHtml(r, opts = {}) {
   const total = Object.values(r.counts || {}).reduce((a, b) => a + b, 0);
   const took = r.finished_at ? fmtDuration(Math.max(0, Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000))) : "";
   const left = (r.excluded_sections || []).length;
+  const menu = r.kind === "menu", items = ((r.menu || {}).items) || 0;
   return `
-    <div class="card run-card ${health}" data-run="${escapeHtml(r.run_id)}" tabindex="0" role="button" title="Open this run's banners">
+    <div class="card run-card ${health}" data-run="${escapeHtml(r.run_id)}" tabindex="0" role="button" title="${menu ? "Open this run's menu" : "Open this run's banners"}">
       <div class="body">
         <div class="badge-row"><span class="carousel-label">${escapeHtml(fmtTime(r.started_at))}</span>
           <span class="result-badge ${health}">${escapeHtml(r.status.toUpperCase())}</span></div>
-        <p class="alt">${(r.page || "home") === "home" ? `<b>${escapeHtml(r.l1)}</b> / <b>${escapeHtml(r.l2)}</b>` : `<b>${escapeHtml(pageLabel(r.page))}</b>`}</p>
-        <p class="dest">${escapeHtml(r.state)} · pincode ${escapeHtml(r.pincode)}</p>
+        <p class="alt">${menu ? `<b>${escapeHtml(runWhat(r))}</b>` : (r.page || "home") === "home" ? `<b>${escapeHtml(r.l1)}</b> / <b>${escapeHtml(r.l2)}</b>` : `<b>${escapeHtml(pageLabel(r.page))}</b>`}</p>
+        ${menu ? "" : `<p class="dest">${escapeHtml(r.state)} · pincode ${escapeHtml(r.pincode)}</p>
         <div class="tally">${tallyHtml(r.counts) || '<span class="carousel-label">no results yet</span>'}</div>
-        <div>${diffHtml(r.diff)}</div>
-        <div class="tags"><span class="tag">${total} banner${total === 1 ? "" : "s"}</span>${took ? `<span class="tag">took ${took}</span>` : ""}${left ? `<span class="tag">${left} carousel${left === 1 ? "" : "s"} left out</span>` : ""}</div>
+        <div>${diffHtml(r.diff)}</div>`}
+        <div class="tags"><span class="tag">${menu ? `${items} item${items === 1 ? "" : "s"}` : `${total} banner${total === 1 ? "" : "s"}`}</span>${took ? `<span class="tag">took ${took}</span>` : ""}${left ? `<span class="tag">${left} carousel${left === 1 ? "" : "s"} left out</span>` : ""}</div>
         ${(() => {
-          const canXlsx = (opts.excel && r.status === "done") || (opts.manage && r.status !== "running" && total > 0);
+          const canXlsx = (opts.excel && r.status === "done") || (opts.manage && r.status !== "running" && (total > 0 || (menu && r.status === "done")));
           const canDelete = opts.manage && r.status !== "running";
           return canXlsx || canDelete ? `<div class="sv-actions-row">${canXlsx ? `<button type="button" class="secondary" data-xlsx="${escapeHtml(r.run_id)}" title="Save this run's results as an Excel file">Save as Excel</button>` : ""}${canDelete ? `<button type="button" class="secondary danger" data-delrun="${escapeHtml(r.run_id)}" title="Delete this run and its files for good">Delete</button>` : ""}</div>` : "";
         })()}

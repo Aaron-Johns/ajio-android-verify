@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.responses import FileResponse, StreamingResponse
 
-from qa import run_diff
+from qa import app_menus, export_menu_xlsx, run_diff
 from web import alerts, db, retention, runner
 
 log = logging.getLogger("web.api")
@@ -143,13 +143,15 @@ def _clean_pincodes(values: list[str]) -> list[str]:
     return values
 
 
-def _clean_pages(values: list[str]) -> list[str]:
+def _clean_pages(values: list[str], allow_menu: bool = True) -> list[str]:
+    """A schedule (allow_menu=False) only covers banner pages: a menu fetch has no results to compare or alert on."""
+    allowed = runner.qa_pages.RUN_PAGE_IDS if allow_menu else runner.qa_pages.PAGE_IDS
     values = _unique(values)
     if not values:
-        raise HTTPException(422, f"pick at least one page from {runner.qa_pages.PAGE_IDS}")
-    bad = [v for v in values if v not in runner.qa_pages.PAGE_IDS]
+        raise HTTPException(422, f"pick at least one page from {allowed}")
+    bad = [v for v in values if v not in allowed]
     if bad:
-        raise HTTPException(422, f"page must be one of {runner.qa_pages.PAGE_IDS} (got {bad})")
+        raise HTTPException(422, f"page must be one of {allowed} (got {bad})")
     return values
 
 
@@ -161,10 +163,10 @@ def _check_combo_count(l1s, l2s, states, pincodes, pages) -> None:
                                  f"narrow the selection")
 
 
-def _clean_axes(l1s, l2s, states, pincodes, pages=None) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
+def _clean_axes(l1s, l2s, states, pincodes, pages=None, allow_menu: bool = True) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
     """(l1s, l2s, states, pincodes, pages) checked and de-duplicated; pages left out means just home."""
     axes = (_clean_l1s(l1s), _clean_l2s(l2s), _clean_states(states), _clean_pincodes(pincodes),
-            _clean_pages(pages or [runner.qa_pages.DEFAULT_PAGE]))
+            _clean_pages(pages or [runner.qa_pages.DEFAULT_PAGE], allow_menu))
     _check_combo_count(*axes)
     return axes
 
@@ -206,6 +208,7 @@ def meta():
         "l1_options": runner.L1_OPTIONS,
         "l2_options": runner.L2_OPTIONS,
         "page_options": runner.qa_pages.PAGES,
+        "menu_options": runner.qa_pages.MENU_PAGES,
         "scopes": runner.SCOPES,
         "state_options": runner.STATE_OPTIONS,
         "notify_modes": list(run_diff.MODES),
@@ -246,6 +249,10 @@ def _run_summary(row) -> dict:
         counts[r["result"]] = counts.get(r["result"], 0) + 1
     d["counts"] = counts
     d["warnings"] = runner.load_warnings(out_dir)
+    menu = runner.qa_pages.menu_page(d["page"])
+    d["kind"] = "menu" if menu else "feed"        # a menu run holds a menu.json, not banner results (qa/app_menus.py)
+    if menu:
+        d["menu"] = app_menus.load_menu_meta(out_dir)
     if d["status"] == "running":     # counts only holds banners with a result so far; "x of n done" needs n
         d["total"] = len(runner.chosen_banners(out_dir, d["scope"], d["banner_limit"], _excluded_carousels(row),
                                                _run_excluded_sections(row)))
@@ -351,14 +358,62 @@ def export_run_xlsx(run_id: str):
         raise HTTPException(404, "unknown run_id")
     if row["status"] == "running":
         raise HTTPException(409, "run is still in progress")
+    timestamp = run_id.split("_", 1)[0]   # run_id is "<timestamp>_feedverify" (or "..._menu") - see web/runner.start_run
+    menu = runner.qa_pages.menu_page(row["page"])
+    if menu:
+        return _menu_workbook([row], f"{menu['kind']}_{row['l1']}_{timestamp}.xlsx" if menu["by_l1"] else f"{menu['kind']}_{timestamp}.xlsx")
     try:
         path = runner.export_xlsx(Path(row["out_dir"]))
     except FileNotFoundError:
         raise HTTPException(404, "no results to export for this run")
-    timestamp = run_id.split("_", 1)[0]   # run_id is "<timestamp>_feedverify" - see web/runner.start_run
     what = f"{row['l1']}_{row['l2']}" if row["page"] == runner.qa_pages.DEFAULT_PAGE else row["page"]
     return FileResponse(path, filename=f"{what}_{timestamp}.xlsx",
                         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _menu_workbook(rows: list, filename: str) -> FileResponse:
+    """One workbook for these finished menu runs (one sheet each, see qa/export_menu_xlsx.py), written next to the newest of them."""
+    entries = []
+    for row in rows:
+        menu = app_menus.load_menu(Path(row["out_dir"]))
+        if menu:
+            entries.append({"menu": menu, "dir": Path(row["out_dir"])})
+    if not entries:
+        raise HTTPException(404, "no menu data to export")
+    target = Path(rows[0]["out_dir"]) / "menu.xlsx" if len(rows) == 1 else runner.RUNS_DIR / "menu_latest.xlsx"
+    return FileResponse(export_menu_xlsx.build_workbook(entries, target), filename=filename, media_type=XLSX_TYPE)
+
+
+@app.get("/api/runs/{run_id}/menu")
+def get_run_menu(run_id: str):
+    """The items of a menu run (a flat list, each with its parent: top / bottom navigation, ads, trending), for the UIs' Menu page. Pictures are
+    served by /api/runs/{run_id}/images/{filename}."""
+    row = db.get_run(run_id)
+    if not row:
+        raise HTTPException(404, "unknown run_id")
+    if not runner.qa_pages.menu_page(row["page"]):
+        raise HTTPException(404, "this is not a menu run")
+    menu = app_menus.load_menu(Path(row["out_dir"]))
+    if menu is None:
+        raise HTTPException(404, "this menu run has no data (it is still running, or it failed or was stopped)")
+    return menu
+
+
+@app.get("/api/menu/export.xlsx")
+def export_menu_xlsx_latest():
+    """One workbook with the newest finished run of each menu kind (Top menu, Bottom menu, Sponsored ads, Trending sheets)."""
+    newest: dict[str, object] = {}
+    for row in db.list_runs(200):
+        menu = runner.qa_pages.menu_page(row["page"])
+        if menu and row["status"] == "done" and menu["kind"] not in newest and app_menus.load_menu_meta(Path(row["out_dir"])):
+            newest[menu["kind"]] = row
+    if not newest:
+        raise HTTPException(404, "no finished menu runs yet: start one from Start a check > Menu")
+    rows = [newest[k] for k in app_menus.KINDS if k in newest]
+    return _menu_workbook(rows, f"ajio_app_menus_{datetime.now().strftime('%Y%m%d')}.xlsx")
 
 
 @app.post("/api/runs/{run_id}/open-folder")
@@ -558,7 +613,7 @@ def get_schedule(schedule_id: int):
 @app.post("/api/schedules")
 def create_schedule(req: ScheduleRequest):
     _validate_scope(req.scope)
-    l1s, l2s, states, pincodes, pages = _clean_axes(req.l1s, req.l2s, req.states, req.pincodes, req.pages)
+    l1s, l2s, states, pincodes, pages = _clean_axes(req.l1s, req.l2s, req.states, req.pincodes, req.pages, allow_menu=False)
     _validate_notify_mode(req.notify_mode)
     sid = db.insert_schedule(req.name, req.interval_minutes, req.scope, req.banner_limit, req.workers,
                              l1s, l2s, req.enabled, pincode=pincodes, state=states,
@@ -597,7 +652,7 @@ def update_schedule(schedule_id: int, req: ScheduleUpdate):
         for k in _AXIS_FIELDS:
             if k in fields:
                 axes[k] = fields.pop(k)
-        cleaned = _clean_axes(axes["l1s"], axes["l2s"], axes["states"], axes["pincodes"], axes["pages"])
+        cleaned = _clean_axes(axes["l1s"], axes["l2s"], axes["states"], axes["pincodes"], axes["pages"], allow_menu=False)
         for k, values in zip(("l1s", "l2s", "states", "pincodes", "pages"), cleaned):
             fields[_AXIS_FIELDS[k]] = values
     if "start_at" in fields:
@@ -705,4 +760,14 @@ def _shutdown():
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+class NoCacheStaticFiles(StaticFiles):
+    """The UI files change with the code. Without a caching header a browser guesses how long to keep them and can go on running an old script after an update
+    (the page loads but a new button does nothing): `no-cache` lets it keep them but always ask the server first, which answers 304 when nothing changed."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", NoCacheStaticFiles(directory=STATIC_DIR, html=True), name="static")

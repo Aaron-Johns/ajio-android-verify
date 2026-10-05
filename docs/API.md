@@ -58,6 +58,8 @@ Body:
   `premium-women`, `kids-premium-page`, `menswear`, `womenswear`, `kidswear`). Optional; left out it means
   `["home"]`, so older clients behave as before. `home` expands over `l1s` × `l2s`; every other page is one run
   per state × pincode. The example above is 2 × 1 × 2 = 4 Home runs plus 2 menswear runs = 6.
+  A **menu page** (`menu-top-nav`, `menu-bottom-nav`, `menu-ads`, `menu-trending`, from `menu_options`; see *Menu runs* below) may be mixed in: it
+  is one run per `l1s` entry if its content depends on l1, otherwise one run (`menu-ads` also one per state), never per pincode or l2.
 - `l1s` (required, ≥1) — each one of `/api/meta`'s `l1_options` (only used for the `home` page).
 - `l2s` (required, ≥1) — each one of `/api/meta`'s `l2_options`.
 - `states` — Indian states used in the home-feed request's `x-location-detail` header. Default
@@ -138,6 +140,8 @@ minus any dismissed with `POST .../hide`.
   that spent them on a server/network error as `UNAVAILABLE`). Recomputed fresh on every call, not cached.
 - `warnings` — things the run flagged for a person, as plain sentences (from `warnings.json` in the run folder); empty when none. Today: "Premium cannot be loaded: ..." when AJIO kept returning the
   regular banner set for a Premium check, so the run checked that set. Both UIs show it above the banners.
+- `kind` — `"feed"` for a banner run, `"menu"` for a menu run. `menu` — for a menu run only: `{kind, l1, l2, state, pincode, fetched_at, items, with_images}` once it has
+  finished (`null` while it runs).
 - `excluded_sections` — CMS section ids left out of the run (a schedule's saved carousel exclusions, or
   the ids the UI sent). Empty when none.
 - `diff` — only for a *finished run that belongs to a schedule*, else `null`: the headline of what
@@ -299,6 +303,8 @@ Serves a file from that run's own `images/` folder (a hotspot crop, or the banne
 
 ### `GET /api/runs/{run_id}/export.xlsx` — download results as Excel
 
+(For a menu run this is the menu workbook: see *Menu runs* below.)
+
 Returns the `.xlsx` file directly (`Content-Disposition: attachment`, filename
 `{l1}_{l2}_{timestamp}.xlsx`), one row per banner with its verdict/detail columns and its actual
 banner image embedded in the row. Rebuilt fresh on every call, not cached.
@@ -330,6 +336,34 @@ Delete button on a run card in both UIs, and unlike `hide` below it cannot be un
 UI-only bookkeeping — the run's folder on disk is never touched. Returns `{"hidden": true}`.
 
 **Retention:** the server deletes runs (row and folder) that started more than 30 days ago, two minutes after each start and then daily (`web/retention.py`). Runs that are `running` are skipped. There is no endpoint for it; a deleted run answers 404, and alerts about it keep existing with `run_id: null`.
+
+## Menu runs
+
+The parts of the app that are not banner pages: the **top navigation**, the **bottom navigation**, the **sponsored ads** and **trending**. A run of one only fetches its data and
+pictures (nothing is checked, so there is no verdict, no retry and no diff), and it is started like any run: `POST /api/runs` with a menu id in `pages`
+(`menu-top-nav`, `menu-bottom-nav`, `menu-ads`, `menu-trending`). Its run folder is `runs/<stamp>_<kind>_menu/` with `menu.json`, `menu_meta.json` and `images/`
+(`qa/app_menus.py`). What each one depends on (tested 2026-10-05): the top navigation on the shopper segment `l1` (premium gets a different menu, nonpremium and nontransacted the
+same one, `l2` made no difference); the bottom navigation on nothing; trending on `l1` (premium and nontransacted get the same ten, nonpremium none); the ads on the segment, state and
+login status, one request per ad slot to AJIO's ad partner (OnlineSales; a third party's server, asked only what the app asks). Pincode is an input of none of them.
+Schedules cannot cover menu pages (`422`).
+
+### `GET /api/runs/{run_id}/menu` — a menu run's items
+
+```json
+{"kind": "top-nav", "l1": "premium", "l2": "unisex", "state": "KARNATAKA", "fetched_at": "2026-10-05T12:00:00+00:00",
+ "items": [{"id": 1, "parent": 0, "level": 1, "title": "Footwear", "link": "https://www.ajio.com/shop/footwear", "opens": "web page",
+            "description": "", "alt": "", "images": ["https://assets.../footwear.png"], "image_files": ["3fa1c0b2d9e4.png"], "active": true, "audience": "all_user"}]}
+```
+A flat list, parents before children (`parent` null at the top row, `level` 0 there), so a client can drill down. `images` are the picture addresses, `image_files` the copies saved in the run's
+`images/` folder (same order; `null` where a download failed), served by `GET /api/runs/{run_id}/images/{filename}`. `link` is a web address or empty; `opens` says what the entry opens
+(`web page`, `app screen: /sections/...`, `in-app search: ...`, or a count of ads for an ad slot). Ads: each slot is a top-row entry, its ads are its children (no title, `description` says
+`rank N`). `404` for a run that isn't a menu run, or has no data yet (running, failed or stopped).
+
+### `GET /api/menu/export.xlsx` and the menu run's `export.xlsx`
+
+`GET /api/menu/export.xlsx` is one workbook with the newest finished run of each menu kind: sheets **Top menu**, **Bottom menu**, **Sponsored ads** and **Trending** (those that have a run) plus a
+*Read me*; `404` if none has finished. `GET /api/runs/{run_id}/export.xlsx` on a menu run gives just that run's sheet. One row per item: the picture embedded as a thumbnail and clickable (it opens the
+item's link), then Alt text (only where the app supplies one), Title (the text shown under the picture), Link, what it opens, and for the menus the path and audience. (`qa/export_menu_xlsx.py`, xlsxwriter.)
 
 ## Per-banner actions
 
@@ -550,6 +584,12 @@ server). Returns `{"alert_id": ..., "delivery": "ok" | "skipped: ..." | "error: 
     {"id": "womenswear", "label": "Non prem women", "tier": "standard"},
     {"id": "kidswear", "label": "Non prem kids", "tier": "standard"}
   ],
+  "menu_options": [
+    {"id": "menu-top-nav", "label": "Top Nav", "tier": "menu", "kind": "top-nav", "by_l1": true, "by_state": false},
+    {"id": "menu-bottom-nav", "label": "Bottom Nav", "tier": "menu", "kind": "bottom-nav", "by_l1": false, "by_state": false},
+    {"id": "menu-ads", "label": "Ads", "tier": "menu", "kind": "ads", "by_l1": true, "by_state": true},
+    {"id": "menu-trending", "label": "Trending", "tier": "menu", "kind": "trending", "by_l1": true, "by_state": false}
+  ],
   "scopes": ["hero", "all"],
   "state_options": ["ANDHRA PRADESH", "ANDHRA_PRADESH", "...", "WEST BENGAL", "WEST_BENGAL"],
   "notify_modes": ["off", "new_fails", "any_change"],
@@ -560,6 +600,7 @@ server). Returns `{"alert_id": ..., "delivery": "ok" | "skipped: ..." | "error: 
   "default_pincode": "560029"
 }
 ```
+`page_options` are the banner pages; `menu_options` are the menu parts (a run may name either, a schedule only banner pages).
 Call this first — it's the source of truth for every valid `l1`/`l2`/`scope`/`workers`/`state`/
 `notify_mode` value and for the combination cap. `state_options` has 35 entries (28 Indian states; the
 7 multi-word ones appear twice, once space-separated and once underscore-separated) — truncated above,

@@ -91,6 +91,23 @@ wall-clock time, but it's also more simultaneous load on Gemini and on AJIO's li
 if you start seeing more `listing_fetch_failed`/`vision_failed` transient errors than usual, dropping
 this back down is worth trying before assuming something else is wrong.
 
+## Menu: what the app shows besides its banners
+
+Under the page buttons in *New run* (and in the manager's *Start a check*) there is a **Menu** row: **Top Nav**, **Bottom Nav**, **Ads** and **Trending**. They are ticked like pages and can be mixed with them.
+A menu part is not checked against anything: its run only fetches the pictures and details (a few seconds). What each depends on: Top Nav on the l1 segment (premium gets a different menu; nonpremium and
+nontransacted the same one), Bottom Nav on nothing, Trending on l1 (nonpremium has none), Ads on l1, the state and the login status. So l1 stays usable when a menu part is ticked, l2 greys out (it is for Home),
+the pincode is ignored, and scope, banner count, banners at a time and the carousel picker are dimmed when only menu parts are ticked. The run count line says how many runs that makes.
+Menu parts cannot be put on a schedule.
+
+The **Menu** page (a **Menu** button in the classic header, **Menu** in the manager's rail) shows what was fetched. The first line holds the four parts, each with its item count and when it was fetched.
+Click one and a second line opens with its entries; click an entry that has sub-entries (it shows a number and an arrow) and its sub-entries open in the next line, and so on (Top Nav: All / Men / Women / Kids,
+then Men's categories, then theirs; Bottom Nav: Home / Right Now / Clearance / Categories / Account and the whole category tree under Categories; Ads: the three ad slots, then each slot's ad pictures; Trending:
+the hashtags). Click an open entry again to close the lines below it. An entry that has a picture shows it with its title under it; one without shows just the text. Under each entry is its link (opens in a new tab),
+or what it opens inside the app when it has no web address; faded entries are marked inactive. If you have fetched a part more than once (for example Top Nav for premium and for nontransacted), a *Showing* list picks which fetch.
+**Download Excel** gives one workbook with the newest fetch of each part (sheets Top menu, Bottom menu, Sponsored ads, Trending): one row per item with the picture, its alt text (only where the app gives one), its title
+(the text under the picture) and its link in separate columns; clicking the picture opens the link. **This part as Excel** gives just the one you are looking at. A menu run's card (All runs, Recent runs) shows
+its item count, opens the Menu page and has **Save as Excel** and **Delete** like any other run.
+
 ## The carousel picker
 
 Click **"Load carousels to choose which to run"** before hitting Run now to preview the feed without
@@ -444,9 +461,9 @@ example, not data.
 The newer face of the same tool, at `http://127.0.0.1:8000/manager/` (three static files: `web/static/manager/index.html`, `style.css`, `app.js`; no restart or
 install; it calls the same `/api/...` endpoints, so a run started in one view shows in the other). The **Manager view** button in the original's header and **Classic view** in
 the manager's left rail switch between the two. Light / dark follows the system and shares the original's toggle setting. Links are `#/`-based, so the back button and bookmarks work:
-`#/runs`, `#/runs/<run id>`, `#/schedules`, `#/schedules/new`, `#/schedules/<id>`, `#/schedules/<id>/edit`.
+`#/runs`, `#/runs/<run id>`, `#/menu`, `#/menu/<run id>` (a menu run's address `#/runs/<id>` redirects there), `#/schedules`, `#/schedules/new`, `#/schedules/<id>`, `#/schedules/<id>/edit`.
 
-- **Layout.** A left rail (Runs / Schedules with an unread-alert badge, *Start a check*, the recent runs each with a small result bar and an x that removes it from the list, then three square
+- **Layout.** A left rail (Runs / Menu / Schedules with an unread-alert badge, *Start a check*, the recent runs each with a small result bar and an x that removes it from the list, then three square
   tiles in one row: Switch theme, Clear cache and Classic view) and the main area. Type is Bricolage Grotesque throughout.
 - **All runs.** Every run as a card: page, when, cohort (l1/l2 for Home), state and pincode (states in capitals, as AJIO spells them), result bar and tally, what changed since the schedule's
   previous run, how long it took, carousels left out, and two buttons on a run that isn't running: **Save as Excel** and **Delete** (asks first, then removes the run and its folder for good; the x in the rail only hides it).

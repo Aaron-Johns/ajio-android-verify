@@ -1730,3 +1730,41 @@ User asked for four things (the live run check, repo files for other people, the
 - **Repo files for other people:** `.env.example` (key names only) and `.github/workflows/tests.yml` (windows-latest, Python 3.14, `pip install -r requirements.txt`, `pytest tests`). The tests were run on a copy of only the tracked files: 597 pass, so they need nothing local.
   The workflow itself has not run on GitHub; its YAML parses. README section 3 points to `.env.example`. No LICENSE file was added (the user's call).
 - Not done / not verified: nothing committed or pushed yet.
+
+### Menu: top nav, bottom nav, ads and trending as runs, a Menu page and an Excel download (2026-10-05)
+User: add these as options in the UI, a new "Menu" section under Pages with Top Nav / Bottom Nav / Ads / Trending; a run of one only gets the images with the details; show them as cascading lines (the four parts first, click one and its
+sub-categories open in the next line, and so on), pictures where there are any, otherwise the text; as a separate Menu page; with a Download Excel in the format of the workbook built the same day.
+- **Found first (from the recorded app session of 25 Sep and live requests):** top / bottom navigation = Fynd `content/v2.0/navigations?slug=` (same signing as the home feed, with the `user-groups` header); trending = `recommendation/v1/trends?type=Cohort&value=<l1>&store=ajio`
+  (no token); ads = AJIO's ad partner OnlineSales (`ajio-ba.o-s.io/v2/bsda/pt`), one request per ad slot (`_sections_ajio` Home screen, `_myaccount_banner`, `_orderlisting_banner`). Cohort dependence tested live: top menu differs for l1 premium (48 vs 52 entries), not for l2 or
+  nonpremium vs nontransacted (9 l1 x l2 combinations); bottom menu identical for all; trending premium = nontransacted, nonpremium empty. Ads take segment, state, login status (not pincode); not tested for variation (it is a third party's server).
+- **Built:** `qa/app_menus.py` (fetch, flatten into a parent/child list, save pictures, CLI `python -m qa.app_menus --kind ... --l1 ...`, run folder `<stamp>_<kind>_menu`), `qa/pages.py` `MENU_PAGES` (ids `menu-*`, `by_l1` / `by_state`), `web/runner.py` (expand_combos for menu parts: per l1 only where it matters,
+  per state only for Ads, never pincode or l2; start_run launches the menu fetcher; run folders `_menu`; orphan adoption knows `qa.app_menus`), `web/api.py` (`menu_options` in meta, `kind` / `menu` on the run summary, `GET /api/runs/{id}/menu`, `GET /api/menu/export.xlsx`, menu runs on the existing export route,
+  menu pages refused in schedules), `qa/export_menu_xlsx.py` (xlsxwriter, added to requirements.txt: openpyxl cannot make a picture a link). Both UIs: a Menu row in the page picker, run counts that understand menu parts, a Menu page with the cascading rows, menu runs in the lists and cards opening the Menu page, Download Excel.
+- **Tests:** 622 pass (new: tests/test_app_menus.py 12, test_export_menu_xlsx.py 2, test_menu_runs.py 11). Live in headless Edge against the running server with real menu runs started from each UI's own start control: dialog / sidebar (Menu row, run count line, l1 usable and l2 greyed, banner controls dimmed), the four runs
+  finishing (about 20 s), all four parts drill down (Top Nav 2 rows, Bottom Nav > Categories, Ads > slot > ad pictures, Trending 10 hashtags), pictures show, links open in a new tab, the workbook has the four sheets with pictures, runs show in the lists, no console errors, no sideways scroll at phone width (manager). A made-up run checked 4 rows deep in both UIs and the
+  run-address redirect. Found and fixed: switching parts briefly showed the old part's data against the new run (image 404s).
+- **Not verified:** the Excel opened in real Excel (checked by reading it back with openpyxl: sheets, rows, pictures, picture links), the classic Menu page at phone width, ads for other states or segments (one live fetch each for the default), real GPU / large-screen layouts.
+- **Decision to confirm:** the ads come from a third party (OnlineSales); the tool asks it what the app asks (3 GETs per Ads run, no impression or click tracking calls). Easy to drop if unwanted: remove the `ads` kind.
+
+### Menu did nothing in the user's manager view: a stale cached script (2026-10-05)
+User: clicking Menu in the manager view did nothing and Start a check had no way to make a menu check. The server log showed their browser re-checking `/manager/` (304) but never asking for `app.js` / `style.css` again, so it kept running the copy from before the
+Menu change (no Menu page, no Menu pills): static files were served with no caching header, so the browser guessed how long to keep them. Fix: the static mount now sends `Cache-Control: no-cache` (`NoCacheStaticFiles` in web/api.py; the browser always asks, and gets a 304 for an unchanged
+file), and the manager's script and stylesheet links got a one-time `?v=20261005`, so the page that is already cached still fetches the new files. Test added (headers and the 304). Verified in a fresh browser: the Menu link opens the page with the four parts and the dialog has the Menu row.
+Server restarted. Not reproduced with the user's actual browser profile.
+
+### Core zip and the script converter (2026-10-05)
+User: a zip of only the core files needed to run (no runs, no APKs or decompiled source), a Python file that converts .bat / .js / .ps1 to .txt and back when clicked, and the zip already converted.
+`convert_scripts.py` (repo root): one click does whichever way applies (any `.bat.txt` / `.js.txt` / `.ps1.txt` present: restore them; otherwise turn the scripts into .txt); only ever adds or strips ".txt", never overwrites, skips .venv / .git / __pycache__ / runs / logs.
+`scripts/make_core_zip.py` builds `ajio-feed-verify-core.zip` (default: Desktop): qa/, web/ (no database, no web/requirements.txt), run.bat, requirements.txt, .env.example, convert_scripts.py, config/ajio_brand_names_deduped.json, inputs/brand_aliases.draft.json (read on every run),
+scripts/start_server.ps1 and autostart.ps1, plus a START_HERE.txt; the 4 scripts are packed as .txt. 45 files, 230 KB. No .env (secrets), runs, cache, tests, notes, APKs. Checked: no value from .env appears in any file of the zip; unpacked to a scratch folder, the converter round trip is byte-identical,
+a virtual environment's own scripts are left alone, and the unpacked copy served the API and both UIs on another port and ran real Trending and Top Nav runs and the Excel download (13/13), then the scratch copy was deleted.
+Not verified: a fresh machine's pip install of requirements.txt (the existing venv was used), double-clicking the converter from Explorer (its prompt only waits when a keyboard is attached).
+
+### Classic view: bigger Menu buttons (2026-10-05)
+User: the Menu buttons in the default (classic) view were far too small. Cause: to fit all four in one line of the narrow sidebar I had set them to 10 px text with almost no padding. Now the Menu parts are a block of their own (label, then buttons two per line, 14 px text, 140 x 40 px, wrapping), so nothing needs shrinking.
+Checked in headless Edge: all four ticked, nothing clipped. CSS only (no restart). The manager view's Menu pills were already normal size.
+
+### Menu page: an ad's tile is as wide as its picture (2026-10-05)
+User: in the Menu page's Ads, make the options fit the width of the ads, in both views. The ad picture (capped at 280 px) was wider than its tile (capped at 230 px) and spilled out of it, and the long link wrapped far past the tile. Now an ad tile (a tile with a picture, in the Ads part only: class `ad` on the cell) is 300 px wide, the picture
+fills it edge to edge, the title sits under it and the link is cut to two lines inside that width (the full address stays in the hover text). Ad slots and the other parts are unchanged. Measured in headless Edge in both views on an existing 10-ad run: tile 300 px, picture 298 px (the borders), picture inside its tile, links inside the width, no console errors.
+CSS and one class in each view's script (no restart). The core zip built earlier does not have this or the larger classic Menu buttons: rebuild it with `scripts/make_core_zip.py`.

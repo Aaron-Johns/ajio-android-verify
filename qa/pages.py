@@ -18,3 +18,21 @@ PAGES = [
     {"id": "kidswear", "label": "Non prem kids", "tier": "standard"},
 ]
 PAGE_IDS = [p["id"] for p in PAGES]
+
+# The menu parts of the app (not banner pages: nothing is verified, a run just fetches them with their pictures; qa/app_menus.py).
+# `kind` is the qa.app_menus kind. `by_l1`: the content depends on the shopper segment (l1), so the run is repeated per l1 chosen
+# (l2 never mattered in the menu tests, so it stays neutral). `by_state`: depends on the state (only the ads send one).
+# Pincode is not an input of any of them.
+MENU_PAGES = [
+    {"id": "menu-top-nav", "label": "Top Nav", "tier": "menu", "kind": "top-nav", "by_l1": True, "by_state": False},
+    {"id": "menu-bottom-nav", "label": "Bottom Nav", "tier": "menu", "kind": "bottom-nav", "by_l1": False, "by_state": False},
+    {"id": "menu-ads", "label": "Ads", "tier": "menu", "kind": "ads", "by_l1": True, "by_state": True},
+    {"id": "menu-trending", "label": "Trending", "tier": "menu", "kind": "trending", "by_l1": True, "by_state": False},
+]
+MENU_IDS = [p["id"] for p in MENU_PAGES]
+RUN_PAGE_IDS = PAGE_IDS + MENU_IDS      # what a run (not a schedule) may be started for
+
+
+def menu_page(page: str) -> dict | None:
+    """The MENU_PAGES entry for a page id, or None for a banner page."""
+    return next((p for p in MENU_PAGES if p["id"] == page), None)

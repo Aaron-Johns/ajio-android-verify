@@ -104,6 +104,9 @@ newer **manager view** at **http://127.0.0.1:8000/manager/** (runs as a contact 
 says-and-shows detail panel, schedules and alerts). Switch with the black glowing **Manager view** button in the original's
 header, or **Classic view** in the manager's left rail. A run started in one shows up in the other.
 
+Besides banners, the app's **menus, ads and trending** can be fetched too: tick **Top Nav / Bottom Nav / Ads / Trending** under *Menu* in *New run*, then browse them on the **Menu** page
+(first line: the four parts; click one and its sub-entries open in the next line) and download them as an Excel sheet with the pictures. Nothing is checked, it only fetches the pictures and details.
+
 Optionally you can tell the tool what each banner is *supposed* to lead to: `python -m qa.reference_template` writes a fill-in
 `config/reference.csv` from your latest run, and every later check compares the banners you filled in against it (see
 "Reference data" in `docs/UI_GUIDE.md`).

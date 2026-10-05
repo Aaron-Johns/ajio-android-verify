@@ -75,10 +75,13 @@ def build_user_groups(l1: str, l2: str) -> str:
     return f"l1:{l1}|l2:p_null,false,{l2},noasp"
 
 
+RUN_DIR_SUFFIXES = ("_feedverify", "_menu")    # qa.feed_verify's run folders, and qa.app_menus's
+
+
 def _existing_run_dirs() -> set[str]:
     if not RUNS_DIR.exists():
         return set()
-    return {p.name for p in RUNS_DIR.iterdir() if p.is_dir() and p.name.endswith("_feedverify")}
+    return {p.name for p in RUNS_DIR.iterdir() if p.is_dir() and p.name.endswith(RUN_DIR_SUFFIXES)}
 
 
 DEFAULT_STATE = "KARNATAKA"
@@ -98,14 +101,21 @@ NEUTRAL_L1, NEUTRAL_L2 = "nontransacted", "unisex"
 def expand_combos(l1s, l2s, states, pincodes, pages=(qa_pages.DEFAULT_PAGE,)) -> list[dict]:
     """Every page x l1 x l2 x state x pincode combination, in that order (page, then l1, vary slowest), duplicates
     dropped. Each combination is one run: qa/feed_verify takes exactly one cohort per process. A page other than
-    home ignores l1/l2 (see NEUTRAL_L1), so it contributes one combination per state x pincode, not l1 x l2."""
+    home ignores l1/l2 (see NEUTRAL_L1), so it contributes one combination per state x pincode, not l1 x l2.
+    A menu page (qa_pages.MENU_PAGES) varies by l1 only if its content does, by state only if it has one, and never by pincode or l2."""
     def uniq(values):
         return list(dict.fromkeys(values))
     out = []
     for page in uniq(pages):
-        cohorts = itertools.product(uniq(l1s), uniq(l2s)) if page == qa_pages.DEFAULT_PAGE else [(NEUTRAL_L1, NEUTRAL_L2)]
+        menu = qa_pages.menu_page(page)
+        if menu:
+            cohorts = [(a, NEUTRAL_L2) for a in uniq(l1s)] if menu["by_l1"] else [(NEUTRAL_L1, NEUTRAL_L2)]
+            where_states, where_pins = (uniq(states) if menu["by_state"] else uniq(states)[:1]), uniq(pincodes)[:1]
+        else:
+            cohorts = itertools.product(uniq(l1s), uniq(l2s)) if page == qa_pages.DEFAULT_PAGE else [(NEUTRAL_L1, NEUTRAL_L2)]
+            where_states, where_pins = uniq(states), uniq(pincodes)
         out += [{"page": page, "l1": a, "l2": b, "state": c, "pincode": d}
-                for (a, b), c, d in itertools.product(cohorts, uniq(states), uniq(pincodes))]
+                for (a, b), c, d in itertools.product(cohorts, where_states, where_pins)]
     return out
 
 
@@ -119,6 +129,9 @@ def combos_of(row) -> list[dict]:
 
 def combo_label(combo: dict) -> str:
     page = combo.get("page", qa_pages.DEFAULT_PAGE)
+    menu = qa_pages.menu_page(page)
+    if menu:
+        return " · ".join([menu["label"], *([combo["l1"]] if menu["by_l1"] else []), *([combo["state"]] if menu["by_state"] else [])])
     what = f"{combo['l1']}/{combo['l2']}" if page == qa_pages.DEFAULT_PAGE else next(p["label"] for p in qa_pages.PAGES if p["id"] == page)
     return f"{what} · {combo['state']} · {combo['pincode']}"
 
@@ -130,7 +143,7 @@ def start_run(l1: str, l2: str, scope: str, banner_limit: int | None, workers: i
               page: str = qa_pages.DEFAULT_PAGE) -> str:
     if l1 not in L1_OPTIONS or l2 not in L2_OPTIONS:
         raise ValueError(f"unknown l1/l2: {l1}/{l2}")
-    if page not in qa_pages.PAGE_IDS:
+    if page not in qa_pages.RUN_PAGE_IDS:
         raise ValueError(f"unknown page: {page}")
     if scope not in SCOPES:
         raise ValueError(f"unknown scope: {scope}")
@@ -139,14 +152,18 @@ def start_run(l1: str, l2: str, scope: str, banner_limit: int | None, workers: i
     before = _existing_run_dirs()
     env = {**os.environ, "AJIO_USER_GROUPS": build_user_groups(l1, l2), "AJIO_PINCODE": pincode,
           "AJIO_LOCATION_DETAIL": build_location_detail(state, pincode)}
-    cmd = [sys.executable, "-m", "qa.feed_verify", "--scope", scope, "--workers", str(workers)]
-    if banner_limit:
+    menu = qa_pages.menu_page(page)
+    if menu:       # a menu run only fetches the data and its pictures: scope, limit, workers and carousels do not apply
+        cmd = [sys.executable, "-m", "qa.app_menus", "--kind", menu["kind"], "--l1", l1, "--l2", l2, "--state", state, "--pincode", pincode]
+    else:
+        cmd = [sys.executable, "-m", "qa.feed_verify", "--scope", scope, "--workers", str(workers)]
+    if banner_limit and not menu:
         cmd += ["--limit", str(banner_limit)]
-    for section_index in excluded_carousels or []:
+    for section_index in (excluded_carousels or []) if not menu else []:
         cmd += ["--exclude-carousel", str(section_index)]
-    for section in excluded_sections or []:
+    for section in (excluded_sections or []) if not menu else []:
         cmd += ["--exclude-section", section]
-    if page != qa_pages.DEFAULT_PAGE:
+    if page != qa_pages.DEFAULT_PAGE and not menu:
         cmd += ["--page", page]
     if l1 == "premium" and page == qa_pages.DEFAULT_PAGE:
         # FINDINGS 6.10: which asset set (standard/premium) comes back for l1:premium varies
@@ -344,13 +361,13 @@ _adopted: dict[str, int] = {}   # run_id -> pid of a still-running run process t
 
 def _run_process(pid: int | None, started_at: str) -> psutil.Process | None:
     """The live process behind a "running" DB row, or None if that run's process is gone. Windows reuses
-    pids, so a live pid alone proves nothing: it must also be a qa.feed_verify process that was created
+    pids, so a live pid alone proves nothing: it must also be a qa.feed_verify / qa.app_menus process that was created
     when the run was (start_run launches the subprocess before it stamps started_at, never after)."""
     if not pid:
         return None
     try:
         proc = psutil.Process(pid)
-        if proc.status() == psutil.STATUS_ZOMBIE or "qa.feed_verify" not in " ".join(proc.cmdline()):
+        if proc.status() == psutil.STATUS_ZOMBIE or not any(m in " ".join(proc.cmdline()) for m in ("qa.feed_verify", "qa.app_menus")):
             return None
         started, created = datetime.fromisoformat(started_at).timestamp(), proc.create_time()
     except (psutil.Error, ValueError):
@@ -360,8 +377,8 @@ def _run_process(pid: int | None, started_at: str) -> psutil.Process | None:
 
 def _outcome_from_disk(row) -> tuple[str, str | None]:
     """How a run whose process we didn't watch actually ended. The exit code is unknown, but
-    qa/feed_verify writes results.json only once the whole run finished - so its presence means done."""
-    if (Path(row["out_dir"]) / "results.json").exists():
+    qa/feed_verify writes results.json (qa/app_menus, menu.json) only once the whole run finished - so its presence means done."""
+    if any((Path(row["out_dir"]) / f).exists() for f in ("results.json", "menu.json")):
         return "done", None
     return "failed", ("The server restarted while this run was in progress and the run's process is gone. "
                      "Anything checked before that is still in the run folder.")

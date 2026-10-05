@@ -52,10 +52,12 @@ const dayKey = (iso) => new Date(iso).toLocaleDateString(undefined, { weekday: "
 const fmtInterval = (m) => m % 1440 === 0 ? `${m / 1440}d` : m % 60 === 0 ? `${m / 60}h` : `${m}m`;
 const intervalParts = (m) => m % 1440 === 0 ? { n: m / 1440, unit: 1440 } : m % 60 === 0 ? { n: m / 60, unit: 60 } : { n: m, unit: 1 };
 const fmtDuration = (s) => s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round(s % 3600 / 60)}m` : s >= 60 ? `${Math.round(s / 60)} min` : `${s}s`;
-const pageLabel = (id) => S.meta?.page_options.find((p) => p.id === id)?.label || id;
+const menuInfo = (id) => S.meta?.menu_options.find((p) => p.id === id);     // a menu part (Top Nav, Bottom Nav, Ads, Trending), or undefined
+const pageLabel = (id) => S.meta?.page_options.find((p) => p.id === id)?.label || menuInfo(id)?.label || id;
 const pagesOf = (s) => s.pages && s.pages.length ? s.pages : ["home"];
-const cohortOf = (r) => (r.page || "home") === "home" ? `${pretty(r.l1)}, ${r.l2}` : `${stateName(r.state)} ${r.pincode}`;
+const cohortOf = (r) => menuInfo(r.page) ? ([menuInfo(r.page).by_l1 ? pretty(r.l1) : "", menuInfo(r.page).by_state ? stateName(r.state) : ""].filter(Boolean).join(", ") || "All shoppers") : (r.page || "home") === "home" ? `${pretty(r.l1)}, ${r.l2}` : `${stateName(r.state)} ${r.pincode}`;
 const verdictOf = (b) => b.result || "PENDING";
+const runHash = (r) => (r.kind === "menu" ? "#/menu/" : "#/runs/") + encodeURIComponent(r.run_id);     // a menu run opens on the Menu page, not the banner sheet
 const hiddenText = (reason) => (reason || "").split(", ").filter(Boolean).map((x) => HIDDEN_LABEL[x] || x).join(", ");
 const imgSrc = (runId, b) => {
   const name = String(b.image_file || "").split(/[\\/]/).pop();
@@ -120,6 +122,7 @@ const tagsHtml = (vals, max = 5) => vals.slice(0, max).map((v) => `<span class="
 const kvHtml = (rows) => `<dl class="kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`;
 const diffText = (d) => !d ? "" : d.baseline ? `<span class="hint">${esc(d.summary)}</span>` : `<span ${d.counts?.newly_failing ? 'style="color:var(--fail);font-weight:600"' : ""}>${esc(d.summary)}</span>`;
 function runStatusText(r) {
+  if (r.kind === "menu") return r.status === "running" ? "Fetching" : r.status === "cancelled" ? "Cancelled" : r.status === "failed" ? "Failed to run" : plural(r.menu?.items || 0, "item");
   const c = r.counts || {}, done = Object.values(c).reduce((a, n) => a + n, 0);
   if (r.status === "running") return `Running, ${done}${r.total ? " of " + r.total : ""} done`;
   if (r.status === "cancelled") return "Cancelled";
@@ -158,7 +161,7 @@ function paintRail() {
   box.innerHTML = html;
 }
 function setNav(which) {
-  for (const [id, key] of [["nav-runs", "runs"], ["nav-schedules", "schedules"]]) {
+  for (const [id, key] of [["nav-runs", "runs"], ["nav-menu", "menu"], ["nav-schedules", "schedules"]]) {
     if (key === which) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
   }
 }
@@ -180,7 +183,7 @@ function route() {
   closeStream(); clearTimeout(S.timer); closeDrawer(true); S.token++;
   $("rail").dataset.open = "false";
   const [a, b, c] = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
-  setNav(a === "schedules" ? "schedules" : "runs");
+  setNav(a === "schedules" ? "schedules" : a === "menu" ? "menu" : "runs");
   paintRail();
   if (a === "schedules") {
     if (b === "new") return viewSchedForm(null);
@@ -188,6 +191,7 @@ function route() {
     if (b) return viewSchedDetail(Number(b));
     return viewSchedList();
   }
+  if (a === "menu") return viewMenu(b ? decodeURIComponent(b) : null);
   if (a === "runs" && b) return viewRun(decodeURIComponent(b));
   return viewRuns();
 }
@@ -207,16 +211,16 @@ function runCardHtml(r, { excel, manage } = {}) {
   const total = Object.values(r.counts || {}).reduce((a, n) => a + n, 0);
   const took = r.finished_at ? fmtDuration(Math.max(0, Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000))) : "";
   const left = (r.excluded_sections || []).length;
-  const home = (r.page || "home") === "home";
-  return `<div class="card click ${runHealth(r)}" data-run="${esc(r.run_id)}" tabindex="0" role="button" title="Open this run's banners">
+  const home = (r.page || "home") === "home", menu = r.kind === "menu";
+  return `<div class="card click ${runHealth(r)}" data-run="${esc(r.run_id)}" tabindex="0" role="button" title="${menu ? "Open this run's menu" : "Open this run's banners"}">
     <h4>${esc(pageLabel(r.page))}<span class="status ${esc(r.status)}">${esc(pretty(r.status))}</span></h4>
     <p class="quiet">${esc(fmtTime(r.started_at))}</p>
-    <p>${home ? `${esc(pretty(r.l1))}, ${esc(r.l2)}<br>` : ""}${esc(stateName(r.state))}, pincode ${esc(r.pincode)}</p>
-    ${barHtml(r.counts)}${tallyHtml(r.counts) || '<p class="quiet">No results yet</p>'}
-    <p>${diffText(r.diff)}</p>
-    <div class="tags"><span class="tag">${plural(total, "banner")}</span>${took ? `<span class="tag">took ${took}</span>` : ""}${left ? `<span class="tag">${plural(left, "carousel")} left out</span>` : ""}</div>
+    <p>${menu ? esc(cohortOf(r)) : `${home ? `${esc(pretty(r.l1))}, ${esc(r.l2)}<br>` : ""}${esc(stateName(r.state))}, pincode ${esc(r.pincode)}`}</p>
+    ${menu ? "" : `${barHtml(r.counts)}${tallyHtml(r.counts) || '<p class="quiet">No results yet</p>'}
+    <p>${diffText(r.diff)}</p>`}
+    <div class="tags"><span class="tag">${menu ? plural(r.menu?.items || 0, "item") : plural(total, "banner")}</span>${took ? `<span class="tag">took ${took}</span>` : ""}${left ? `<span class="tag">${plural(left, "carousel")} left out</span>` : ""}</div>
     ${(() => {
-      const canXlsx = (excel && r.status === "done") || (manage && r.status !== "running" && total > 0), canDelete = manage && r.status !== "running";
+      const canXlsx = (excel && r.status === "done") || (manage && r.status !== "running" && (total > 0 || (menu && r.status === "done"))), canDelete = manage && r.status !== "running";
       return canXlsx || canDelete ? `<div class="acts">${canXlsx ? `<button class="ghost sm" type="button" data-xlsx="${esc(r.run_id)}" title="Save this run's results as an Excel file">Save as Excel</button>` : ""}${canDelete ? `<button class="ghost sm danger" type="button" data-delrun="${esc(r.run_id)}" title="Delete this run and its files for good">Delete</button>` : ""}</div>` : "";
     })()}</div>`;
 }
@@ -327,6 +331,7 @@ async function viewRun(runId) {
   try { [run, banners] = await Promise.all([api(`/api/runs/${encodeURIComponent(runId)}`), api(`/api/runs/${encodeURIComponent(runId)}/banners`)]); }
   catch (e) { if (token === S.token) view(`<div class="page"><div class="empty"><b>Can't open this run</b>${esc(e.message)}. It may have been deleted (runs are removed after 30 days).<br><a href="#/runs">Back to all runs</a></div></div>`); return; }
   if (token !== S.token) return;
+  if (run.kind === "menu") { go("#/menu/" + encodeURIComponent(runId)); return; }
   S.run = run; S.banners = banners; paintRail();
   const sched = run.schedule_id != null ? S.scheds.find((s) => s.id === run.schedule_id) : null;
   const home = (run.page || "home") === "home";
@@ -545,12 +550,13 @@ function makePincodeInput(root, initial, changed) {
   paint();
   return { get() { commit(); return chosen.slice(); }, pending: () => input.value.trim(), set(v) { chosen = [...new Set(v)]; input.value = ""; say(""); paint(); } };
 }
-function makeAxes(root, init, onChange) {
+function makeAxes(root, init, onChange, opts = {}) {
   const m = S.meta;
   const st = { pages: new Set(init.pages || ["home"]), l1: new Set(init.l1s || [m.l1_options[0]]), l2: new Set(init.l2s || [m.l2_options[0]]) };
   root.innerHTML = `<div class="axis"><span class="lab">Pages</span><div class="pills" data-ax="pages"></div></div>
-    <div class="axis" data-hl><span class="lab">l1 segment (Home only)</span><div class="pills" data-ax="l1"></div></div>
-    <div class="axis" data-hl><span class="lab">l2 segment (Home only)</span><div class="pills" data-ax="l2"></div></div>
+    ${opts.menu ? '<div class="axis"><span class="lab">Menu <span class="quiet">(only fetches the pictures and details, nothing is checked)</span></span><div class="pills" data-ax="menu"></div></div>' : ""}
+    <div class="axis" data-hl="l1"><span class="lab">l1 segment (Home, and the menu parts that change with it)</span><div class="pills" data-ax="l1"></div></div>
+    <div class="axis" data-hl="l2"><span class="lab">l2 segment (Home only)</span><div class="pills" data-ax="l2"></div></div>
     <div class="form" style="margin-top:0;grid-template-columns:1fr 1fr"><div><span class="lab">State</span><div data-ax="state"></div></div><div><span class="lab">Pincode</span><div data-ax="pin"></div></div></div>
     <p class="combo" data-ax="combo"></p>`;
   const q = (k) => root.querySelector(`[data-ax="${k}"]`);
@@ -561,18 +567,24 @@ function makeAxes(root, init, onChange) {
     makePills(q("pages"), m.page_options.map((p) => ({ id: p.id, label: p.label, tier: p.tier })), st.pages, { cls: (it) => it.tier === "premium" ? "prem" : it.tier === "home" ? "home" : "" }, changed),
     makePills(q("l1"), m.l1_options.map((x) => ({ id: x, label: pretty(x) })), st.l1, {}, changed),
     makePills(q("l2"), m.l2_options.map((x) => ({ id: x, label: pretty(x) })), st.l2, {}, changed),
+    ...(opts.menu ? [makePills(q("menu"), m.menu_options.map((p) => ({ id: p.id, label: p.label })), st.pages, { cls: () => "menu" }, changed)] : []),
   ];
   function read() {
     const s = state.get(), p = pin.get();
     return { pages: [...st.pages], l1s: [...st.l1], l2s: [...st.l2], states: s.length ? s : [m.default_state], pincodes: p.length ? p : [m.default_pincode] };
   }
-  const count = () => { const v = read(); return v.pages.reduce((n, p) => n + (p === "home" ? v.l1s.length * v.l2s.length : 1), 0) * v.states.length * v.pincodes.length; };
+  // the same arithmetic as the server's expand_combos: a menu part never varies by pincode or l2, by l1 only if its content does, by state only for Ads
+  const count = () => {
+    const v = read();
+    return v.pages.reduce((n, p) => { const mi = menuInfo(p); return n + (mi ? (mi.by_l1 ? v.l1s.length : 1) * (mi.by_state ? v.states.length : 1) : (p === "home" ? v.l1s.length * v.l2s.length : 1) * v.states.length * v.pincodes.length); }, 0);
+  };
   function paint() {
-    const v = read(), n = count(), homeOn = v.pages.includes("home"), others = v.pages.length - (homeOn ? 1 : 0), over = n > m.max_combos;
-    root.querySelectorAll("[data-hl]").forEach((el) => { el.classList.toggle("dimmed", !homeOn); el.querySelectorAll(".pill").forEach((p) => { p.disabled = !homeOn; }); });
-    const what = [homeOn ? `Home: ${v.l1s.length} l1 × ${v.l2s.length} l2` : null, others ? plural(others, "other page") : null].filter(Boolean).join(" + ");
+    const v = read(), n = count(), homeOn = v.pages.includes("home"), menuN = v.pages.filter((p) => menuInfo(p)).length, others = v.pages.length - (homeOn ? 1 : 0) - menuN, over = n > m.max_combos;
+    const l1On = homeOn || v.pages.some((p) => menuInfo(p)?.by_l1);
+    root.querySelectorAll("[data-hl]").forEach((el) => { const on = el.dataset.hl === "l1" ? l1On : homeOn; el.classList.toggle("dimmed", !on); el.querySelectorAll(".pill").forEach((p) => { p.disabled = !on; }); });
+    const what = [homeOn ? `Home: ${v.l1s.length} l1 × ${v.l2s.length} l2` : null, others ? plural(others, "other page") : null, menuN ? plural(menuN, "menu part") : null].filter(Boolean).join(" + ");
     const c = q("combo"); c.className = "combo" + (over ? " over" : "");
-    c.textContent = n === 1 ? "1 run." : `(${what}) × ${plural(v.states.length, "state")} × ${plural(v.pincodes.length, "pincode")} = ${n} runs` + (over ? `. That is over the limit of ${m.max_combos}; narrow it down.` : ", one after another.");
+    c.textContent = n === 1 ? "1 run." : menuN ? `${n} runs: ${what}. Menu parts ignore the pincode, and only Ads uses the state` + (over ? `. That is over the limit of ${m.max_combos}; narrow it down.` : ", one after another.") : `(${what}) × ${plural(v.states.length, "state")} × ${plural(v.pincodes.length, "pincode")} = ${n} runs` + (over ? `. That is over the limit of ${m.max_combos}; narrow it down.` : ", one after another.");
   }
   paint();
   return {
@@ -584,7 +596,9 @@ function makeAxes(root, init, onChange) {
 /* carousel checklist from /api/feed-preview, keyed by the CMS section id */
 async function loadCarouselList(axes, scope) {
   const { pages, l1s, l2s } = axes.read();
-  const rows = await api(`/api/feed-preview?page=${encodeURIComponent(pages[0])}&l1=${encodeURIComponent(l1s[0])}&l2=${encodeURIComponent(l2s[0])}&scope=${encodeURIComponent(scope)}`);
+  const feedPage = pages.find((pg) => !menuInfo(pg));
+  if (!feedPage) throw new Error("carousels belong to banner pages, and only menu parts are picked");
+  const rows = await api(`/api/feed-preview?page=${encodeURIComponent(feedPage)}&l1=${encodeURIComponent(l1s[0])}&l2=${encodeURIComponent(l2s[0])}&scope=${encodeURIComponent(scope)}`);
   const groups = new Map();
   for (const b of rows) { if (!groups.has(b.section_id)) groups.set(b.section_id, { id: b.section_id, count: 0, image: b.image_url, label: b.label || b.alt_text || `Carousel ${b.section_index}` }); groups.get(b.section_id).count++; }
   return [...groups.values()];
@@ -618,7 +632,7 @@ function dlgSettings() {
 function dlgMsg(t, err) { $("d-msg").textContent = t; $("d-msg").className = "msg" + (err ? " err" : ""); }
 function openDlg() {
   if (!S.dlgAxes) {
-    S.dlgAxes = makeAxes($("dlg-axes"), { pages: ["home"], l1s: [S.meta.l1_options[0]], l2s: [S.meta.l2_options[0]], states: [S.meta.default_state], pincodes: [S.meta.default_pincode] }, () => { S.dlgCars = null; S.dlgExcluded.clear(); carouselChecklist($("d-cars"), null, S.dlgExcluded, D.labels); $("d-go").disabled = S.dlgAxes.over(); });
+    S.dlgAxes = makeAxes($("dlg-axes"), { pages: ["home"], l1s: [S.meta.l1_options[0]], l2s: [S.meta.l2_options[0]], states: [S.meta.default_state], pincodes: [S.meta.default_pincode] }, () => { S.dlgCars = null; S.dlgExcluded.clear(); carouselChecklist($("d-cars"), null, S.dlgExcluded, D.labels); $("d-go").disabled = S.dlgAxes.over(); $("dlg-form").classList.toggle("menu-only", S.dlgAxes.read().pages.every((pg) => menuInfo(pg))); }, { menu: true });
     $("d-scope").innerHTML = S.meta.scopes.map((s) => `<option value="${esc(s)}">${esc(s === "hero" ? "Hero carousels only" : s === "all" ? "Every banner on the feed" : s)}</option>`).join("");
     $("d-workers").max = S.meta.max_workers;
     carouselChecklist($("d-cars"), null, S.dlgExcluded, D.labels);
@@ -629,8 +643,8 @@ async function dlgLoadCars() {
   const btn = $("d-load-car"); btn.disabled = true; btn.textContent = "Loading";
   try {
     S.dlgCars = await loadCarouselList(S.dlgAxes, $("d-scope").value);
-    const first = S.dlgAxes.read();
-    $("d-car-hint").textContent = `Showing ${first.pages[0] === "home" ? pretty(first.l1s[0]) + ", " + first.l2s[0] : pageLabel(first.pages[0])} (the first of your selection).`;
+    const first = S.dlgAxes.read(), fp = first.pages.find((pg) => !menuInfo(pg));
+    $("d-car-hint").textContent = `Showing ${fp === "home" ? pretty(first.l1s[0]) + ", " + first.l2s[0] : pageLabel(fp)} (the first of your selection).`;
     carouselChecklist($("d-cars"), S.dlgCars, S.dlgExcluded, D.labels);
   } catch (e) { toast("Couldn't load the carousels: " + e.message, true); }
   finally { btn.disabled = false; btn.textContent = "Load carousels to choose which to run"; }
@@ -644,7 +658,7 @@ async function dlgStart(ev) {
     const { run_id, combos, queued } = await post("/api/runs", dlgSettings());
     $("dlg").close();
     if (queued) toast(`Started run 1 of ${combos}. The other ${queued} start one after another as each finishes.`);
-    await loadRuns(); go(`#/runs/${encodeURIComponent(run_id)}`);
+    await loadRuns(); const started = S.runs.find((r) => r.run_id === run_id); go(started ? runHash(started) : `#/runs/${encodeURIComponent(run_id)}`);
   } catch (e) { dlgMsg(e.message, true); $("d-go").disabled = false; }
 }
 
@@ -865,6 +879,114 @@ async function viewSchedForm(id) {
   };
 }
 
+
+/* =====================================================================
+   Menu: top / bottom navigation, ads and trending. Runs of these only fetch the pictures and details (qa/app_menus.py).
+   The first row holds the four parts; picking a tile opens the next row with its sub-entries, and so on.
+   ===================================================================== */
+const MENU_KINDS = ["top-nav", "bottom-nav", "ads", "trending"];
+const M = { kind: null, runId: null, data: null, error: "", path: [] };       // path[depth] = the id picked in that row
+const menuRuns = (kind) => S.runs.filter((r) => r.kind === "menu" && menuInfo(r.page)?.kind === kind);      // newest first, like the list
+const menuKindLabel = (kind) => S.meta.menu_options.find((p) => p.kind === kind)?.label || kind;
+const bestMenuRun = (kind) => { const rs = menuRuns(kind); return rs.find((r) => r.status === "done") || rs.find((r) => r.status === "running") || rs[0] || null; };
+const menuImg = (it, i = 0) => {
+  const f = (it.image_files || [])[i];
+  return f ? `${API}/api/runs/${encodeURIComponent(M.runId)}/images/${encodeURIComponent(f)}` : (it.images || [])[i] || "";
+};
+const shortLink = (u) => String(u).replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+
+async function loadMenuData() {
+  M.data = null; M.error = "";
+  const run = S.runs.find((r) => r.run_id === M.runId);
+  if (!run || run.status === "running") return;
+  if (run.status !== "done") { M.error = run.status === "cancelled" ? "That run was stopped before it fetched anything." : "That run failed, so there is nothing to show."; return; }
+  const id = M.runId;
+  try { const d = await api(`/api/runs/${encodeURIComponent(id)}/menu`); if (id === M.runId) M.data = d; }
+  catch (e) { if (id === M.runId) M.error = e.message; }
+}
+function menuTiles(depth, row, kids, byId) {
+  const picked = M.path[depth];
+  return row.map((it) => {
+    const img = menuImg(it), n = (kids.get(it.id) || []).length;
+    const label = it.title || (it.description ? `Ad, ${it.description}` : "Ad");
+    const link = it.link ? `<a class="mlink" href="${esc(it.link)}" target="_blank" rel="noopener noreferrer" title="${esc(it.link)}">${esc(shortLink(it.link))}</a>`
+      : it.opens ? `<span class="mopens">${esc(it.opens)}</span>` : "";
+    return `<div class="mcell${it.active === false ? " off" : ""}${img && M.kind === "ads" ? " ad" : ""}"><button type="button" class="mtile${img ? " pic" : ""}" data-id="${it.id}" data-depth="${depth}" aria-pressed="${picked === it.id}">
+      ${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}<span class="mt">${esc(label)}</span>${it.description && it.title ? `<span class="md">${esc(it.description)}</span>` : ""}${n ? `<span class="mk">${n} &rsaquo;</span>` : ""}${it.active === false ? '<span class="mi">inactive</span>' : ""}</button>${link}</div>`;
+  }).join("");
+}
+function menuLevelsHtml() {
+  if (!M.data) return "";
+  const kids = new Map(), byId = new Map(M.data.items.map((i) => [i.id, i]));
+  for (const it of M.data.items) { const k = it.parent ?? -1; if (!kids.has(k)) kids.set(k, []); kids.get(k).push(it); }
+  let html = "", parent = -1;
+  for (let depth = 0; kids.get(parent); depth++) {
+    const lead = parent === -1 ? menuKindLabel(M.kind) : (byId.get(parent).title || "Ads");
+    html += `<div class="mlevel" style="--d:${depth}"><span class="mlead">${esc(lead)}</span><div class="mtiles">${menuTiles(depth, kids.get(parent), kids, byId)}</div></div>`;
+    const picked = M.path[depth];
+    if (picked == null || !kids.get(picked)) break;
+    parent = picked;
+  }
+  return html;
+}
+function paintMenu() {
+  const box = $("m-body"); if (!box) return;
+  const finished = S.runs.some((r) => r.kind === "menu" && r.status === "done");
+  const xl = $("m-xlsx"); xl.setAttribute("aria-disabled", String(!finished)); xl.title = finished ? "One workbook with the newest fetch of each part" : "Nothing fetched yet";
+  $("m-kinds").innerHTML = MENU_KINDS.map((k) => {
+    const r = bestMenuRun(k), note = !r ? "Nothing fetched yet" : r.status === "running" ? "Fetching..." : r.status === "done" ? `${plural(r.menu?.items || 0, "item")}, ${fmtTime(r.started_at)}` : "Last try failed";
+    return `<button type="button" class="mkind" data-kind="${k}" aria-pressed="${M.kind === k}"><b>${esc(menuKindLabel(k))}</b><small>${esc(note)}</small></button>`;
+  }).join("");
+  if (!M.kind) { $("m-meta").innerHTML = ""; box.innerHTML = '<p class="hint">Pick a part above to see what the app shows there.</p>'; return; }
+  const runs = menuRuns(M.kind), run = S.runs.find((r) => r.run_id === M.runId);
+  $("m-meta").innerHTML = runs.length ? `<label class="mrun">Showing <select id="m-run">${runs.map((r) => `<option value="${esc(r.run_id)}" ${r.run_id === M.runId ? "selected" : ""}>${esc(fmtTime(r.started_at))}, ${esc(cohortOf(r))}${r.status === "done" ? `, ${plural(r.menu?.items || 0, "item")}` : `, ${esc(r.status)}`}</option>`).join("")}</select></label>
+    ${run && run.status === "done" ? `<a class="ghost sm" href="${API}/api/runs/${encodeURIComponent(run.run_id)}/export.xlsx" download>This part as Excel</a>` : ""}` : "";
+  if (!run) {
+    box.innerHTML = `<div class="empty"><b>No ${esc(menuKindLabel(M.kind))} yet</b>Start a check and tick ${esc(menuKindLabel(M.kind))} under Menu. It only fetches the pictures and details, nothing is checked.<br><button type="button" class="ghost" id="m-start">Start a check</button></div>`; return;
+  }
+  if (run.status === "running") { box.innerHTML = '<p class="hint">Fetching it now. This page fills in by itself.</p>'; return; }
+  if (M.error) { box.innerHTML = `<div class="empty"><b>Nothing to show</b>${esc(M.error)}</div>`; return; }
+  box.innerHTML = M.data ? `<div class="mlevels k-${M.kind}">${menuLevelsHtml()}</div>` : '<p class="hint">Loading.</p>';
+}
+async function selectMenuRun(runId) {
+  M.runId = runId; M.path = []; M.data = null; M.error = "";        // clear the old data first: its pictures belong to another run
+  paintMenu(); await loadMenuData(); paintMenu();
+  const run = S.runs.find((r) => r.run_id === runId);
+  if (run) history.replaceState(null, "", "#/menu/" + encodeURIComponent(runId));        // no hashchange, so the page is not rebuilt
+  if (run && run.status === "running") S.timer = setTimeout(async () => { try { await loadRuns(); } catch (e) { /* next tick */ } if (S.viewName === "menu" && M.runId === runId) selectMenuRun(runId); }, 3000);
+}
+function pickMenuKind(kind) {
+  clearTimeout(S.timer); M.kind = kind; M.path = [];
+  const run = bestMenuRun(kind);
+  if (run) selectMenuRun(run.run_id); else { M.runId = null; M.data = null; M.error = ""; paintMenu(); }
+}
+function pickMenuRun(runId) { clearTimeout(S.timer); selectMenuRun(runId); }
+function pickMenuTile(depth, id) {
+  if (M.path[depth] === id) M.path.length = depth; else { M.path[depth] = id; M.path.length = depth + 1; }
+  paintMenu();
+}
+async function viewMenu(runId) {
+  S.viewName = "menu"; S.run = null;
+  const token = S.token;
+  view(`<div class="page menu-page"><div class="page-head"><h2>Menu</h2><span class="sub">What the app shows apart from its banners: the two menus, the ads and what is trending.</span>
+    <span class="acts"><a class="ghost" id="m-xlsx" href="${API}/api/menu/export.xlsx" download>Download Excel</a><button type="button" class="ghost" id="m-start">Start a check</button></span></div>
+    <div class="mrow" id="m-kinds" role="group" aria-label="Menu parts"></div><div class="mmeta" id="m-meta"></div><div id="m-body"></div></div>`);
+  try { await loadRuns(); } catch (e) { toast("Couldn't load the runs: " + e.message, true); }
+  if (token !== S.token) return;
+  const wanted = runId ? S.runs.find((r) => r.run_id === runId) : null;
+  if (wanted && wanted.kind === "menu") M.kind = menuInfo(wanted.page).kind;
+  const run = wanted && wanted.kind === "menu" ? wanted : (M.kind ? bestMenuRun(M.kind) : null);
+  if (run) await selectMenuRun(run.run_id); else paintMenu();
+}
+// opens "Start a check" with one menu part ticked and Home unticked
+function openMenuDialog(kind) {
+  openDlg();
+  const pid = S.meta.menu_options.find((p) => p.kind === kind)?.id;
+  const root = $("dlg-axes"), pressed = (k) => root.querySelector(`.pill[data-k="${k}"]`)?.getAttribute("aria-pressed") === "true";
+  if (pid && !pressed(pid)) root.querySelector(`.pill[data-k="${pid}"]`)?.click();
+  if (pid && pressed("home")) root.querySelector('.pill[data-k="home"]')?.click();
+}
+
 /* =====================================================================
    Wiring
    ===================================================================== */
@@ -874,14 +996,18 @@ document.addEventListener("click", (e) => {
   const hide = t.closest("[data-hide]");
   if (hide) { e.stopPropagation(); const id = hide.dataset.hide; api(`/api/runs/${encodeURIComponent(id)}/hide`, { method: "POST" }).then(async () => { await loadRuns(); if (S.run && S.run.run_id === id) go("#/runs"); }).catch(fail("Couldn't remove it")); return; }
   const railRun = t.closest(".run[data-run]");
-  if (railRun) { go(`#/runs/${encodeURIComponent(railRun.dataset.run)}`); return; }
+  if (railRun) { const r = S.runs.find((x) => x.run_id === railRun.dataset.run); go(r ? runHash(r) : `#/runs/${encodeURIComponent(railRun.dataset.run)}`); return; }
   // run cards and excel buttons
   const xl = t.closest("[data-xlsx]");
   if (xl) { e.stopPropagation(); download(xl.dataset.xlsx); return; }
   const del = t.closest("[data-delrun]");
   if (del) { e.stopPropagation(); deleteRun(del.dataset.delrun); return; }
   const rc = t.closest(".card[data-run]");
-  if (rc) { go(`#/runs/${encodeURIComponent(rc.dataset.run)}`); return; }
+  if (rc) { const r = S.runs.find((x) => x.run_id === rc.dataset.run); go(r ? runHash(r) : `#/runs/${encodeURIComponent(rc.dataset.run)}`); return; }
+  // menu page
+  const mk = t.closest(".mkind[data-kind]"); if (mk) { pickMenuKind(mk.dataset.kind); return; }
+  const mt = t.closest(".mtile[data-id]"); if (mt) { pickMenuTile(Number(mt.dataset.depth), Number(mt.dataset.id)); return; }
+  if (t.closest("#m-start")) { openMenuDialog(M.kind); return; }
   // schedule cards
   const sc = t.closest(".card[data-sched]");
   if (sc) {
@@ -922,6 +1048,7 @@ document.addEventListener("click", (e) => {
   if (t.closest("#new-check")) { openDlg(); return; }
 });
 document.addEventListener("input", (e) => {
+  if (e.target.id === "m-run") { pickMenuRun(e.target.value); return; }
   if (e.target.id === "carousel") { S.carousel = e.target.value; paintSheet(); $("clear-filters").hidden = !(S.filter.size || S.carousel); }
   else if (e.target.id === "q") { S.q = e.target.value.trim().toLowerCase(); paintSheet(); }
   else if (e.target.id === "show-hidden") { S.showHidden = e.target.checked; paintVerdict(false); paintSheet(); paintRunNote(); }

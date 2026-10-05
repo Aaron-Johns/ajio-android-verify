@@ -51,6 +51,7 @@ qa/
   listing_client.py        search-edge listing API (no auth, app-identity headers); luxe.ajio.com links use store=luxe
   feed_verify.py           THE pipeline + CLI: shared retry queue, activity log, cross-run cache, shown_result()
   banner_cache.py run_diff.py export_xlsx.py asset_set.py envfile.py
+  app_menus.py export_menu_xlsx.py               the Menu pages (top / bottom navigation, ads, trending): fetch + pictures, and their Excel (4)
   spotcheck/               vision.py (Gemma + shared pacer), hero.py (hero-slide picker, retrying vision call), filters.py (gender/brand rules)
 web/                       FastAPI + APScheduler + SQLite (web/app.sqlite3, gitignored). api.py runner.py db.py alerts.py notify.py
   static/index.html        classic UI at /   (the default; do not replace it)
@@ -112,6 +113,7 @@ that must pass exactly), `image_segmentation_2.py` (origin of the Gemma prompt/p
 - **UI:** finished runs are blue, running purple, cancelled grey, a run that itself failed red. UNAVAILABLE never counts as
   "needs a look" and never raises an alert. The manager view (rebuilt 2026-09-30) has no logo mark; its name is the words "Banner proof desk".
 - **Retention [D] (2026-09-30):** runs older than 30 days (`started_at`) are deleted, row and `runs/<id>` folder, by a job in `web/api.py` (2 min after each server start, then every 24 h; `web/retention.py`, `RETENTION_DAYS`). Never a `running` run; alerts about it are kept with `run_id` NULL; stray `runs/<stamp>*` folders with no row go by their name's timestamp; loose files in `runs/` stay. Anything that keeps a run's data past 30 days must export it first. A run can also be deleted by hand: `DELETE /api/runs/{id}` (`retention.delete_run`), the Delete button on a run card in the overall runs view of both UIs (next to Save as Excel); refused while it is running; unlike Hide (the x), it removes the folder.
+- **Menu [D] (2026-10-05):** four more "pages" that are not banner pages: Top Nav, Bottom Nav, Ads, Trending (`qa/pages.py` `MENU_PAGES`, ids `menu-*`; `qa/app_menus.py`). A run of one only fetches the data and its pictures into `runs/<stamp>_<kind>_menu/` (`menu.json`, `images/`), nothing is verified. Started from the same Pages axis (a Menu row under the pages) in both UIs; a Menu page (both UIs) shows them as cascading rows (click one to open the next); Download Excel (`qa/export_menu_xlsx.py`, xlsxwriter, picture clickable, alt text / title / link in their own columns). Tested 2026-10-05: the top menu differs for l1 premium (48 entries) vs nonpremium/nontransacted (52), l2 does not matter; the bottom menu does not vary; trending takes l1 (premium = nontransacted, nonpremium empty); ads take segment, state and login status and come from AJIO's ad partner OnlineSales (`ajio-ba.o-s.io`, a third party: one GET per ad slot, as the app does). Pincode is no input of any of them. Menu pages are never scheduled.
 - **Not tracked on purpose:** Gemma token usage (the user declined).
 
 ## 5. Destination resolution and brand matching [D] (Phase 4)
