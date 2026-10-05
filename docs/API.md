@@ -73,7 +73,7 @@ Body:
 - `banner_limit` — `null`/omitted for everything in scope, or an integer ≥1 to cap it (first N in feed
   order).
 - `workers` — 1 to `/api/meta`'s `max_workers` (currently 10). Default 3. Gemma requests are paced to
-  `GEMMA_CALLS_PER_MINUTE` (default 6) across all workers and all runs on the machine (a shared lock file), so
+  `GEMMA_CALLS_PER_MINUTE` (default 7) across all workers and all runs on the machine (a shared lock file), so
   more workers only means more of them waiting their turn, not more requests.
 - `excluded_carousels` — list of `section_index` ints to drop entirely from this run. Get real
   section indexes from `GET /api/feed-preview` first if you want to use this. A section index is

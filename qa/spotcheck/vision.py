@@ -32,10 +32,10 @@ TIMEOUT_MS = 180_000  # [A] per-HTTP-call cap (files.upload, interactions.create
                       # a tighter cap would cut off working-but-slow calls, not just genuine hangs
                       # (an actual observed hang ran ~960s/16min, so this still catches that easily)
 
-CALLS_PER_MINUTE = 6   # [A] cap on Gemma requests (every try counts), whatever the worker count. Sized to the account's
-                       # 16K tokens/min: a banner call sends 2,150 input tokens (the reply's own usage, 2026-10-05: prompt 1,061 + image
-                       # 1,089, the same at any picture size; count_tokens says 258 for the image and is wrong) plus ~115 reply tokens
-                       # and 150-850 thinking tokens, so ~7 a minute is the input ceiling; 6 leaves headroom (9 was tried and is over). Override with GEMMA_CALLS_PER_MINUTE (0 = no limit).
+CALLS_PER_MINUTE = 7   # [A] cap on Gemma requests (every try counts), whatever the worker count. Sized to the account's
+                       # 16K tokens/min: a banner call sends ~1,770 input tokens (the reply's own usage, 2026-10-05: prompt 681 + image
+                       # 1,089, the same at any picture size; count_tokens says 258 for the image and is wrong) plus ~100 reply tokens
+                       # and ~420 thinking tokens, so ~9 a minute would be the input ceiling; 7 (~12.4K) leaves the same headroom 6 had with the old, longer prompt (9 with it was over). Override with GEMMA_CALLS_PER_MINUTE (0 = no limit).
 
 
 PACER_STATE = Path(__file__).resolve().parents[1] / ".cache" / "gemma_pacer.json"   # qa/.cache/ (gitignored)
@@ -176,140 +176,34 @@ def _wait_for_turn() -> None:
         note(last["text"])
 
 
+# Shortened 2026-10-05 from the ported prompt (1,061 tokens) to 681 tokens with the same output fields minus `clothing_seen` (nothing read it).
+# Compared on 14 saved banners, old prompt twice vs new: same deal / audience (13 of 14) / "& more" / spelling / verification reads, brands within the
+# old prompt's own run-to-run noise; ~20% fewer tokens a call (input 2,153 -> 1,773, thinking ~590 -> 418). The original is in git history.
 PROMPT = """
-Analyze this ecommerce fashion banner carefully.
+Analyze this ecommerce fashion banner carefully. Return ONLY valid JSON.
 
-Return ONLY valid JSON.
+1. brands_mentioned
+List every clothing/fashion brand on the banner: a visibly written name, a wordmark, or a recognizable graphical logo (a logo with no readable text counts). A banner can promote several brands: a short name in its own distinct, title- or wordmark-like styling counts even if it might be a collection or product-line name, and even if a different, more prominent logo is also shown. Do not keep only the most prominent one: a downstream check reconciles this list with the product listing, so omitting a real brand is far worse than listing an extra candidate. Generic promotional text (SALE, SHOP NOW, NEW, OFFER, COLLECTION, OFF, BUY NOW) is not a brand.
 
-Identify the following:
+2. deal_offered
+The promotional offer shown, keeping the important numbers and meaning (e.g. "40% OFF", "UP TO 50% OFF", "BUY 2 GET 1 FREE", "MIN 40% OFF"). Do not invent a deal if none is clearly visible.
 
-1. CLOTHING SEEN
+3. spelling_errors
+Misspelled words in the visible text (brand names excluded), each with its correction, e.g. "SUMER SALE" -> {"word": "sumer", "correction": "summer"}. Do not flag brand names or stylized wordmarks, intentional stylization (e.g. "SHOPPN'"), or non-English words. Empty list if there are none.
 
-List every clearly visible clothing or fashion item.
+4. target_gender
+Who the banner promotes products for, from explicit text ("Men's", "Women's", "Boys", "Girls", "Infants") and, failing that, the clothing/models shown. Exactly one of:
+"men" (men's/boys' only), "women" (women's/girls' only), "boys" (specifically boys, not men), "girls" (specifically girls, not women), "infants" (babies/toddlers), "men_and_women" (clearly both together, or a brand/store-wide banner), "girls_and_boys" (kids-wide, no adult products), "unclear" (cannot confidently tell, or fits no category). Do not guess a category just to avoid "unclear".
 
-Examples:
-- t-shirt
-- shirt
-- jeans
-- trousers
-- jacket
-- dress
-- hoodie
-- sneakers
-- shoes
-- bag
+5. more_brands_than_named
+true only if the banner's own text says there are more brands beyond those named ("& more", "and more", "+ more", "many more brands"); otherwise false. Do not guess.
 
-Do not invent items that are not clearly visible.
+6. verification_required
+true if you cannot confidently determine the brand(s) or the deal; then "verification" must be exactly "User verification required", otherwise "". Do not guess just to avoid verification.
 
-2. BRANDS MENTIONED
-
-Identify every clothing/fashion brand represented in the banner.
-
-A brand counts if:
-
-- its name is visibly written
-- its wordmark is visible
-- its recognizable graphical logo is visible
-
-Graphical logos count even when they contain no readable text.
-
-A banner can promote more than one brand or label at once. If a short name (one or two words) is
-shown in its own distinct, title- or wordmark-like styling - not as part of a marketing sentence -
-list it as a brand even if you suspect it might instead be a collection or product-line name, and
-even if a different, more prominent logo also appears on the same banner. Do not pick only the most
-prominent name and drop the rest - a downstream check reconciles this list against the actual product
-listing, so it is far worse to omit a real brand than to list an extra candidate.
-
-Do NOT classify generic promotional text as brands.
-
-Examples of generic text:
-- SALE
-- SHOP NOW
-- NEW
-- OFFER
-- COLLECTION
-- OFF
-- BUY NOW
-
-3. DEAL OFFERED
-
-Extract the promotional offer shown in the banner.
-
-Preserve important numbers and meaning.
-
-Examples:
-- 40% OFF
-- UP TO 50% OFF
-- BUY 2 GET 1 FREE
-- MIN 40% OFF
-
-Do not invent a deal if none is clearly visible.
-
-4. SPELLING ERRORS
-
-Check all visible text in the banner (brand names excluded) for spelling errors.
-
-List every misspelled word you find, along with the corrected spelling.
-
-Examples of what counts:
-- "SUMER SALE" -> "sumer" is misspelled ("summer")
-- "COLLCTION" -> "collction" is misspelled ("collection")
-
-Do not flag:
-- Brand names or stylized brand wordmarks
-- Intentional stylization (e.g. "SHOPPN'" as a deliberate style choice)
-- Non-English words
-
-If no spelling errors are visible, return an empty list.
-
-5. TARGET GENDER
-
-Decide who this banner is promoting products for, using explicit text (e.g. "Men's", "Women's",
-"Boys", "Girls", "Infants") and, failing that, the clothing/models shown.
-
-Return exactly one of:
-- "men" (men's/boys' products only - no women's or girls' items shown or implied)
-- "women" (women's/girls' products only - no men's or boys' items shown or implied)
-- "boys" (specifically boys, not men)
-- "girls" (specifically girls, not women)
-- "infants" (babies/toddlers)
-- "men_and_women" (clearly for both men and women together, e.g. a mixed shot, or a brand/store-wide banner)
-- "girls_and_boys" (clearly for both girls and boys together, a kids-wide banner, with no adult men's/women's products)
-- "unclear" (cannot confidently tell, or it does not cleanly fit any category above)
-
-Do not guess a specific category just to avoid "unclear".
-
-6. OPEN-ENDED BRAND LIST
-
-Check whether the banner's own text says there are more brands beyond the ones named - phrases
-like "& more", "and more", "+ more", "many more brands".
-
-Return true if such a phrase is visible on the banner. Return false if the named brand(s) appear
-to be the complete list, or if no brands are mentioned at all.
-
-Do not guess; only return true if the phrase is actually visible.
-
-7. VERIFICATION
-
-If you cannot confidently determine the brand(s), OR you cannot confidently determine
-the deal offered, verification is required.
-
-In that situation:
-
-"verification_required" must be true
-
-and:
-
-"verification" must contain exactly:
-
-"User verification required"
-
-Do not guess information simply to avoid verification.
-
-Return EXACTLY this structure:
+Return EXACTLY this structure and nothing outside the JSON:
 
 {
-  "clothing_seen": [],
   "brands_mentioned": [],
   "deal_offered": "",
   "spelling_errors": [
@@ -320,8 +214,6 @@ Return EXACTLY this structure:
   "verification_required": false,
   "verification": ""
 }
-
-Do not add explanations outside the JSON.
 
 Do not invent information.
 """

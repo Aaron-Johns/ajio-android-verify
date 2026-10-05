@@ -1,73 +1,20 @@
-"""The vision port: the four fixes from CLAUDE.md section 10, plus prompt fidelity."""
-import re
+"""The vision port: the four fixes from CLAUDE.md section 10, plus what the prompt must still ask for."""
+import json
 from pathlib import Path
 
 import pytest
 
 from qa.spotcheck import vision
 
-ORIGINAL = Path(__file__).resolve().parent.parent / "inputs" / "image_segmentation_2.py"
-
-
-# The only intentional deviations from the ported original: two new numbered sections (inserted
-# before the original's final "VERIFICATION" section, which is renumbered to make room), two new
-# JSON fields (added for the gender-audience and open-ended-brand-list rules), and one paragraph
-# inserted into section 2 telling the model not to drop an ambiguous but plausible brand name just
-# because a more prominent brand/logo is also on the banner - a real miss seen live (a banner's
-# prominent "FYRE ROSE" logo caused the model to talk itself out of also listing "Leia", reasoning
-# it was "likely a collection name", even though nothing ruled that out - AJIO Feed Verify §user
-# rules, none of this in the original script). The test below checks that undoing exactly these
-# edits reconstructs the original verbatim.
-_GENDER_SECTION = '''5. TARGET GENDER
-
-Decide who this banner is promoting products for, using explicit text (e.g. "Men's", "Women's",
-"Boys", "Girls", "Infants") and, failing that, the clothing/models shown.
-
-Return exactly one of:
-- "men" (men's/boys' products only - no women's or girls' items shown or implied)
-- "women" (women's/girls' products only - no men's or boys' items shown or implied)
-- "boys" (specifically boys, not men)
-- "girls" (specifically girls, not women)
-- "infants" (babies/toddlers)
-- "men_and_women" (clearly for both men and women together, e.g. a mixed shot, or a brand/store-wide banner)
-- "girls_and_boys" (clearly for both girls and boys together, a kids-wide banner, with no adult men's/women's products)
-- "unclear" (cannot confidently tell, or it does not cleanly fit any category above)
-
-Do not guess a specific category just to avoid "unclear".
-
-'''
-_BRAND_LIST_SECTION = '''6. OPEN-ENDED BRAND LIST
-
-Check whether the banner's own text says there are more brands beyond the ones named - phrases
-like "& more", "and more", "+ more", "many more brands".
-
-Return true if such a phrase is visible on the banner. Return false if the named brand(s) appear
-to be the complete list, or if no brands are mentioned at all.
-
-Do not guess; only return true if the phrase is actually visible.
-
-'''
-_GENDER_FIELD = '  "target_gender": "",\n'
-_BRAND_LIST_FIELD = '  "more_brands_than_named": false,\n'
-_AMBIGUOUS_BRAND_PARAGRAPH = '''A banner can promote more than one brand or label at once. If a short name (one or two words) is
-shown in its own distinct, title- or wordmark-like styling - not as part of a marketing sentence -
-list it as a brand even if you suspect it might instead be a collection or product-line name, and
-even if a different, more prominent logo also appears on the same banner. Do not pick only the most
-prominent name and drop the rest - a downstream check reconciles this list against the actual product
-listing, so it is far worse to omit a real brand than to list an extra candidate.
-
-'''
-
-
-def test_prompt_matches_the_original_plus_the_documented_additions():
-    # The original can't be imported (it prompts for an API key at import time - fix #3), so read its source.
-    original = re.search(r'PROMPT = """(.*?)"""', ORIGINAL.read_text(encoding="utf-8"), re.DOTALL).group(1)
-    reconstructed = (vision.PROMPT
-                      .replace(_GENDER_SECTION, "").replace(_BRAND_LIST_SECTION, "")
-                      .replace("7. VERIFICATION", "5. VERIFICATION")
-                      .replace(_GENDER_FIELD, "").replace(_BRAND_LIST_FIELD, "")
-                      .replace(_AMBIGUOUS_BRAND_PARAGRAPH, ""))
-    assert reconstructed == original and vision.MODEL == "gemma-4-31b-it"
+def test_prompt_asks_for_every_field_the_pipeline_reads():
+    """The prompt was shortened on 2026-10-05 (it is no longer the ported original word for word, see the note above PROMPT). What must not
+    change: the JSON it asks for holds each field the checks read, and the model."""
+    structure = json.loads(vision.PROMPT[vision.PROMPT.rindex("{\n  \"brands_mentioned\""):vision.PROMPT.rindex("}") + 1])
+    assert set(structure) == {"brands_mentioned", "deal_offered", "spelling_errors", "target_gender", "more_brands_than_named",
+                              "verification_required", "verification"}
+    for audience in ("men", "women", "boys", "girls", "infants", "men_and_women", "girls_and_boys", "unclear"):
+        assert f'"{audience}"' in vision.PROMPT                   # every audience the gender rules understand
+    assert "omitting a real brand is far worse" in vision.PROMPT and vision.MODEL == "gemma-4-31b-it"
 
 
 # ---- fix 2: robust JSON parsing ----

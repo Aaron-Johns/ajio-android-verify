@@ -79,10 +79,10 @@ the page, which takes proportionally longer and calls the vision model many more
 the first N banners in feed order — useful for a fast smoke-test, but note it's a positional cut, not
 a random sample, so it'll always be the same early banners on the page, never the ones further down.
 
-**Banners at a time (workers).** How many banners get checked concurrently, 1–10 (default 10). Gemma requests are
-**paced to 6 a minute across all workers** (sized to a 16K tokens-per-minute limit, 2,150 input tokens per
-call: the prompt 1,061 + the picture 1,089, the same at any picture size), so a worker that needs Gemma while the pace is used up shows **Waiting turn** on its card - going
-above ~10 workers buys nothing, since about that many are already enough to keep the pace busy at the
+**Banners at a time (workers).** How many banners get checked concurrently, 1–12 (default 12). Gemma requests are
+**paced to 7 a minute across all workers** (sized to a 16K tokens-per-minute limit, about 1,770 input tokens per
+call: the prompt 681 + the picture 1,089, the same at any picture size), so a worker that needs Gemma while the pace is used up shows **Waiting turn** on its card - going
+above ~12 workers buys nothing, since about that many are already enough to keep the pace busy at the
 ~90 s a Gemma call takes (with the old default of 3 a run could never get near the pace: about 2 banners a minute). The pace is **shared by every run on this PC** through a small lock file
 (`qa/.cache/gemma_pacer.json`), so two runs at once, a scheduled run plus a manual one, or a Retry during a run
 queue behind each other instead of each pacing itself. To change the pace set `GEMMA_CALLS_PER_MINUTE` in `.env`

@@ -35,7 +35,7 @@ RUNS_DIR = REPO_ROOT / "runs"
 L1_OPTIONS = ["nontransacted", "premium", "nonpremium"]
 L2_OPTIONS = ["men", "women", "unisex", "nogender"]
 SCOPES = ["hero", "all"]
-MAX_WORKERS = 10   # Gemma requests are paced separately (qa/spotcheck/vision.py CALLS_PER_MINUTE), so more workers can't overrun the API limit
+MAX_WORKERS = 12   # Gemma requests are paced separately (qa/spotcheck/vision.py CALLS_PER_MINUTE), so more workers can't overrun the API limit
 
 # Every Indian state, for the "State" field's autocomplete list and for validating AJIO_LOCATION_DETAIL's
 # "state" value (see build_location_detail below) - all caps, matching the default LOCATION constant's

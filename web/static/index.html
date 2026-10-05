@@ -505,10 +505,10 @@
         </div>
         <div>
           <label for="workers">Banners at a time</label>
-          <input type="number" id="workers" min="1" max="10" value="10">
+          <input type="number" id="workers" min="1" max="12" value="12">
         </div>
       </div>
-      <div class="hint">Blank banner count = verify everything in scope. "Banners at a time" caps how many run in parallel (max 10) — it's load on AJIO's API, not just display. Gemma requests are paced to 6 a minute no matter how many you pick, so extra workers wait their turn.</div>
+      <div class="hint">Blank banner count = verify everything in scope. "Banners at a time" caps how many run in parallel (max 12) — it's load on AJIO's API, not just display. Gemma requests are paced to 7 a minute no matter how many you pick, so extra workers wait their turn.</div>
 
       <button class="primary" id="load-carousels-btn">Load carousels to choose which to run</button>
       <div class="hint">Loads every carousel's banners into the panel on the right, grouped under a checkbox heading (checked by default) - uncheck a carousel there to leave it out of the run.</div>
@@ -979,7 +979,7 @@ function currentSettings() {
     ...runAxes.read(),
     scope: document.getElementById("scope").value,
     banner_limit: limitVal ? parseInt(limitVal, 10) : null,
-    workers: Math.max(1, Math.min(meta.max_workers, parseInt(document.getElementById("workers").value || "10", 10))),
+    workers: Math.max(1, Math.min(meta.max_workers, parseInt(document.getElementById("workers").value || "12", 10))),
     excluded_sections: [...excluded],
   };
 }
@@ -2520,7 +2520,7 @@ async function saveSchedForm() {
     ...formAxes.read(),
     scope: byId("sf-scope").value,
     banner_limit: limit ? parseInt(limit, 10) : null,
-    workers: Math.max(1, Math.min(meta.max_workers, parseInt(byId("sf-workers").value || "10", 10))),
+    workers: Math.max(1, Math.min(meta.max_workers, parseInt(byId("sf-workers").value || "12", 10))),
     enabled: byId("sf-enabled").checked,
     notify_mode: byId("sf-notify").value,
     notify_toast: byId("sf-toast").checked,
