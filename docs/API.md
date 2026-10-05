@@ -231,6 +231,8 @@ every field a UI needs to render a full result lives here. `404` if `run_id` is 
   `true`, so a per-banner retry is offered), `SKIPPED` means there was
   nothing checkable (or it was manually skipped), `PENDING`/`PROCESSING` are in-progress states that
   only appear while the run is live.
+- `banner_check.spelling_errors` — present only when Gemma found misspelt words on the banner's own picture (not on a link's
+  crop): `[{"word": "SUMER", "correction": "summer"}]`. It makes the banner `FAIL`, and the reason reads `spelling: "SUMER" should be "summer"`.
 - `try_number` / `max_tries` — which attempt this is out of the max (always 5: 1 initial + 4 automatic
   retries). Only meaningful while `result == "PROCESSING"`.
 - `activity` — present only while `result == "PROCESSING"` in a live run: what the banner is doing right

@@ -101,6 +101,7 @@ that must pass exactly), `image_segmentation_2.py` (origin of the Gemma prompt/p
   in no step and are not seen. A mismatch makes the banner FAIL (not over the beauty / unrecognised-audience INCONCLUSIVE); a bare "UP TO x%" discount (user, 2026-09-30), "UP TO Rs x OFF" (an amount off), "FLAT x%" and anything else
   have no rule; a listing that can't be sorted or has no discount filter is UNCHECKED, never a failure. There is no `:discount-asc` on the app API and no paging
   to the last page (deep pages are refused): counts only. Stored as `banner_check.sort_check` (with a one-line `summary`); the reason reaches the UI through the normal reason field.
+- **Spelling [D] (2026-10-05):** Gemma lists misspelt words on the banner (`spelling_errors` in the vision reply, brand names and non-English words excluded). Any real one makes the banner FAIL (`qa/feed_verify.py` `_spelling_errors`, saved as `banner_check.spelling_errors`, reason `spelling: "SUMER" should be "summer"`), whatever else matches. Only the banner's own picture is read for it, never a hotspot crop (a crop can cut a word in half). Cached results (24 h) carry no reading.
 - **Gender rule:** closed table over Men/Women/Boys/Girls/Infants (`qa/spotcheck/filters.py` `_BANNER_GENDER_RULES`); an
   unrecognised banner audience makes the whole banner INCONCLUSIVE; AJIO beauty banners are flagged for a human.
 - **Hidden / out-of-schedule banners** stay visible in the UI (toggle) but are never processed: always SKIPPED.

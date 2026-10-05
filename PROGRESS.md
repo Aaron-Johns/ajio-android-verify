@@ -1752,6 +1752,11 @@ Menu change (no Menu page, no Menu pills): static files were served with no cach
 file), and the manager's script and stylesheet links got a one-time `?v=20261005`, so the page that is already cached still fetches the new files. Test added (headers and the 304). Verified in a fresh browser: the Menu link opens the page with the four parts and the dialog has the Menu row.
 Server restarted. Not reproduced with the user's actual browser profile.
 
+### Spelling mistakes on a banner now FAIL it (2026-10-05)
+User asked whether Gemma checks spelling: it was asked to (prompt item 4, `spelling_errors`) but nothing read the answer. Then: "make the spelling check a fail if it is wrong". `qa/feed_verify.py`: `_spelling_errors` cleans the list (a word with a different correction), `_verify_image(check_spelling=True)` saves it as `banner_check.spelling_errors` and sets the result FAIL (also over the beauty / unrecognised-audience INCONCLUSIVE, unlike the deal check); `spelling_text` gives the reason `spelling: "SUMER" should be "summer"`, used by `_hotspot_reason` (so the banner's reason), the CLI summary and both UIs' fallbacks; both UIs list "Misspelt words" in the details.
+[A] Only the banner's own picture is read: hotspot crops pass `check_spelling=False` because a crop can cut a word in half. A banner that is only hotspots (no own link) is therefore not spell-checked. Results reused from the 24 h banner cache have no spelling reading until they expire.
+Tests: `tests/test_spelling_check.py` (5; 633 pass). Docs: CLAUDE.md, docs/UI_GUIDE.md, docs/API.md. Not verified: a real Gemma run on a real banner, so the false-alarm rate (stylised fonts) is unknown; Retry is the way out of one. No restart needed (qa/ reaches new runs at once; both UI scripts are served fresh). Not committed.
+
 ### Core zip and the script converter (2026-10-05)
 User: a zip of only the core files needed to run (no runs, no APKs or decompiled source), a Python file that converts .bat / .js / .ps1 to .txt and back when clicked, and the zip already converted.
 `convert_scripts.py` (repo root): one click does whichever way applies (any `.bat.txt` / `.js.txt` / `.ps1.txt` present: restore them; otherwise turn the scripts into .txt); only ever adds or strips ".txt", never overwrites, skips .venv / .git / __pycache__ / runs / logs.

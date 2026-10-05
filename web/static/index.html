@@ -1336,7 +1336,12 @@ function explainReasonBase(b, { truncate = false } = {}) {
     const list = truncate ? truncatedList(c.extra_brands) : c.extra_brands.join(", ");
     parts.push(`listing has extra brands not named on the banner: ${list}`);
   }
+  if (spellingText(c)) parts.push(spellingText(c));
   return parts.join("; ");
+}
+// the misspellings Gemma found on the banner's own picture, as one line (mirrors qa/feed_verify.py spelling_text)
+function spellingText(c) {
+  return (c.spelling_errors || []).map(e => `spelling: "${e.word}" should be "${e.correction}"`).join("; ");
 }
 
 function hotspotReason(h) {
@@ -1347,6 +1352,7 @@ function hotspotReason(h) {
   if (c.title_matches_deal === false) parts.push("title doesn't match the deal");
   if (c.gender_matches === false) parts.push("gender mismatch");
   if (c.extra_brands && c.extra_brands.length) parts.push(`extra brands ${c.extra_brands.join(", ")}`);
+  if (spellingText(c)) parts.push(spellingText(c));
   return parts.join("; ");
 }
 
@@ -1637,6 +1643,7 @@ function openModal(b) {
     ["Gender matches?", c.gender_matches],
     ["Missing brands", (c.missing_brands || []).join(", ")],
     ["Extra brands", (c.extra_brands || []).join(", ")],
+    ["Misspelt words", (c.spelling_errors || []).map(e => `${escapeHtml(e.word)} (should be ${escapeHtml(e.correction)})`).join(", ")],
   ].filter(([, v]) => v !== undefined && v !== null && v !== "");
   document.getElementById("modal-detail").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("") +
     (b.can_retry ? `<button class="secondary" id="modal-retry" style="margin-top:10px">Retry this banner</button>` : "");

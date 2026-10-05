@@ -86,8 +86,11 @@ function explainReasonBase(b) {
   if (c.gender_matches === "AJIO_BEAUTY") parts.push("AJIO beauty banner: the gender check is skipped, so it needs a person");
   if (c.gender_matches === "INCONCLUSIVE") parts.push(`the banner's audience reading "${c.banner_gender || ""}" isn't one the tool recognises`);
   if ((c.extra_brands || []).length) parts.push(`the listing has brands the banner doesn't name: ${c.extra_brands.join(", ")}`);
+  if (spellingText(c)) parts.push(spellingText(c));
   return parts.join("; ");
 }
+// the misspellings Gemma found on the banner's own picture, as one line (mirrors qa/feed_verify.py spelling_text)
+const spellingText = (c) => (c.spelling_errors || []).map((e) => `spelling: "${e.word}" should be "${e.correction}"`).join("; ");
 function explainReason(b) {
   const base = explainReasonBase(b), ref = referenceMismatch(b);
   return ref && !base.includes(ref) ? (base ? `${base}; ${ref}` : ref) : base;
@@ -103,6 +106,7 @@ function hotspotReason(h) {
   if (c.title_matches_deal === false) parts.push("the title doesn't match the deal");
   if (c.gender_matches === false) parts.push("audience mismatch");
   if ((c.extra_brands || []).length) parts.push(`extra brands ${c.extra_brands.join(", ")}`);
+  if (spellingText(c)) parts.push(spellingText(c));
   return parts.join("; ");
 }
 const verdictLabel = (b) => b.result === "PROCESSING" && b.max_tries ? `Checking, try ${b.try_number} of ${b.max_tries}` : WORD[verdictOf(b)] || b.result;
@@ -457,6 +461,7 @@ function paintDrawer() {
     ["Deal works on the listing", bc.sort_check && bc.sort_check.summary ? esc(bc.sort_check.summary) : ""],
     ["Banner audience", esc(bc.banner_gender)], ["Listing genders", esc((bc.listing_genders || []).join(", "))], ["Audience matches", esc(yn(bc.gender_matches))],
     ["Missing brands", esc((bc.missing_brands || []).join(", "))], ["Extra brands", esc((bc.extra_brands || []).join(", "))],
+    ["Misspelt words", esc((bc.spelling_errors || []).map((e) => `${e.word} (should be ${e.correction})`).join(", "))],
     ["Tries", `${esc(b.attempts ?? 1)}${b.retries_exhausted ? ", all used" : ""}`],
   ].filter(([, x]) => x !== undefined && x !== null && x !== "");
   d.innerHTML = `<div class="d-head"><span class="stamp"><i style="background:${COLOR[v]}"></i>${esc(LONG[v] || verdictLabel(b))}</span>

@@ -186,6 +186,11 @@ floor step must also hold *fewer* products than it (some product has to sit betw
 10% are in no step, so they aren't seen.) A bare "UP TO x%" discount, "UP TO ₹x OFF" (an amount off), "FLAT x%" and other wording are not checked this way, and a listing that can't be sorted or has no
 discount filter is simply not checked (never a failure): the banner keeps the PASS or FAIL its other checks gave it.
 
+**Spelling.** Gemma also reads the banner's text for spelling mistakes (brand names, deliberate styling and non-English words are not flagged). A misspelt word makes the banner a
+**FAIL** whatever else it matches, and the reason names it, for example `spelling: "SUMER" should be "summer"`; the details list it as **Misspelt words**. Only the banner's own
+picture is read for this, not the crops of its links (a crop can cut a word in half), so a banner that is only links is not spell-checked. Banners checked before this existed, and
+ones reused from the 24-hour banner cache, carry no spelling reading. Use Retry on a false alarm (Gemma can misread a stylised font).
+
 Click a banner to see the result of this check under its details, as **Deal works on the listing?** (classic) or **Deal on the listing** and **Deal works on the listing**
 (manager): just **True**, **False** or "Couldn't check" (the reason for a False is in the banner's Reason row). Banners whose deal has no such rule (a bare "UP TO 60%") show no row.
 

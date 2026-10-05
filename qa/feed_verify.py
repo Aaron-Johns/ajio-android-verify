@@ -140,9 +140,24 @@ def _result(base: dict, result: str, reason: str = "", **extra) -> dict:
     return {**base, "result": result, "reason": reason, **extra}
 
 
+def _spelling_errors(info: dict) -> list[dict]:
+    """The misspellings Gemma listed, cleaned: a word with a different correction, nothing else (it sometimes lists a word as its own fix)."""
+    found = []
+    for e in info.get("spelling_errors") or []:
+        word, fix = (str(e.get("word") or "").strip(), str(e.get("correction") or "").strip()) if isinstance(e, dict) else ("", "")
+        if word and fix and word.lower() != fix.lower():
+            found.append({"word": word, "correction": fix})
+    return found
+
+
+def spelling_text(c: dict) -> str:
+    """One line for a saved banner_check's misspellings ("" when there are none): shared by the reason, the CLI summary and the UIs' wording."""
+    return "; ".join(f'spelling: "{e["word"]}" should be "{e["correction"]}"' for e in c.get("spelling_errors") or [])
+
+
 def _verify_image(image_path: Path, destination_raw: str | None, analyzer: Callable, listings: ListingCache,
                   aliases: AliasMap, gender_override: str | None = None, note: Callable[[str], None] = lambda text: None,
-                  reading: str = "Reading image") -> dict:
+                  reading: str = "Reading image", check_spelling: bool = True) -> dict:
     """The vision + listing + filters check shared by a banner's own image and each of its hotspot
     crops (see verify_banner). Callers handle "no destination"/"no image" themselves - those mean
     different things depending on whether this is the banner's own check or one hotspot among several.
@@ -184,6 +199,11 @@ def _verify_image(image_path: Path, destination_raw: str | None, analyzer: Calla
         # a real mismatch is a finding; the beauty / unrecognised-audience INCONCLUSIVE is left as it is (a person looks anyway)
         if sort_check["status"] == "MISMATCH" and not isinstance(check.get("gender_matches"), str):
             check["result"] = "FAIL"
+    # a misspelt word on the banner is a finding of its own, whatever the listing says. Only the banner's own image is read for
+    # it: a hotspot crop can cut a word in half, and that would be flagged as a typo.
+    if check_spelling and (misspelt := _spelling_errors(info)):
+        check["spelling_errors"] = misspelt
+        check["result"] = "FAIL"
     return {"result": check["result"], "reason": "", "listing_kind": kind, "slug": slug, "listing_title": listing.title,
             "total_results": listing.total_results, "brands_in_filter": len(listing.brands), "banner_check": check,
             **({"listing_store": store} if store else {})}
@@ -267,6 +287,7 @@ def _hotspot_reason(h: dict) -> str:
         f"banner targets {c.get('banner_gender')!r} but listing genders are {c.get('listing_genders')}"
         if c.get("gender_matches") is False else "",
         f"extra brands in the listing: {c['extra_brands']}" if c.get("extra_brands") else "",
+        spelling_text(c),
         (c.get("sort_check") or {}).get("reason") if (c.get("sort_check") or {}).get("status") == "MISMATCH" else "",
         (c.get("sort_check") or {}).get("reason") if (c.get("sort_check") or {}).get("note") else ""]))
     if not bits and h.get("result") == "INCONCLUSIVE":
@@ -393,7 +414,7 @@ def verify_banner(banner: Banner, out_dir: Path, analyzer: Callable, listings: L
                                        "result": "INCONCLUSIVE", "reason": "empty_bounding_box_after_scaling"})
                 continue
             hc = _verify_image(crop, hs.url, analyzer, listings, aliases, gender_override=main_gender,
-                               note=note, reading="Reading hotspot")
+                               note=note, reading="Reading hotspot", check_spelling=False)
             hotspot_checks.append({"hotspot_index": i, "url": hs.url, "image_file": str(crop), **hc})
 
         # don't cache a transient failure (a Gemini 5xx, a network blip) as if it were the real verdict -
@@ -720,7 +741,8 @@ def format_summary(results: list[dict]) -> str:
             f"title {r.get('listing_title')!r} != deal {c.get('banner_deal')!r}" if c.get("title_matches_deal") is False else "",
             f"banner targets {c.get('banner_gender')!r} but listing genders are {c.get('listing_genders')}"
             if c.get("gender_matches") is False else "",
-            f"listing has extra brands not named on the banner: {_truncated(c['extra_brands'])}" if c.get("extra_brands") else ""])
+            f"listing has extra brands not named on the banner: {_truncated(c['extra_brands'])}" if c.get("extra_brands") else "",
+            spelling_text(c)])
             ) or (undecided_reason(c) if shown_result(r) == "INCONCLUSIVE" else "")
         ref = reference_check.note(r)             # what the reference CSV says, beside whichever reasons the banner already has
         if ref and ref not in why:
