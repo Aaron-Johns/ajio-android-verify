@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import random
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -44,7 +45,8 @@ ADS_CLIENT_ID = "10058742"          # AJIO's account at the ad partner, visible 
 AD_SLOTS = [("_sections_ajio", "Home screen", 10), ("_myaccount_banner", "My account banner", 25), ("_orderlisting_banner", "Order list banner", 25)]
 APP_VERSION = "9.38.1"
 APP_AGENT = "Ajio/9.38000.0 (Android 16)"
-IMAGE_EXT = {"image/webp": ".webp", "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/svg+xml": ".svg", "image/avif": ".avif"}
+# Pictures are only saved when they are raster images: an SVG can carry a script, and one saved here would run in the app's own address if someone opened it directly.
+IMAGE_EXT = {"image/webp": ".webp", "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/avif": ".avif"}
 IMAGE_WORKERS = 6
 
 
@@ -104,6 +106,13 @@ def fetch_ads_slot(placement: str, how_many: int, l1: str, l2: str, state: str, 
     return _get_json(ADS_URL, headers, f"ads {placement}", params=params, session=session, sleep=sleep)
 
 
+def web_url(value) -> str:
+    """The address if it is a plain http(s) web address, else "". Links and pictures come from third parties (the ad partner, AJIO's CMS): a
+    javascript:, data: or file: address in them must never become a clickable link or a link in the Excel file."""
+    v = str(value or "").strip()
+    return v if re.fullmatch(r"https?://\S+", v, re.I) else ""
+
+
 # ---- turning the responses into a flat list of items ------------------------------------------------------------
 
 def _item(items: list[dict], parent: int | None, level: int, title: str, **fields) -> int:
@@ -118,9 +127,11 @@ def _target(action: dict | None) -> tuple[str, str]:
     """(web address, what it opens) of a navigation entry. External pages carry a real address; the others are screens inside the app."""
     page = (action or {}).get("page") or {}
     kind = page.get("type", "")
-    query_url = ((page.get("query") or {}).get("url") or [""])[0]
-    if kind == "external" or query_url:
+    query_url = web_url(((page.get("query") or {}).get("url") or [""])[0])
+    if query_url:
         return query_url, "web page"
+    if kind == "external":                        # an "external" page whose address is not a plain http(s) one (see web_url)
+        return "", "not a web address"
     if kind == "sections":
         return "", "app screen: " + page.get("url", "")
     return "", f"app screen: {kind}" if kind else "app screen"
@@ -139,7 +150,7 @@ def flatten_navigation(data) -> list[dict]:
                 pictures.append(v.get("value") if isinstance(v, dict) else v)
             link, opens = _target(n.get("action"))
             me = _item(items, parent, level, (n.get("display") or "").strip(), link=link, opens=opens,
-                       images=list(dict.fromkeys(p for p in pictures if p)), active=bool(n.get("active", True)),
+                       images=list(dict.fromkeys(web_url(p) for p in pictures if web_url(p))), active=bool(n.get("active", True)),
                        audience=(n.get("user") or {}).get("user_type", "") or ",".join(n.get("acl") or []))
             walk(n.get("sub_navigation"), me, level + 1)
 
@@ -151,7 +162,7 @@ def flatten_navigation(data) -> list[dict]:
 def flatten_trends(data: dict) -> list[dict]:
     items: list[dict] = []
     for t in data.get("topTrends") or []:
-        _item(items, None, 0, t.get("displayName", ""), description=t.get("description", ""), images=[t["image"]] if t.get("image") else [],
+        _item(items, None, 0, t.get("displayName", ""), description=t.get("description", ""), images=[web_url(t.get("image"))] if web_url(t.get("image")) else [],
               opens="in-app search: " + t.get("redirectQuery", ""))
     return items
 
@@ -164,8 +175,9 @@ def flatten_ads(slots: list[tuple[str, dict]]) -> list[dict]:
         parent = _item(items, None, 0, name, opens=f"{len(ads)} ad{'' if len(ads) == 1 else 's'}")
         for a in ads:
             el = a.get("elements") or {}
-            _item(items, parent, 1, "", description=f"rank {a.get('rank', '')}", link=el.get("destination_url", ""), opens="web page",
-                  images=[u for u in (el.get("mobile_image"), el.get("desktop_image")) if u])
+            link = web_url(el.get("destination_url"))
+            _item(items, parent, 1, "", description=f"rank {a.get('rank', '')}", link=link, opens="web page" if link else "",
+                  images=[web_url(u) for u in (el.get("mobile_image"), el.get("desktop_image")) if web_url(u)])
     return items
 
 
@@ -194,6 +206,8 @@ def download_images(items: list[dict], out_dir: Path, fetcher=fetch_image, worke
 
     def get(url: str) -> tuple[str, str | None]:
         status, data, ctype = fetcher(url)
+        if data and ctype not in IMAGE_EXT:                # an SVG, or anything that is not a plain picture: not saved (the address stays)
+            status, data = f"not saved ({ctype})", None
         if not data:
             log.warning("picture not saved (%s): %s", status, url)
             return url, None

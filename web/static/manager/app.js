@@ -891,8 +891,9 @@ const menuKindLabel = (kind) => S.meta.menu_options.find((p) => p.kind === kind)
 const bestMenuRun = (kind) => { const rs = menuRuns(kind); return rs.find((r) => r.status === "done") || rs.find((r) => r.status === "running") || rs[0] || null; };
 const menuImg = (it, i = 0) => {
   const f = (it.image_files || [])[i];
-  return f ? `${API}/api/runs/${encodeURIComponent(M.runId)}/images/${encodeURIComponent(f)}` : (it.images || [])[i] || "";
+  return f ? `${API}/api/runs/${encodeURIComponent(M.runId)}/images/${encodeURIComponent(f)}` : safeUrl((it.images || [])[i]);
 };
+const safeUrl = (u) => /^https?:\/\/\S+$/i.test(String(u || "").trim()) ? String(u).trim() : "";      // links and pictures come from third parties: never javascript:, data: ...
 const shortLink = (u) => String(u).replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
 
 async function loadMenuData() {
@@ -909,7 +910,8 @@ function menuTiles(depth, row, kids, byId) {
   return row.map((it) => {
     const img = menuImg(it), n = (kids.get(it.id) || []).length;
     const label = it.title || (it.description ? `Ad, ${it.description}` : "Ad");
-    const link = it.link ? `<a class="mlink" href="${esc(it.link)}" target="_blank" rel="noopener noreferrer" title="${esc(it.link)}">${esc(shortLink(it.link))}</a>`
+    const href = safeUrl(it.link);
+    const link = href ? `<a class="mlink" href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="${esc(href)}">${esc(shortLink(href))}</a>`
       : it.opens ? `<span class="mopens">${esc(it.opens)}</span>` : "";
     return `<div class="mcell${it.active === false ? " off" : ""}${img && M.kind === "ads" ? " ad" : ""}"><button type="button" class="mtile${img ? " pic" : ""}" data-id="${it.id}" data-depth="${depth}" aria-pressed="${picked === it.id}">
       ${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}<span class="mt">${esc(label)}</span>${it.description && it.title ? `<span class="md">${esc(it.description)}</span>` : ""}${n ? `<span class="mk">${n} &rsaquo;</span>` : ""}${it.active === false ? '<span class="mi">inactive</span>' : ""}</button>${link}</div>`;

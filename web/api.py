@@ -345,7 +345,8 @@ def get_run_image(run_id: str, filename: str):
     path = Path(row["out_dir"]) / "images" / filename
     if not path.is_file():
         raise HTTPException(404, "image not found")
-    return FileResponse(path)
+    # a picture can only ever be shown as a picture: never sniffed into something else, and sandboxed with no scripts if it is opened on its own
+    return FileResponse(path, headers={"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox"})
 
 
 @app.get("/api/runs/{run_id}/export.xlsx")

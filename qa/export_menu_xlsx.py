@@ -12,6 +12,8 @@ from pathlib import Path
 import xlsxwriter
 from PIL import Image
 
+from qa.app_menus import web_url
+
 SHEETS = {"top-nav": "Top menu", "bottom-nav": "Bottom menu", "ads": "Sponsored ads", "trending": "Trending"}
 NAV_ICON, AD_WIDTH, AD_HEIGHT, TREND_W, TREND_H = 56, 440, 125, 70, 100
 
@@ -72,12 +74,12 @@ def build_workbook(entries: list[dict], path: Path) -> Path:
             if not t:
                 return
             opts = {"image_data": io.BytesIO(t[0]), "object_position": 1, "x_offset": 4, "y_offset": 3, "description": item["title"] or "picture"}
-            if item.get("link"):
-                opts["url"] = item["link"]
+            if web_url(item.get("link")):
+                opts["url"] = web_url(item["link"])
             ws.insert_image(row, col, "picture.png", opts)
 
         def link(row: int, col: int, item: dict) -> None:
-            ws.write_url(row, col, item["link"], link_fmt, string=item["link"]) if item.get("link") else ws.write(row, col, item.get("opens", ""), wrap)
+            ws.write_url(row, col, web_url(item["link"]), link_fmt, string=web_url(item["link"])) if web_url(item.get("link")) else ws.write(row, col, item.get("opens", ""), wrap)
 
         def address(item: dict) -> str:
             return " | ".join(item.get("images") or [])

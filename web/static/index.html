@@ -1833,8 +1833,9 @@ function menuKindLabel(kind) { const p = ((meta && meta.menu_options) || []).fin
 function bestMenuRun(kind) { const rs = menuRunsOf(kind); return rs.find(r => r.status === "done") || rs.find(r => r.status === "running") || rs[0] || null; }
 function menuImg(it, i = 0) {
   const f = (it.image_files || [])[i];
-  return f ? `/api/runs/${encodeURIComponent(MN.runId)}/images/${encodeURIComponent(f)}` : (it.images || [])[i] || "";
+  return f ? `/api/runs/${encodeURIComponent(MN.runId)}/images/${encodeURIComponent(f)}` : safeUrl((it.images || [])[i]);
 }
+const safeUrl = u => /^https?:\/\/\S+$/i.test(String(u || "").trim()) ? String(u).trim() : "";      // links and pictures come from third parties: never javascript:, data: ...
 const shortLink = u => String(u).replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
 
 async function loadMenuData() {
@@ -1851,7 +1852,8 @@ function menuTilesHtml(depth, row, kids) {
   return row.map(it => {
     const img = menuImg(it), n = (kids.get(it.id) || []).length;
     const label = it.title || (it.description ? `Ad, ${it.description}` : "Ad");
-    const link = it.link ? `<a class="mn-link" href="${escapeHtml(it.link)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(it.link)}">${escapeHtml(shortLink(it.link))}</a>`
+    const href = safeUrl(it.link);
+    const link = href ? `<a class="mn-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(href)}">${escapeHtml(shortLink(href))}</a>`
       : it.opens ? `<span class="mn-opens">${escapeHtml(it.opens)}</span>` : "";
     return `<div class="mn-cell${it.active === false ? " off" : ""}${img && MN.kind === "ads" ? " ad" : ""}"><button type="button" class="mn-tile" data-id="${it.id}" data-depth="${depth}" aria-pressed="${picked === it.id}">
       ${img ? `<img src="${escapeHtml(img)}" alt="">` : ""}<span class="mn-t">${escapeHtml(label)}</span>${it.description && it.title ? `<span class="mn-d">${escapeHtml(it.description)}</span>` : ""}${n ? `<span class="mn-k">${n} &rsaquo;</span>` : ""}${it.active === false ? '<span class="mn-i">inactive</span>' : ""}</button>${link}</div>`;

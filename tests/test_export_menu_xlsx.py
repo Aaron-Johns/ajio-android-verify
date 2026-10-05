@@ -60,3 +60,15 @@ def test_ads_list_one_row_per_ad_with_its_slot_and_trending_has_title_and_descri
     assert t[0][2] == "#NavratriReady" and t[0][3] == "Twirl-ready" and t[0][4].startswith("in-app search")
     readme = " ".join(str(c.value) for r in wb["Read me"].iter_rows() for c in r)
     assert "Home screen (1 ad)" in readme and "My account banner (0 ads)" in readme and "state ASSAM" in readme
+
+
+def test_an_address_that_is_not_a_web_address_is_never_a_link_in_the_workbook(tmp_path):
+    d = run_dir(tmp_path)
+    menu = {"kind": "top-nav", "l1": "premium", "items": [item(0, None, 0, "Evil", ["men.png"], link="javascript:alert(1)", opens="web page"),
+                                                            item(1, None, 0, "Local", ["shoes.png"], link="file:///c:/windows/win.ini")]}
+    out = build_workbook([{"menu": menu, "dir": d}], tmp_path / "z.xlsx")
+    ws = openpyxl.load_workbook(out)["Top menu"]
+    assert ws["E2"].hyperlink is None and ws["E3"].hyperlink is None            # plain text, not clickable
+    z = zipfile.ZipFile(out)
+    assert "".join(z.read(n).decode() for n in z.namelist() if re.match(r"xl/drawings/drawing\d+\.xml", n)).count("hlinkClick") == 0
+    assert b"javascript:" not in b"".join(z.read(n) for n in z.namelist() if "sheet" in n or "drawing" in n or "rels" in n)

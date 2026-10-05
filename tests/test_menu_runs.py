@@ -156,3 +156,9 @@ def test_the_ui_files_are_served_with_no_cache_so_a_browser_never_keeps_an_old_s
         assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path
     again = client.get("/manager/app.js", headers={"If-None-Match": client.get("/manager/app.js").headers["etag"]})
     assert again.status_code == 304 and again.headers["cache-control"] == "no-cache"      # unchanged files still cost almost nothing
+
+
+def test_a_run_folder_picture_is_served_so_it_can_only_ever_be_a_picture(client, tmp_path):
+    add_menu_run(tmp_path, "m1", "menu-top-nav", menu=menu("top-nav"))
+    h = client.get("/api/runs/m1/images/a.png").headers
+    assert h["x-content-type-options"] == "nosniff" and "sandbox" in h["content-security-policy"] and "default-src 'none'" in h["content-security-policy"]

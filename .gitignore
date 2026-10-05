@@ -8,6 +8,7 @@ __pycache__/
 inputs/apk-source/
 inputs/modified-apk/
 inputs/additional-apks/
+inputs/inputs.zip
 
 # Run output, logs, traffic captures
 runs/

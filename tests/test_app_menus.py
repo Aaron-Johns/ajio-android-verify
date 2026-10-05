@@ -150,3 +150,30 @@ def test_a_run_writes_its_menu_meta_and_pictures_and_a_failure_exits_non_zero(tm
         raise FeedError("trending: HTTP 502")
     monkeypatch.setattr(am, "collect", boom)
     assert am.main(["--kind", "trending"]) == 1 and "HTTP 502" in capsys.readouterr().out
+
+
+# ---- third-party data must not be able to add a script to a page, a file or a link ----
+
+def test_only_plain_web_addresses_count_as_links_or_pictures():
+    assert am.web_url("https://a.b/c?d=1") == "https://a.b/c?d=1" and am.web_url("  http://x.y/z ") == "http://x.y/z"
+    for bad in ("javascript:alert(1)", "data:text/html,<script>x</script>", "file:///c:/x", "//evil.example/x", "ftp://x.y", "https://a b", "vbscript:x", "", None):
+        assert am.web_url(bad) == "", bad
+
+
+def test_unsafe_addresses_in_third_party_data_never_reach_an_item():
+    nav = {"items": [{"navigation": [{"display": "X", "images": [{"value": "javascript:alert(1)"}, {"value": "https://cdn/ok.png"}],
+                                      "action": {"page": {"type": "external", "query": {"url": ["javascript:alert(1)"]}}}}]}]}
+    item = am.flatten_navigation(nav)[0]
+    assert item["link"] == "" and item["images"] == ["https://cdn/ok.png"] and item["opens"] == "not a web address"
+    ad = {"rank": "1", "elements": {"destination_url": "data:text/html,<script>x</script>", "mobile_image": "javascript:x", "desktop_image": "https://cdn/d.jpg"}}
+    ads = am.flatten_ads([("Home screen", {"ads": {"1": [ad]}})])
+    assert ads[1]["link"] == "" and ads[1]["opens"] == "" and ads[1]["images"] == ["https://cdn/d.jpg"]
+    assert am.flatten_trends({"topTrends": [{"displayName": "#A", "image": "file:///c:/x.png"}]})[0]["images"] == []
+
+
+def test_an_svg_is_never_saved_because_it_can_carry_a_script(tmp_path):
+    items = [{"images": ["https://cdn/logo.svg", "https://cdn/ok.png"]}]
+    fetcher = lambda url: ("OK", b"<svg onload=alert(1)>", "image/svg+xml") if url.endswith(".svg") else ("OK", b"png", "image/png")
+    assert am.download_images(items, tmp_path, fetcher=fetcher) == 1
+    assert items[0]["image_files"][0] is None and items[0]["image_files"][1].endswith(".png")
+    assert not list((tmp_path / "images").glob("*.svg")) and len(list((tmp_path / "images").iterdir())) == 1

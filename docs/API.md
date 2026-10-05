@@ -297,6 +297,8 @@ know when to stop listening.
 
 ### `GET /api/runs/{run_id}/images/{filename}` — a locally-saved image
 
+(Served with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`, so a picture can only ever be a picture. Menu runs never save SVG files.)
+
 Serves a file from that run's own `images/` folder (a hotspot crop, or the banner's own cached copy).
 `filename` must be a bare filename, no path separators (`400` otherwise); get it from a banner row's
 `image_file` field, using only the last path segment. `404` if the run or the file doesn't exist.
@@ -355,7 +357,7 @@ Schedules cannot cover menu pages (`422`).
             "description": "", "alt": "", "images": ["https://assets.../footwear.png"], "image_files": ["3fa1c0b2d9e4.png"], "active": true, "audience": "all_user"}]}
 ```
 A flat list, parents before children (`parent` null at the top row, `level` 0 there), so a client can drill down. `images` are the picture addresses, `image_files` the copies saved in the run's
-`images/` folder (same order; `null` where a download failed), served by `GET /api/runs/{run_id}/images/{filename}`. `link` is a web address or empty; `opens` says what the entry opens
+`images/` folder (same order; `null` where a download failed), served by `GET /api/runs/{run_id}/images/{filename}`. `link` is a plain `http(s)` web address or empty (anything else in the source data, such as `javascript:` or `data:`, is dropped); `opens` says what the entry opens
 (`web page`, `app screen: /sections/...`, `in-app search: ...`, or a count of ads for an ad slot). Ads: each slot is a top-row entry, its ads are its children (no title, `description` says
 `rank N`). `404` for a run that isn't a menu run, or has no data yet (running, failed or stopped).
 
