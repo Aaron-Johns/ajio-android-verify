@@ -68,7 +68,7 @@ runs/  logs/  data/        generated, gitignored
   `Start-ScheduledTask "AJIO Feed Verify server"`). `web/static/*` never does. `qa/` changes reach new run subprocesses at
   once, but the server imports some `qa` code itself (`shown_result`, `load_final_results`...), so restart after those too.
   A restart adopts a run that is mid-flight but loses combos queued in memory (known gap).
-- **Limits [A]:** 24 runs per multi-select launch (`MAX_COMBOS`), 10 workers, Gemma paced to 6 requests a minute shared by
+- **Limits [A]:** 24 runs per multi-select launch (`MAX_COMBOS`), 14 workers by default (max 15), Gemma paced to 9 requests a minute shared by
   every process (account limit 30 RPM / 16K TPM), 5 tries per banner (10 s cooldown, retried banners jump the queue),
   cross-run banner cache 24 h, one scheduled run at a time (waits up to an hour, then "skipped").
 

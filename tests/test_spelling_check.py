@@ -47,3 +47,11 @@ def test_the_cli_summary_names_the_misspelling():
     result = {"banner_id": "b", "alt_text": "b", "destination_raw": "u", "result": "FAIL", "reason": "",
               "banner_check": {"spelling_errors": [{"word": "SUMER", "correction": "summer"}]}}
     assert 'spelling: "SUMER" should be "summer"' in fv.format_summary([result])
+
+
+def test_words_read_off_a_picture_cannot_carry_html_into_the_reason(tmp_path):
+    """The classic UI shows reasons as HTML, and the words come from text on a banner picture: no < > & or quotes get through."""
+    evil = [{"word": "<img src=x onerror=alert(1)>", "correction": 'sum"mer'}]
+    r = run([banner("b", "https://ajio.com/s/a-1")], tmp_path, FETCHER(), analyzer=read(evil))[0]
+    assert r["result"] == "FAIL" and not any(ch in r["reason"].replace('"', "", 4) for ch in "<>&")
+    assert r["banner_check"]["spelling_errors"] == [{"word": "img src=x onerror=alert(1)", "correction": "summer"}]

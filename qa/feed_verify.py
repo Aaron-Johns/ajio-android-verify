@@ -32,7 +32,7 @@ from qa.spotcheck import filters, hero, vision
 
 log = logging.getLogger("qa.feed_verify")
 
-WORKERS = 3            # [A] banners verified in parallel (mostly waiting on the vision model)
+WORKERS = 14           # [A] banners verified in parallel (mostly waiting on the vision model: ~90 s a call, so 14 keep 9 calls a minute busy)
 LISTING_PAUSE = 0.3    # [A] seconds between listing fetches; they are serialized to stay gentle on the API
 PREMIUM_WARNING = "Premium cannot be loaded: AJIO kept returning the regular banner set, so this run checked that set instead."
 RETRY_ROUNDS = 4       # [A] extra tries per banner that fails on a temporary error (Gemini 5xx, network, listing API)
@@ -140,11 +140,17 @@ def _result(base: dict, result: str, reason: str = "", **extra) -> dict:
     return {**base, "result": result, "reason": reason, **extra}
 
 
+def _plain(text) -> str:
+    """Words Gemma read off a banner's picture end up in the reason, which the classic UI shows as HTML: keep letters, digits and
+    ordinary punctuation only (no < > & quotes), and a sane length."""
+    return re.sub(r"[<>&\"'`\\\x00-\x1f]", "", str(text or "")).strip()[:40]
+
+
 def _spelling_errors(info: dict) -> list[dict]:
     """The misspellings Gemma listed, cleaned: a word with a different correction, nothing else (it sometimes lists a word as its own fix)."""
     found = []
-    for e in info.get("spelling_errors") or []:
-        word, fix = (str(e.get("word") or "").strip(), str(e.get("correction") or "").strip()) if isinstance(e, dict) else ("", "")
+    for e in (info.get("spelling_errors") or [])[:10]:
+        word, fix = (_plain(e.get("word")), _plain(e.get("correction"))) if isinstance(e, dict) else ("", "")
         if word and fix and word.lower() != fix.lower():
             found.append({"word": word, "correction": fix})
     return found

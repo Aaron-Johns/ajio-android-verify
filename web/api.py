@@ -47,7 +47,7 @@ class RunRequest(BaseModel):
     pincodes: list[str] = Field(default_factory=lambda: [runner.DEFAULT_PINCODE])
     scope: str = "hero"
     banner_limit: int | None = Field(default=None, ge=1)
-    workers: int = Field(default=3, ge=1, le=runner.MAX_WORKERS)
+    workers: int = Field(default=14, ge=1, le=runner.MAX_WORKERS)
     excluded_carousels: list[int] = Field(default_factory=list)
     excluded_sections: list[str] = Field(default_factory=list)   # CMS section ids - stay right when the feed's order shifts
 
@@ -69,7 +69,7 @@ class ScheduleRequest(BaseModel):
     pincodes: list[str] = Field(default_factory=lambda: [runner.DEFAULT_PINCODE])
     scope: str = "hero"
     banner_limit: int | None = Field(default=None, ge=1)
-    workers: int = Field(default=3, ge=1, le=runner.MAX_WORKERS)
+    workers: int = Field(default=14, ge=1, le=runner.MAX_WORKERS)
     enabled: bool = True
     excluded_sections: list[SectionRef] = Field(default_factory=list)
     notify_mode: str = "new_fails"

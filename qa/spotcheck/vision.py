@@ -32,9 +32,9 @@ TIMEOUT_MS = 180_000  # [A] per-HTTP-call cap (files.upload, interactions.create
                       # a tighter cap would cut off working-but-slow calls, not just genuine hangs
                       # (an actual observed hang ran ~960s/16min, so this still catches that easily)
 
-CALLS_PER_MINUTE = 6   # [A] cap on Gemma requests (every try counts), whatever the worker count. Sized to the account's
-                       # 16K tokens/min: a banner call sends ~2,200 input tokens (image ~1,100 + prompt ~1,060), so ~7 calls a
-                       # minute is the ceiling; 6 leaves headroom. Override with GEMMA_CALLS_PER_MINUTE (0 = no limit).
+CALLS_PER_MINUTE = 9   # [A] cap on Gemma requests (every try counts), whatever the worker count. Sized to the account's
+                       # 16K tokens/min: a banner call sends 1,319 input tokens (measured 2026-10-05: prompt 1,061 + a flat 258 for the
+                       # image at any size) plus a ~330-character reply, so 9 a minute is ~12-13K, leaving headroom. Override with GEMMA_CALLS_PER_MINUTE (0 = no limit).
 
 
 PACER_STATE = Path(__file__).resolve().parents[1] / ".cache" / "gemma_pacer.json"   # qa/.cache/ (gitignored)
