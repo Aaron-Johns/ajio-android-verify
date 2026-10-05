@@ -207,6 +207,7 @@ def test_extra_instructions_are_appended_without_changing_the_ported_prompt():
     assert seen[0] == vision.PROMPT and seen[1].startswith(vision.PROMPT) and "PROMOTING" in seen[1]
 
 
+
 # ---- pacing: Gemma requests are spaced out across all worker threads ----------------------------------
 
 class FakeClock:

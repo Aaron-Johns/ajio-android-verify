@@ -68,7 +68,7 @@ runs/  logs/  data/        generated, gitignored
   `Start-ScheduledTask "AJIO Feed Verify server"`). `web/static/*` never does. `qa/` changes reach new run subprocesses at
   once, but the server imports some `qa` code itself (`shown_result`, `load_final_results`...), so restart after those too.
   A restart adopts a run that is mid-flight but loses combos queued in memory (known gap).
-- **Limits [A]:** 24 runs per multi-select launch (`MAX_COMBOS`), 14 workers by default (max 15), Gemma paced to 9 requests a minute shared by
+- **Limits [A]:** 24 runs per multi-select launch (`MAX_COMBOS`), 10 workers by default (max 10), Gemma paced to 6 requests a minute shared by
   every process (account limit 30 RPM / 16K TPM), 5 tries per banner (10 s cooldown, retried banners jump the queue),
   cross-run banner cache 24 h, one scheduled run at a time (waits up to an hour, then "skipped").
 
@@ -102,6 +102,7 @@ that must pass exactly), `image_segmentation_2.py` (origin of the Gemma prompt/p
   have no rule; a listing that can't be sorted or has no discount filter is UNCHECKED, never a failure. There is no `:discount-asc` on the app API and no paging
   to the last page (deep pages are refused): counts only. Stored as `banner_check.sort_check` (with a one-line `summary`); the reason reaches the UI through the normal reason field.
 - **Spelling [D] (2026-10-05):** Gemma lists misspelt words on the banner (`spelling_errors` in the vision reply, brand names and non-English words excluded). Any real one makes the banner FAIL (`qa/feed_verify.py` `_spelling_errors`, saved as `banner_check.spelling_errors`, reason `spelling: "SUMER" should be "summer"`), whatever else matches. Only the banner's own picture is read for it, never a hotspot crop (a crop can cut a word in half). Cached results (24 h) carry no reading.
+- **No Google Search in the Gemma call [D] (2026-10-05):** tried (the tool plus an instruction to look the brands up) and removed. On banners Gemma already knew it never searched and only cost ~107 input and ~120+ thinking tokens a call; on an unknown logo the call failed with 503 after 2 to 6 minutes (3 of 3). `git log` has it.
 - **Gender rule:** closed table over Men/Women/Boys/Girls/Infants (`qa/spotcheck/filters.py` `_BANNER_GENDER_RULES`); an
   unrecognised banner audience makes the whole banner INCONCLUSIVE; AJIO beauty banners are flagged for a human.
 - **Hidden / out-of-schedule banners** stay visible in the UI (toggle) but are never processed: always SKIPPED.

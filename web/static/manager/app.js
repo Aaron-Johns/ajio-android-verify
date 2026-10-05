@@ -632,7 +632,7 @@ const D = { labels: new Map() };
 function dlgSettings() {
   const lim = $("d-limit").value;
   return { ...S.dlgAxes.read(), scope: $("d-scope").value, banner_limit: lim ? parseInt(lim, 10) : null,
-    workers: Math.max(1, Math.min(S.meta.max_workers, parseInt($("d-workers").value || "14", 10))), excluded_sections: [...S.dlgExcluded] };
+    workers: Math.max(1, Math.min(S.meta.max_workers, parseInt($("d-workers").value || "10", 10))), excluded_sections: [...S.dlgExcluded] };
 }
 function dlgMsg(t, err) { $("d-msg").textContent = t; $("d-msg").className = "msg" + (err ? " err" : ""); }
 function openDlg() {
@@ -824,7 +824,7 @@ async function viewSchedForm(id) {
   if (id != null) { try { s = await api(`/api/schedules/${id}`); } catch (e) { toast("Couldn't open this schedule: " + e.message, true); go("#/schedules"); return; } if (token !== S.token) return; }
   const pre = id == null ? S.prefill : null; S.prefill = null;
   const v = s || { name: "", interval_minutes: 120, pages: pre?.pages || ["home"], l1s: pre?.l1s || [S.meta.l1_options[0]], l2s: pre?.l2s || [S.meta.l2_options[0]], states: pre?.states || [S.meta.default_state], pincodes: pre?.pincodes || [S.meta.default_pincode],
-    scope: pre?.scope || "hero", banner_limit: pre?.banner_limit ?? null, workers: pre?.workers || 14, enabled: 1, notify_mode: "new_fails", notify_toast: true, excluded_sections: pre?.excluded || [] };
+    scope: pre?.scope || "hero", banner_limit: pre?.banner_limit ?? null, workers: pre?.workers || 10, enabled: 1, notify_mode: "new_fails", notify_toast: true, excluded_sections: pre?.excluded || [] };
   const { n, unit } = intervalParts(v.interval_minutes);
   const excluded = new Set((v.excluded_sections || []).map((x) => x.id)), labels = new Map((v.excluded_sections || []).map((x) => [x.id, x.label])); let cars = null;
   view(`<div class="page"><a class="back" href="${s ? `#/schedules/${s.id}` : "#/schedules"}">&larr; ${s ? esc(s.name) : "All schedules"}</a>
@@ -877,7 +877,7 @@ async function viewSchedForm(id) {
     if (axes.over()) { toast(`That is ${axes.count()} runs per fire; the limit is ${S.meta.max_combos}. Narrow the selection.`, true); return; }
     const lim = $("sf-limit").value;
     const body = { name: $("sf-name").value.trim() || "unnamed schedule", interval_minutes: every * parseInt($("sf-unit").value, 10), start_at: st.date.toISOString(), ...axes.read(), scope: $("sf-scope").value,
-      banner_limit: lim ? parseInt(lim, 10) : null, workers: Math.max(1, Math.min(S.meta.max_workers, parseInt($("sf-workers").value || "14", 10))), enabled: $("sf-enabled").checked,
+      banner_limit: lim ? parseInt(lim, 10) : null, workers: Math.max(1, Math.min(S.meta.max_workers, parseInt($("sf-workers").value || "10", 10))), enabled: $("sf-enabled").checked,
       notify_mode: $("sf-notify").value, notify_toast: $("sf-toast").checked, excluded_sections: [...excluded].map((sid) => ({ id: sid, label: labels.get(sid) || "" })) };
     try { const saved = await post(s ? `/api/schedules/${s.id}` : "/api/schedules", body, s ? "PATCH" : "POST"); await refreshSched(); go(`#/schedules/${saved.id}`); }
     catch (e) { toast("Couldn't save the schedule: " + e.message, true); }

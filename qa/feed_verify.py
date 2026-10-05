@@ -32,7 +32,7 @@ from qa.spotcheck import filters, hero, vision
 
 log = logging.getLogger("qa.feed_verify")
 
-WORKERS = 14           # [A] banners verified in parallel (mostly waiting on the vision model: ~90 s a call, so 14 keep 9 calls a minute busy)
+WORKERS = 10           # [A] banners verified in parallel (mostly waiting on the vision model: ~90 s a call, so 10 keep 6 calls a minute busy)
 LISTING_PAUSE = 0.3    # [A] seconds between listing fetches; they are serialized to stay gentle on the API
 PREMIUM_WARNING = "Premium cannot be loaded: AJIO kept returning the regular banner set, so this run checked that set instead."
 RETRY_ROUNDS = 4       # [A] extra tries per banner that fails on a temporary error (Gemini 5xx, network, listing API)
